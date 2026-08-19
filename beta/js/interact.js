@@ -51,10 +51,17 @@
   /** Elemento piu' vicino al punto, entro `px` pixel di schermo. Col dito il bersaglio esatto non si
    *  prende sempre: chiedere il colpo perfetto costringeva a ripetere il gesto. Se il punto e' dentro
    *  un elemento la distanza e' 0, quindi il contenuto vince sempre sul semplice "vicino". */
-  const nearEl = (w, map, px = 28, skip = []) => {
-    const tol = px / I.view.k; let best = null, bd = tol;
+  /** Che cosa puo' stare in fondo a un collegamento. Senza questo elenco si potevano tirare frecce
+   *  verso la legenda, una nota di testo o una nuvola: agganciate per il programma, senza senso sul foglio. */
+  I.CONN_TARGETS = { flow: ['box', 'inventory', 'inbox'], request: ['box', 'inventory', 'inbox'] };
+  I.CONN_SOURCES = { flow: ['box', 'inventory', 'inbox'], request: ['person'] };
+  const nearEl = (w, map, px = 28, skip = [], only = null) => {
+    // la tolleranza segue lo zoom, ma con un tetto: a foglio intero 28 px valevano ~190 unita' di mondo
+    // e il rilascio si agganciava a qualunque cosa passasse di li'
+    const tol = Math.min(px / I.view.k, 70); let best = null, bd = tol;
     (map.elements || []).forEach(el => {
       if (V.isConnector(el) || el.type === 'lane' || skip.includes(el.id)) return;
+      if (only && !only.includes(el.type)) return;
       const q = R.elPos(el, map), z = R.elSize(el);
       const dx = Math.max(q.x - w.x, 0, w.x - (q.x + z.w)), dy = Math.max(q.y - w.y, 0, w.y - (q.y + z.h));
       const d = Math.hypot(dx, dy);
@@ -63,6 +70,18 @@
     return best;
   };
   I.nearEl = nearEl;
+  /** Connettore la cui linea passa entro `px` pixel dal punto (serve a non farsi rubare il tocco
+   *  dal rettangolo invisibile di un elemento che ci sta sopra). */
+  const nearConn = (w, map, px = 12) => {
+    const tol = Math.min(px / I.view.k, 30); let best = null, bd = tol;
+    (map.elements || []).forEach(c => {
+      if (!V.isConnector(c)) return;
+      const P = R.connPath(c, map); if (!P) return;
+      const pts = P.nodes && P.nodes.length ? P.nodes : [P.a, P.mid, P.b].filter(Boolean);
+      for (let i = 0; i < pts.length - 1; i++) { const d = distToSeg(w, pts[i], pts[i + 1]); if (d < bd) { bd = d; best = c; } }
+    });
+    return best;
+  };
   const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
   const pinchInfo = () => { const [a, b] = Array.from(ptrs.values()); return { d: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }; };
   const stagePt = (e) => { const r = stage.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
@@ -91,14 +110,23 @@
     if (ptrs.size > 2) return;
     const map = V.map(); const w = I.toWorld(e.clientX, e.clientY);
     const handleTarget = e.target.closest && e.target.closest('[data-handle],[data-endhandle],[data-chan-handle]');
-    const hit = hitEl(e.target); const t = effectiveTool(e, hit || handleTarget);
+    let hit = hitEl(e.target);
+    // Il rettangolo invisibile sta in uno strato sopra i connettori: senza questo, una freccia che passa
+    // sotto un omino (o sotto il suo nome) non si poteva piu' toccare. Se il tocco cade proprio sulla linea,
+    // il connettore vince. Vale solo per il rettangolo di comodo, non per il disegno vero dell'elemento.
+    const onPad = e.target.classList && e.target.classList.contains('el-hit');
+    if (onPad && I.tool === 'select') {
+      const near = nearConn(w, map, 12);
+      if (near) hit = { id: near.id, g: null, type: near.type };
+    }
+    const t = effectiveTool(e, (onPad && e.pointerType === 'pen') ? null : (hit || handleTarget));
     const kind = I.kindOf(t);
     if (e.pointerType === 'pen') seenOnce('pen', 'Penna: sulla carta vuota scrivi a matita; sugli elementi selezioni e sposti. Cambia in ⋯ → "Penna = matita".');
     else if (e.pointerType === 'touch') seenOnce('touch', 'Un dito: tocca un elemento per le azioni rapide, trascina per spostarlo, sul vuoto sposti il foglio. Due dita: zoom.');
     if (e.target.closest && e.target.closest('[data-link]')) { const link = e.target.closest('[data-link]').dataset.link; gesture = { type: 'link', link }; return; }
     if (I.pickConn) {
       const pc = I.pickConn; I.cancelPickConnect();
-      const tgt = hit && !V.isConnector(V.byId(hit.id, map)) ? hit.id : (nearEl(w, map, 28, [pc.from]) || {}).id;
+      const tgt = hit && !V.isConnector(V.byId(hit.id, map)) ? hit.id : (nearEl(w, map, 28, [pc.from], I.CONN_TARGETS[pc.ctype]) || {}).id;
       if (tgt && tgt !== pc.from) I.connectTo(pc.from, tgt, pc.ctype);
       gesture = { type: 'noop' }; return;
     }
@@ -160,7 +188,7 @@
       case 'reconnect': { gesture.moved = true; const c = V.byId(gesture.id, map); const other = gesture.end === 'from' ? c.to : c.from; const o = V.endPoint(other, map); const over = hitAt(e); const okOver = over && !V.isConnector(V.byId(over.id, map)) && over.id !== (other.el || null) ? over.id : null; gesture.over = okOver; R.ghost(`<path class="ghost" d="M${o.x} ${o.y} L${w.x} ${w.y}"/>${okOver ? (() => { const el = V.byId(okOver, map); const p = R.elPos(el, map); return `<rect class="sel-ring" x="${p.x - 4}" y="${p.y - 4}" width="${el.w + 8}" height="${el.h + 8}"/>`; })() : ''}`); break; }
       case 'resize': { const el = V.byId(gesture.id, map); const min = el.type === 'text' ? 40 : 30; el.w = Math.max(min, gesture.w0 + (w.x - gesture.start.x)); el.h = Math.max(20, gesture.h0 + (w.y - gesture.start.y)); R.updateEl(el.id, map); R.selection(I.selection, map); break; }
       case 'lasso': { const x = Math.min(w.x, gesture.start.x), y = Math.min(w.y, gesture.start.y), ww = Math.abs(w.x - gesture.start.x), hh = Math.abs(w.y - gesture.start.y); gesture.rect = { x, y, w: ww, h: hh }; R.ghost(`<rect class="lasso" x="${x}" y="${y}" width="${ww}" height="${hh}"/>`); break; }
-      case 'connect': { gesture.moved = true; const from = V.byId(gesture.from, map); const a = V.anchor(from, w); const over = hitAt(e); gesture.over = (over && over.id !== gesture.from && !V.isConnector(V.byId(over.id, map)) ? over.id : null) || (nearEl(w, map, 28, [gesture.from]) || {}).id || null; R.ghost(`<path class="ghost" d="M${a.x} ${a.y} L${w.x} ${w.y}"/>${gesture.over ? (() => { const oe = V.byId(gesture.over, map); const op = R.elPos(oe, map); return `<rect class="sel-ring ok" x="${op.x - 4}" y="${op.y - 4}" width="${oe.w + 8}" height="${oe.h + 8}"/>`; })() : ''}`); break; }
+      case 'connect': { gesture.moved = true; const from = V.byId(gesture.from, map); const a = V.anchor(from, w); const over = hitAt(e); gesture.over = (over && over.id !== gesture.from && !V.isConnector(V.byId(over.id, map)) ? over.id : null) || (nearEl(w, map, 28, [gesture.from], I.CONN_TARGETS[gesture.ctype]) || {}).id || null; R.ghost(`<path class="ghost" d="M${a.x} ${a.y} L${w.x} ${w.y}"/>${gesture.over ? (() => { const oe = V.byId(gesture.over, map); const op = R.elPos(oe, map); return `<rect class="sel-ring ok" x="${op.x - 4}" y="${op.y - 4}" width="${oe.w + 8}" height="${oe.h + 8}"/>`; })() : ''}`); break; }
       case 'create': { if (['box', 'lane', 'storm', 'fluffy', 'burst', 'text'].includes(gesture.ctype) && Math.hypot(e.clientX - gesture.startClient.x, e.clientY - gesture.startClient.y) > 8) { gesture.rect = { x: Math.min(w.x, gesture.start.x), y: Math.min(w.y, gesture.start.y), w: Math.abs(w.x - gesture.start.x), h: Math.abs(w.y - gesture.start.y) }; R.ghost(`<rect class="ghost" x="${gesture.rect.x}" y="${gesture.rect.y}" width="${gesture.rect.w}" height="${gesture.rect.h}"/>`); } break; }
     }
   }
@@ -184,8 +212,12 @@
       case 'reconnect': {
         R.ghost(''); const c = V.byId(g.id, map); if (!c) break;
         const over = hitAt(e); const other = g.end === 'from' ? c.to : c.from;
-        const okOver = (over && !V.isConnector(V.byId(over.id, map)) && over.id !== (other.el || null) ? over.id : g.over) || (g.moved ? (nearEl(w, map, 28, [c.id, other.el].filter(Boolean)) || {}).id : null);
+        const okOver = (over && !V.isConnector(V.byId(over.id, map)) && over.id !== (other.el || null) ? over.id : g.over) || (g.moved ? (nearEl(w, map, 28, [c.id, other.el].filter(Boolean), (g.end === 'from' ? I.CONN_SOURCES : I.CONN_TARGETS)[c.type]) || {}).id : null);
         const before = clone(c[g.end]);
+        const okList = (g.end === 'from' ? I.CONN_SOURCES : I.CONN_TARGETS)[c.type];
+        const overEl = okOver && V.byId(okOver, map);
+        const okType = !okList || (overEl && okList.includes(overEl.type));
+        if (okOver && !okType) { I.hint('Quel capo non puo' + String.fromCharCode(39) + 'attaccarsi li\'.', 3000); I.select([c.id], { keepPop: true }); break; }
         if (okOver) { V.commit({ t: 'update', id: c.id, after: { [g.end]: { el: okOver } }, before: { [g.end]: before } }, 'ricollega'); I.hint('Freccia ricollegata.', 1500); }
         else if (g.moved) { V.commit({ t: 'update', id: c.id, after: { [g.end]: { x: Math.round(w.x), y: Math.round(w.y) } }, before: { [g.end]: before } }, 'stacca'); I.hint('Estremità staccata: trascina il cerchio su un altro elemento per ricollegarla.', 3500); }
         I.select([c.id], { keepPop: true }); break;
@@ -216,7 +248,7 @@
         const over = hitAt(e);
         const okOver = over && over.id !== g.from && !V.isConnector(V.byId(over.id, map)) ? over.id : g.over;
         // se il dito non ha centrato nulla, si prende l'elemento piu' vicino invece di buttare via il gesto
-        const toId = okOver || (nearEl(w, map, 28, [g.from]) || {}).id;
+        const toId = okOver || (nearEl(w, map, 28, [g.from], I.CONN_TARGETS[g.ctype]) || {}).id;
         if (!toId) {
           // rilasciato nel vuoto: invece di far sparire tutto, si propone di mettere li' l'elemento di arrivo
           if (g.moved && V.ui && V.ui.proposePlace) V.ui.proposePlace(e.clientX, e.clientY, g.ctype, g.from, w);
@@ -304,6 +336,9 @@
     if (!fromId || !toId || fromId === toId) return null;
     const a = V.byId(fromId, map), b = V.byId(toId, map);
     if (!a || !b || V.isConnector(a) || V.isConnector(b)) return null;
+    const okTo = I.CONN_TARGETS[ctype], okFrom = I.CONN_SOURCES[ctype];
+    if (okFrom && !okFrom.includes(a.type)) { I.hint(ctype === 'request' ? 'La via di richiesta parte da una persona.' : 'La freccia di flusso parte da un passo.', 3000); return null; }
+    if (okTo && !okTo.includes(b.type)) { I.hint('Qui non ci arriva un collegamento: scegli un passo (o una scorta/in-box).', 3000); return null; }
     const c = V.newConnector(ctype, { el: fromId }, { el: toId });
     // ogni via che parte dallo stesso richiedente prende una corsia diversa
     if (ctype === 'request') c.props.offset = map.elements.filter(x => x.type === 'request' && x.from.el === fromId).length;
@@ -322,11 +357,19 @@
     R.ghost(rings);
     I.hint(ctype === 'flow' ? 'Tocca il passo di arrivo (tocca il foglio vuoto per annullare).' : 'Tocca il passo a cui arriva la richiesta (tocca il foglio vuoto per annullare).', 0);
   };
-  I.cancelPickConnect = () => { I.pickConn = null; svg.classList.remove('picking'); R.ghost(''); I.hint(''); };
+  I.cancelPickConnect = () => {
+    I.pickConn = null; svg.classList.remove('picking'); R.ghost(''); I.hint('');
+    // gli anelli dei bersagli erano disegnati nello stesso strato di anello e maniglie della selezione:
+    // svuotarlo lasciava l'elemento selezionato ma senza contorno, e il tocco dopo apriva il pop-up
+    R.selection(I.selection, V.map());
+  };
 
   /** Trascinato nel vuoto: l'elemento nuovo nasce li' e il collegamento lo raggiunge, in un solo passo di undo. */
   I.placeAndConnect = (kind, w, fromId, ctype) => {
     const map = V.map(); const T = V.TYPES[kind]; const P = V.paperOf(map);
+    // col menu aperto si puo' annullare (Ctrl+Z) la creazione dell'elemento di partenza: senza questo
+    // controllo nascerebbe una freccia con un capo nel vuoto, e il percorso finirebbe a coordinate NaN
+    if (!V.byId(fromId, map)) { I.hint('L' + String.fromCharCode(39) + 'elemento di partenza non c' + String.fromCharCode(39) + 'e' + String.fromCharCode(39) + ' piu\'.', 2500); return; }
     const nx = Math.max(0, Math.min(P.w - T.w, Math.round(w.x - T.w / 2)));
     const ny = Math.max(0, Math.min(P.h - T.h, Math.round(w.y - T.h / 2)));
     const el = V.newElement(kind, nx, ny);

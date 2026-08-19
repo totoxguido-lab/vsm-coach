@@ -207,8 +207,10 @@ window.VSM = window.VSM || {};
     return V.doc;
   };
   /** una mappa salvata prima che il foglio diventasse grande resta della sua misura: spostarle gli elementi sarebbe peggio */
-  /** aspetto ereditato: una mappa salvata prima che esistessero foglio grande e modalità dei collegamenti
-      non deve cambiare aspetto quando la riapri — foglio A3 e tratto curvo come quando è stata disegnata */
+  /** aspetto ereditato: una mappa salvata prima che esistessero il foglio grande e le modalità dei
+      collegamenti riprende il foglio A3. Il tratto invece viene normalizzato a "dritta", come ogni mappa
+      nuova: è la lettura scelta per l'app, e la modalità resta cambiabile per singola mappa dal menu ⋯.
+      (Le mappe che hanno già una modalità salvata non vengono toccate.) */
   const keepLook = (m) => { if (m && !m.paper) m.paper = clone(V.PAPER_A3); if (m && !m.links) m.links = { mode: 'dritta' }; return m; };
   V.replaceDoc = (d) => { if (!d || d.version !== 2 || !d.maps) throw new Error('Formato non riconosciuto (serve un JSON di VSM Coach v2)'); V.doc = d; Object.values(V.doc.maps).forEach(m => { keepLook(m); Object.assign(m, Object.assign(V.newMap(), m)); }); if (!V.doc.maps[V.doc.activeMapId]) V.doc.activeMapId = Object.keys(V.doc.maps)[0]; undoStack.length = 0; redoStack.length = 0; V.save(); emit({ switched: true }); };
   V.importMaps = (d) => { // aggiunge le mappe di un altro documento senza sostituire (id già esistenti → rigenerati, per non perdere le modifiche fatte nel frattempo)

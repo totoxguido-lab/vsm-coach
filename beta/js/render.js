@@ -602,7 +602,7 @@
    *  riquadro di 40x78) e col dito diventano quasi impossibili da prendere — collegarne uno richiedeva
    *  piu' tentativi. Un rettangolo trasparente da' a ognuno un bersaglio pieno, un po' piu' grande del
    *  disegno. La corsia e' esclusa: e' gia' una fascia piena e coprirebbe tutto cio' che contiene. */
-  const HIT_PAD = 6;
+  const HIT_PAD = 3; // stretto: ogni pixel in piu' e' spazio rubato al lazo, alla matita e alle frecce sottostanti
   const hitRect = (el) => {
     if (el.type === 'lane') return '';
     const z = R.elSize(el);
