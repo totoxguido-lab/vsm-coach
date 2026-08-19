@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="VSM Coach">
+<meta name="theme-color" content="#dfe3e9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14171b" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+<title>VSM Coach (beta)</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app">
+  <header class="bar">
+    <div class="brand"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 12h4M14 12h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M10.5 10.5 12 13.5 13.5 10.5z" fill="#c8321e"/></svg><span class="hide-m">VSM Coach</span></div>
+    <div id="crumbs"></div>
+    <input id="map-title" placeholder="Titolo della mappa" aria-label="Titolo della mappa">
+    <span id="map-kind">stato attuale</span>
+    <div class="seg" role="group" aria-label="Attuale / futuro"><button id="tab-current" aria-pressed="true">Attuale</button><button id="tab-future" aria-pressed="false">Futuro</button></div>
+    <div class="spacer"></div>
+    <button class="btn icon" id="btn-undo" title="Annulla (Cmd/Ctrl+Z)" aria-label="Annulla">↶</button>
+    <button class="btn icon" id="btn-redo" title="Ripeti (Cmd/Ctrl+Shift+Z)" aria-label="Ripeti">↷</button>
+    <button class="btn" id="btn-help" title="Come si usa" aria-label="Come si usa">?</button>
+    <button class="btn hide-m" id="btn-legend" aria-pressed="false" title="Legenda dei simboli">Legenda</button>
+    <button class="btn" id="btn-guide" aria-pressed="false" title="Guida passo-passo (facoltativa)">Guida</button>
+    <button class="btn" id="btn-maps" title="Le tue mappe">Mappe</button>
+    <button class="btn icon" id="btn-menu" title="Menu" aria-label="Menu" aria-haspopup="menu">⋯</button>
+  </header>
+
+  <main>
+    <div id="stage">
+      <svg id="canvas" xmlns="http://www.w3.org/2000/svg" role="application" aria-label="Foglio della mappa del flusso di valore"></svg>
+      <div id="hint" class="hidden" role="status" aria-live="polite"></div>
+      <button id="coach-fab" title="Chiedi al coach (legge il foglio)" aria-label="Chiedi al coach">✦</button>
+      <button id="ui-toggle" aria-pressed="false" title="Nascondi l'interfaccia (più foglio)" aria-label="Nascondi l'interfaccia">⇱</button>
+      <div id="palette" role="toolbar" aria-label="Strumenti"></div>
+      <div id="more-tools" class="hidden"></div>
+      <div id="suggest" class="hidden" role="status" aria-live="polite"></div>
+      <div id="zoomctl">
+        <button class="btn" id="zoom-in" title="Ingrandisci" aria-label="Ingrandisci">+</button>
+        <button class="btn" id="zoom-fit" title="Adatta il foglio" aria-label="Adatta il foglio">⤢</button>
+        <button class="btn" id="zoom-out" title="Riduci" aria-label="Riduci">−</button>
+      </div>
+      <div id="quick" class="hidden" role="toolbar" aria-label="Azioni rapide sull'elemento selezionato"></div>
+      <div id="pop" class="hidden"></div>
+    </div>
+
+    <aside id="drawer" class="closed">
+      <div class="tabs">
+        <button id="tab-guide" aria-selected="true">Guida</button>
+        <button id="tab-coach" aria-selected="false">Coach ✦</button>
+        <button id="tab-plan" aria-selected="false">Piano</button>
+        <button id="tab-legend" aria-selected="false">Legenda</button>
+        <button class="close" id="drawer-close" title="Chiudi" aria-label="Chiudi il cassetto">✕</button>
+      </div>
+      <section class="pane" id="pane-guide"><div class="pane-body" id="guide-body"></div></section>
+      <section class="pane hidden" id="pane-coach">
+        <div id="chat"></div>
+        <div class="quick">
+          <button class="btn small" data-q="Cosa faccio adesso? Guarda il foglio e dimmi il prossimo passo e lo strumento da usare.">Cosa faccio adesso?</button>
+          <button class="btn small" data-q="Rivedi il foglio e dimmi le 1-3 correzioni più importanti (con patch applicabili se servono).">Rivedi il foglio</button>
+          <button class="btn small" data-q="Che cosa, del modo in cui il lavoro accade ora, non è ideale? Proponi le nuvole temporalesche da aggiungere, con muda e regola.">Che cosa non è ideale?</button>
+          <button class="btn small" data-q="Proponi lo stato futuro: meno vie di richiesta, meno passi, tempi standard derivati dai dati; crea la mappa futura con una patch e spiega ogni cambiamento con 'avvicina all'ideale?'.">Proponi lo stato futuro</button>
+        </div>
+        <div class="composer"><textarea id="chat-input" rows="1" placeholder="Scrivi al coach…" aria-label="Messaggio al coach" autocomplete="off"></textarea><button class="btn primary" id="chat-send">Invia</button></div>
+        <div class="status"><span class="dot" id="status-dot"></span><span id="status-text"></span><span class="spacer"></span><button class="btn small ghost" id="btn-clear-chat">Svuota</button><button class="btn small ghost" id="btn-settings" aria-label="Impostazioni coach" title="Impostazioni coach">⚙︎</button></div>
+      </section>
+      <section class="pane hidden" id="pane-plan"><div class="pane-body" id="plan-body"></div></section>
+      <section class="pane hidden" id="pane-legend"><div class="pane-body" id="legend-body"></div></section>
+    </aside>
+  </main>
+</div>
+
+<div id="menu" class="hidden">
+  <button data-m="new">Nuova mappa (foglio vuoto)</button>
+  <button data-m="future">Crea / apri lo stato futuro di questa mappa</button>
+  <button data-m="detail">Nuova mappa di dettaglio collegata</button>
+  <button data-m="example">Carica l'esempio del libro</button>
+  <button data-m="legend">Legenda dei simboli</button>
+  <button class="compact-only" data-m="current">Torna allo stato attuale</button>
+  <button class="compact-only" data-m="guide">Guida passo-passo</button>
+  <button class="compact-only" data-m="maps">Le tue mappe</button>
+  <button class="compact-only" data-m="help">Come si usa</button>
+  <hr>
+  <button data-m="open">Apri JSON…</button>
+  <button data-m="save">Salva JSON</button>
+  <button data-m="svg">Esporta SVG</button>
+  <button data-m="print">Stampa A3</button>
+  <hr>
+  <button id="btn-link-mode">Collegamenti: squadrata</button>
+  <button id="btn-trace" aria-pressed="true">✓ Evidenzia dove va ciò che selezioni</button>
+  <button id="btn-tools-left" aria-pressed="false">○ Strumenti in colonna a sinistra</button>
+  <button id="btn-overlays" aria-pressed="true">✓ Riepilogo e timeline sul foglio</button>
+  <button id="btn-pen-mode" aria-pressed="true">✓ Penna Apple = matita (sulla carta vuota)</button>
+  <hr>
+  <button data-m="settings">Impostazioni coach…</button>
+  <button data-m="clear-ink">Cancella tutto l'inchiostro</button>
+  <button data-m="delete" class="danger">Elimina questa mappa</button>
+</div>
+<input type="file" id="file-open" accept="application/json" hidden>
+
+<dialog id="dlg-help">
+  <div class="d-head">Come si usa VSM Coach — in 3 mosse</div>
+  <div class="d-body">
+    <ol class="howto">
+      <li><b>Metti gli elementi sul foglio.</b> Scegli uno strumento in basso (Passo, Attesa, Persona, Problema…) e <b>tocca il foglio</b> dove vuoi metterlo. Sul foglio vuoto puoi toccare direttamente i segnaposto ① Chi chiede? e ② Primo passo.</li>
+      <li><b>Collega e completa.</b> Tocca un elemento: sopra compaiono le <b>azioni rapide</b> (es. su un passo: <i>+ Passo dopo</i> crea il successivo già collegato con l'attesa; <i>← Richiesta</i> traccia la via dal richiedente). Con <b>Flusso</b> o <b>Richiesta</b>: <b>tieni premuto</b> su un elemento e trascina fino all'altro. Il pop-up ha i campi (tempi Hi/Lo/Avg, attività, muda…) e il <b>?</b> che spiega cos'è secondo il libro. Per staccare o spostare una freccia: selezionala e trascina il cerchio all'estremità.</li>
+      <li><b>Scrivi a mano e chiedi al coach.</b> <b>Matita</b>: tieni premuto e trascina per tracciare (con l'Apple Pencil disegni sempre, col dito e col mouse dopo aver scelto la matita); <b>Gomma</b> per cancellare. <b>✦</b> in alto a destra: il coach legge il foglio, dice cosa manca e propone modifiche da applicare con un tocco. ↶ annulla tutto.</li>
+    </ol>
+    <p class="hint"><b>Blocchi 🔒</b>: nuvole, kaizen, testi, scorte, in-box e distanze si <b>bloccano da soli</b> al passo su cui li lasci cadere (o alla freccia vicina) e da lì in poi si muovono con lui; i delta si agganciano alle frecce. "Blocca a…" nelle azioni rapide sceglie il genitore a mano (anche per più elementi selezionati col lazo: "Blocca tutti a…"); "Sblocca" li libera. Selezionando un elemento vedi a chi è bloccato (linea tratteggiata) e, su un passo, quanti elementi porta con sé (⛶ li seleziona tutti). Eliminare il genitore libera i figli.</p>
+    <p class="hint"><b>Su schermi piccoli</b>: un tocco sulla <b>carta vuota</b> chiude quello che è aperto (selezione, pop-up). Il pulsante <b>⇱</b> in alto a sinistra nasconde l'interfaccia e lascia solo il foglio: resta così finché non lo ripremi (da tastiera: <b>U</b>). Sul telefono l'intestazione tiene solo il titolo e l'essenziale: Guida, Mappe, Legenda e stato attuale/futuro stanno nel menu <b>⋯</b>, dove c'è anche <b>Strumenti in colonna a sinistra</b> se in basso ti coprono il foglio.</p>
+    <p class="hint"><b>Legenda</b> (in alto, o nel menu ⋯): tutti i simboli del libro con il loro significato e le varianti; da lì si sceglie anche lo strumento. Sposta: trascina. Zoom: pinch o Ctrl+rotella. Selezione multipla: lazo su area vuota. Canc elimina. Le mappe si salvano da sole; menu ⋯ per JSON, SVG, stampa A3, stato futuro, mappe di dettaglio.</p>
+  </div>
+  <div class="d-foot"><button class="btn" id="help-example">Carica l'esempio del libro</button><button class="btn primary" id="help-close">Inizia</button></div>
+</dialog>
+
+<dialog id="dlg-maps">
+  <div class="d-head">Le tue mappe</div>
+  <div class="d-body"><div id="maplist"></div></div>
+  <div class="d-foot"><button class="btn" id="maps-close">Chiudi</button></div>
+</dialog>
+
+<dialog id="dlg-settings">
+  <div class="d-head">Impostazioni coach (API)</div>
+  <div class="d-body">
+    <div class="presets" id="presets">
+      <button class="btn small" data-preset="kimi">Kimi (Moonshot)</button>
+      <button class="btn small" data-preset="glm">GLM (Z.ai)</button>
+      <button class="btn small" data-preset="openrouter">OpenRouter</button>
+      <button class="btn small" data-preset="custom">Personalizzato</button>
+    </div>
+    <div class="field"><label for="s-base">Endpoint base (OpenAI-compatibile)</label><input id="s-base" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://api.moonshot.ai/v1"></div>
+    <div class="row"><div class="field"><label for="s-model">Modello</label><input id="s-model" autocomplete="off" spellcheck="false"></div><div class="field"><label>&nbsp;</label><button class="btn" id="s-list">Elenca modelli</button></div></div>
+    <div class="field"><label for="s-key">Chiave API</label><input id="s-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…"></div>
+    <div class="row"><div class="field"><label for="s-temp">Temperatura</label><input id="s-temp" type="number" inputmode="decimal" step="0.1" min="0" max="1.5"></div><div class="field"><label for="s-max">Max token risposta</label><input id="s-max" type="number" inputmode="numeric" step="100" min="200"></div></div>
+    <label class="check"><input type="checkbox" id="s-proxy"> <span>Passa dal proxy locale (<code>serve.py</code>) — se il browser blocca la chiamata (CORS) o per tenere la chiave sul computer.</span></label>
+    <label class="check"><input type="checkbox" id="s-stream" checked> <span>Risposta in streaming</span></label>
+    <label class="check"><input type="checkbox" id="s-suggest" checked> <span>Suggerimenti di strumento (regole locali, badge discreto sulla palette)</span></label>
+    <div id="s-models" class="hint" style="margin-top:8px"></div>
+    <p class="notice warn" style="margin-top:10px">Le mappe descrivono processi: nessun dato identificativo di pazienti. La chiave resta in questo browser.</p>
+  </div>
+  <div class="d-foot"><button class="btn" id="s-cancel">Annulla</button><button class="btn primary" id="s-ok">Salva</button></div>
+</dialog>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script src="prompt.js"></script>
+<script src="js/model.js"></script>
+<script src="js/render.js"></script>
+<script src="js/interact.js"></script>
+<script src="js/panels.js"></script>
+<script src="js/legend.js"></script>
+<script src="js/coach.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
