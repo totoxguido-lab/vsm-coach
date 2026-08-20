@@ -132,6 +132,10 @@
     }
     const t = effectiveTool(e, (onPad && e.pointerType === 'pen') ? null : (hit || handleTarget));
     const kind = I.kindOf(t);
+    // Ideale validato (lucchetto chiuso): si naviga, si guarda, non si tocca. Il tocco di selezione
+    // resta (per leggere i dettagli) ma non trascina; ogni modifica e' comunque rifiutata da V.commit.
+    const frozen = !!map.validated;
+    if (frozen && !['select', 'pan', 'whatis'].includes(t)) { I.hint('Ideale validato \u{1F512}: apri il lucchetto in alto per modificarlo.', 2500); gesture = { type: 'noop' }; return; }
     if (e.pointerType === 'pen') seenOnce('pen', 'Penna: sulla carta vuota scrivi a matita; sugli elementi selezioni e sposti. Cambia in ⋯ → "Penna = matita".');
     else if (e.pointerType === 'touch') seenOnce('touch', 'Un dito: tocca un elemento per le azioni rapide, trascina per spostarlo, sul vuoto sposti il foglio. Due dita: zoom.');
     if (e.target.closest && e.target.closest('[data-link]')) { const link = e.target.closest('[data-link]').dataset.link; gesture = { type: 'link', link }; return; }
@@ -153,12 +157,11 @@
       if (hit) { gesture = { type: 'whatis', hitId: hit.id }; return; }
       if (V.ui.closeGuideCard) V.ui.closeGuideCard(); startPan(e); return;
     }
-    if (t === 'select' || kind === 'create') {
+    if ((t === 'select' || kind === 'create') && !frozen) {
       const ch = e.target.closest && e.target.closest('[data-chan-handle]'); if (ch) { const c = V.byId(ch.dataset.chanHandle, map); gesture = { type: 'chan', id: c.id, t0: c.props.t == null ? 0.5 : c.props.t, startClient: { x: e.clientX, y: e.clientY }, moved: false }; return; }
       const eh = e.target.closest && e.target.closest('[data-endhandle]'); if (eh) { gesture = { type: 'reconnect', id: eh.dataset.conn, end: eh.dataset.endhandle, moved: false }; V.ui.hideQuick && V.ui.hideQuick(); return; }
       const rh = e.target.closest && e.target.closest('[data-handle]'); if (rh) { const el = V.byId(rh.dataset.handle, map); if (el) { gesture = { type: 'resize', id: el.id, start: w, w0: el.w, h0: el.h }; return; } }
     }
-    if (e.target.closest && e.target.closest('[data-title]')) { gesture = { type: 'title' }; return; }
     if (t === 'pan' || (e.pointerType === 'touch' && I.fingerPans && (t === 'select' && !hit) )) { startPan(e); return; }
     if (t === 'area') { gesture = { type: 'lasso', start: w, startClient: { x: e.clientX, y: e.clientY }, shift: e.shiftKey, fromTool: true }; return; }
     if (t === 'ink') { const s = { id: uid(), color: I.ink.color, width: I.ink.width, points: [[+w.x.toFixed(1), +w.y.toFixed(1)]] }; gesture = { type: 'ink', s, pathEl: R.addStrokeEl(s), last: w }; return; }
@@ -175,7 +178,7 @@
     // si prende il punto di via piu' vicino, o se ne crea uno nuovo dove si e' toccato
     // vale sia il tocco diretto sulla linea (conn-hit) sia quello arrivato dal margine di un elemento
     // vicino via nearConn (caso tipico: il delta agganciato copre il centro della freccia)
-    if (hit && t === 'select' && V.isConnector(V.byId(hit.id, map)) && e.target.classList && (e.target.classList.contains('conn-hit') || e.target.classList.contains('el-hit'))) {
+    if (hit && t === 'select' && !frozen && V.isConnector(V.byId(hit.id, map)) && e.target.classList && (e.target.classList.contains('conn-hit') || e.target.classList.contains('el-hit'))) {
       const c = V.byId(hit.id, map); const via = Array.isArray(c.props.via) ? c.props.via.map(v2 => ({ x: v2.x, y: v2.y })) : [];
       const grab = 16 / I.view.k; let idx = -1;
       via.forEach((v2, i2) => { if (Math.hypot(v2.x - w.x, v2.y - w.y) < grab && idx < 0) idx = i2; });
@@ -186,7 +189,7 @@
     if (hit) {
       const el = V.byId(hit.id, map); const wasSelected = I.selection.includes(hit.id);
       if (!wasSelected) I.select([hit.id], { keepPop: true });
-      const moving = I.selection.map(id => V.byId(id, map)).filter(x => x && !V.isConnector(x));
+      const moving = frozen ? [] : I.selection.map(id => V.byId(id, map)).filter(x => x && !V.isConnector(x));
       gesture = { type: 'drag', wasSelected, ids: moving.map(x => x.id), start: w, startClient: { x: e.clientX, y: e.clientY }, before: moving.map(x => (x.props.lockTo || (x.type === 'delta' && x.props.attachedTo)) && !moving.some(p => p.id === (x.props.lockTo || x.props.attachedTo)) ? { id: x.id, dx: x.props.dx || 0, dy: x.props.dy || 0, attached: true } : (x.props.lockTo || (x.type === 'delta' && x.props.attachedTo)) ? { id: x.id, skip: true } : { id: x.id, x: x.x, y: x.y }), moved: false, hitId: hit.id, isConn: V.isConnector(el) };
       return;
     }
@@ -275,7 +278,6 @@
         else if (g.moved) { V.commit({ t: 'update', id: c.id, after: { [g.end]: { x: Math.round(w.x), y: Math.round(w.y) } }, before: { [g.end]: before } }, 'stacca'); I.hint('Estremità staccata: trascina il cerchio su un altro elemento per ricollegarla.', 3500); }
         I.select([c.id], { keepPop: true }); break;
       }
-      case 'title': V.pop.openTitle(); break;
       case 'whatis': { const el2 = V.byId(g.hitId, map); if (el2 && V.ui.showWhatIs) V.ui.showWhatIs(el2, e.clientX, e.clientY); break; }
       case 'via': {
         const c = V.byId(g.id, map); if (!c) break;

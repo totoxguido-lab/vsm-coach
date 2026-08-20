@@ -25,10 +25,48 @@
   const slug = (s) => (s || 'vsm').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 40) || 'vsm';
 
   function bindHeader() {
-    $('#map-title').addEventListener('input', (e) => V.commit({ t: 'meta', after: { title: e.target.value } }, 'titolo', { silent: true }));
-    $('#tab-current').onclick = () => { const m = V.map(); const c = V.currentOf(m); if (c && c !== m) UI.openMap(c.id); else if (m.kind !== 'current') UI.toast('Questa mappa non ha uno stato attuale accoppiato.'); };
-    // "Futuro" crea direttamente la copia se non esiste: niente conferme, si annulla eliminando la mappa
-    $('#tab-future').onclick = () => { const m = V.map(); const f = V.futureOf(m); if (f && f !== m) UI.openMap(f.id); else if (m.kind === 'current') { const nf = V.createFuture(m); UI.openMap(nf.id); UI.toast('Stato futuro creato come copia: ora semplifica. Se non serve: menu ⋯ → Elimina.'); } else if (m.kind !== 'future') UI.toast('I sotto-fogli non hanno uno stato futuro: torna alla mappa madre.'); };
+    // il titolo non si scrive piu' inline: il blocco in barra apre il pop-up con tutti i dati (e la modifica)
+    $('#map-head').onclick = () => { if (V.pop.current === '__title__') V.pop.close(); else V.pop.openTitle(); };
+    // Attuale a giri: un tocco porta all'ultimo giro; un tocco quando si e' gia' sull'attuale apre
+    // l'elenco dei giri (apri, rinomina col ✎, «+ nuovo giro»). L'Ideale e' uno solo per catena.
+    const escT = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const versList = $('#vers-list');
+    const renderVers = () => {
+      const cur = V.map(); const chain = V.versionsOf(cur);
+      versList.innerHTML = chain.map(v => `<div class="vrow"><button data-v="${v.id}" aria-current="${v.id === cur.id}">${escT(v.verName || 'attuale')}</button><button class="vrn" data-rn="${v.id}" title="Rinomina questo giro" aria-label="Rinomina">✎</button></div>`).join('')
+        + `<button class="vnew" data-vnew="1">+ nuovo giro (copia di questo)</button>`;
+      $$('[data-v]', versList).forEach(b => b.onclick = () => { versList.classList.add('hidden'); if (b.dataset.v !== V.map().id) UI.openMap(b.dataset.v); });
+      $$('[data-rn]', versList).forEach(b => b.onclick = () => {
+        const v = V.doc.maps[b.dataset.rn]; if (!v) return; const row = b.closest('.vrow');
+        row.innerHTML = `<input value="${escT(v.verName || '')}" maxlength="40" aria-label="Nome del giro">`;
+        const inp = row.querySelector('input'); inp.focus(); inp.select();
+        const done = () => { const nv = inp.value.trim(); if (nv) { v.verName = nv; V.save(); } renderVers(); UI.renderHeader(); };
+        inp.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') inp.blur(); if (ev.key === 'Escape') { inp.value = v.verName || ''; inp.blur(); } });
+        inp.addEventListener('blur', done);
+      });
+      $('[data-vnew]', versList).onclick = () => { versList.classList.add('hidden'); const base = V.map().kind === 'current' ? V.map() : V.currentOf(V.map()); if (!base) return; const nv = V.createVersion(base); UI.openMap(nv.id); UI.toast('Nuovo giro dell’attuale creato come copia: aggiorna quello che è cambiato.'); };
+    };
+    document.addEventListener('pointerdown', (ev) => { if (versList.classList.contains('hidden')) return; if (ev.target.closest && (ev.target.closest('#vers-list') || ev.target.closest('#tab-current'))) return; versList.classList.add('hidden'); }, true);
+    $('#tab-current').onclick = () => {
+      const m = V.map();
+      if (m.kind === 'current') { renderVers(); versList.classList.toggle('hidden'); return; }
+      const chain = V.versionsOf(m);
+      if (chain.length) UI.openMap(chain[chain.length - 1].id);
+      else UI.toast('Questa mappa non ha uno stato attuale collegato.');
+    };
+    // "Ideale" apre l'unico ideale della catena, o lo crea come copia: niente conferme
+    $('#tab-future').onclick = () => {
+      const m = V.map(); const f = V.idealOf(m);
+      if (f === m) return;
+      if (f) { UI.openMap(f.id); return; }
+      if (m.kind === 'current') { const nf = V.createFuture(m); UI.openMap(nf.id); UI.toast('Ideale creato come copia dell’attuale: disegna dove volete arrivare, poi validalo col lucchetto.'); }
+      else UI.toast('I sotto-fogli non hanno un Ideale: torna alla mappa madre.');
+    };
+    $('#tab-lock').onclick = () => {
+      const m = V.map(); if (m.kind !== 'future') return;
+      V.setValidated(m, !m.validated);
+      UI.toast(m.validated ? 'Ideale validato \u{1F512}: per modificarlo riapri il lucchetto.' : 'Lucchetto aperto \u{1F513}: l’Ideale si può modificare.');
+    };
     $('#btn-undo').onclick = () => V.undo(); $('#btn-redo').onclick = () => V.redo();
     $('#drawer-close').onclick = UI.closeDrawer;
     ['coach', 'plan'].forEach(t => $('#tab-' + t).onclick = () => UI.showTab(t));
@@ -84,9 +122,9 @@
   function menuAction(a) {
     const map = V.map();
     switch (a) {
-      case 'new': { UI.closeDrawer(); const m = V.addMap(V.newMap({ title: '', authors: map.authors, unit: map.unit })); UI.openMap(m.id); I.fit(); UI.toast('Nuovo foglio. Tocca il titolo in alto a destra per intestarlo.'); break; }
+      case 'new': { UI.closeDrawer(); const m = V.addMap(V.newMap({ title: '', authors: map.authors, unit: map.unit })); UI.openMap(m.id); I.fit(); UI.toast('Nuovo foglio. Tocca il titolo in barra, in alto a sinistra, per intestarlo.'); break; }
       // solo su schermi piccoli, dove il selettore Attuale/Futuro in testata non c'è
-      case 'af': { if (map.kind === 'future') { const c = V.currentOf(map); if (c && c !== map) UI.openMap(c.id); } else { const f = V.futureOf(map); if (f && f !== map) UI.openMap(f.id); else if (map.kind === 'current') { const nf = V.createFuture(map); UI.openMap(nf.id); UI.toast('Stato futuro creato come copia: ora semplifica.'); } else UI.toast('I sotto-fogli non hanno uno stato futuro.'); } break; }
+      case 'af': { if (map.kind === 'future') { const chain = V.versionsOf(map); if (chain.length) UI.openMap(chain[chain.length - 1].id); } else { const f = V.idealOf(map); if (f && f !== map) UI.openMap(f.id); else if (map.kind === 'current') { const nf = V.createFuture(map); UI.openMap(nf.id); UI.toast('Ideale creato come copia: disegna dove volete arrivare.'); } else UI.toast('I sotto-fogli non hanno un Ideale.'); } break; }
       case 'detail': { const d = V.createDetail(map, ''); UI.openMap(d.id); I.fit(); UI.toast('Mappa di dettaglio: collegala da un box (pop-up → Collega a un\'altra mappa).'); break; }
       case 'example': { const m = V.addMap(V.example()); UI.openMap(m.id); I.fit(); UI.toast('Esempio caricato (numeri dalla Fig. 5.1 del libro).'); break; }
       case 'open': $('#file-open').click(); break;

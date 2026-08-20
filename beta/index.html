@@ -19,14 +19,18 @@
 <body>
 <div id="app">
   <header class="bar">
-    <div class="brand"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 12h4M14 12h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M10.5 10.5 12 13.5 13.5 10.5z" fill="#c8321e"/></svg><span class="hide-m">VSM Coach</span></div>
+    <div class="brand" title="VSM Coach"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 12h4M14 12h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M10.5 10.5 12 13.5 13.5 10.5z" fill="#c8321e"/></svg></div>
     <div id="crumbs"></div>
-    <input id="map-title" placeholder="Titolo della mappa" aria-label="Titolo della mappa">
-    <span id="map-kind">stato attuale</span>
-    <div class="seg" role="group" aria-label="Attuale / futuro"><button id="tab-current" aria-pressed="true">Attuale</button><button id="tab-future" aria-pressed="false">Futuro</button></div>
+    <button id="map-head" title="Titolo, data, autori — tocca per vedere e modificare"><span class="mh-txt"><b id="mh-title"></b><small id="mh-sub"></small></span><span class="mh-pen" aria-hidden="true">✎</span></button>
     <div class="spacer"></div>
     <button class="btn icon" id="btn-undo" title="Annulla (Cmd/Ctrl+Z)" aria-label="Annulla">↶</button>
     <button class="btn icon" id="btn-redo" title="Ripeti (Cmd/Ctrl+Shift+Z)" aria-label="Ripeti">↷</button>
+    <div class="seg" role="group" aria-label="Attuale / ideale">
+      <button id="tab-current" aria-pressed="true" title="I giri dello stato attuale: tocca di nuovo per l'elenco e per un nuovo giro"><span>Attuale</span><small id="cur-ver">mappa iniziale</small></button>
+      <button id="tab-future" aria-pressed="false" title="Dove vogliamo arrivare: uno solo, col lucchetto di validazione"><span>Ideale</span><small id="ideal-state" class="hidden">🔒</small></button>
+      <button id="tab-lock" class="hidden" title="Lucchetto dell'Ideale: chiuso = validato, nessuna modifica" aria-label="Lucchetto dell'Ideale">🔓</button>
+    </div>
+    <div id="vers-list" class="hidden" role="menu" aria-label="Giri dello stato attuale"></div>
     <button class="btn" id="btn-maps" title="Le tue mappe">Mappe</button>
     <button class="btn icon" id="btn-menu" title="Menu" aria-label="Menu" aria-haspopup="menu">⋯</button>
   </header>
@@ -82,7 +86,7 @@
   <button data-m="new"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9z"/><path d="M13 3v6h6"/><path d="M12 12v6M9 15h6"/></svg>Nuova mappa</button>
   <button data-m="detail"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="8" y="3" width="13" height="13" rx="1.5"/><path d="M16 16v3a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h3" stroke-linecap="round"/></svg>Sotto-foglio di dettaglio</button>
   <button data-m="guide"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.6 2.6 0 1 1 3.6 2.4c-.9.4-1.2 1-1.2 1.8"/><circle cx="12" cy="17" r=".4" fill="currentColor"/></svg>Guida pratica</button>
-  <button class="compact-only" data-m="af"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13M14 4l4 4-4 4M20 16H7M10 12l-4 4 4 4"/></svg>Attuale ⇄ Futuro</button>
+  <button class="compact-only" data-m="af"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13M14 4l4 4-4 4M20 16H7M10 12l-4 4 4 4"/></svg>Attuale ⇄ Ideale</button>
   <button class="compact-only" data-m="maps"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>Le tue mappe</button>
   <hr>
   <button class="sub-head" data-sub="file" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 5a1 1 0 0 1 1-1h11l4 4v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M8 4v5h7V4M7 20v-7h10v7"/></svg>File e stampa<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>

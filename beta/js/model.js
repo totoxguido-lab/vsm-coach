@@ -106,6 +106,9 @@ window.VSM = window.VSM || {};
 
   V.newMap = (o = {}) => Object.assign({
     id: uid(), title: '', date: today(), authors: '', unitName: '', kind: 'current', pairId: null, parentId: null,
+    // giri dell'attuale: verOf = versione precedente, verName = nome del giro; l'Ideale (kind 'future')
+    // e' uno solo per catena e porta il lucchetto di validazione (validated). tint = tinta dello sfondo.
+    verOf: null, verName: 'mappa iniziale', validated: false, tint: Math.floor(Math.random() * 360),
     unit: 'minuti', samples: '', scope: '', ideal: '', requestor: '',
     elements: [], strokes: [], plan: [],
     prep: { observable: false, frequent: false, worthy: false, drawer: '', owner: '', physicians: false, stable: false, staffing: false },
@@ -157,6 +160,9 @@ window.VSM = window.VSM || {};
   /** commit(ops, label): applica le operazioni al modello, registra l'inversa, salva, notifica. */
   V.commit = (ops, label = '', opts = {}) => {
     const map = opts.map || V.map(); if (!map) return;
+    // Ideale validato = lucchetto chiuso: nessuna modifica passa. Un solo posto di guardia per tutte
+    // le vie di modifica (gesti, pop-up, azioni rapide, coach). Il lucchetto stesso non passa da qui.
+    if (map.validated) { V.ui && V.ui.toast && V.ui.toast('Ideale validato \u{1F512}: apri il lucchetto in alto per modificarlo.'); return; }
     ops = Array.isArray(ops) ? ops : [ops];
     // fill "before" for update/props ops
     ops.forEach(op => {
@@ -171,8 +177,10 @@ window.VSM = window.VSM || {};
     V.save();
     emit({ ops, label, mapId: map.id });
   };
-  V.undo = () => { let e; while ((e = undoStack.pop())) { const map = V.doc.maps[e.mapId]; if (!map) continue; if (V.doc.activeMapId !== e.mapId) V.switchMap(e.mapId); e.ops.forEach(op => applyOp(op, map)); redoStack.push(e); V.save(); emit({ undo: true, label: e.label }); return true; } return false; };
-  V.redo = () => { let e; while ((e = redoStack.pop())) { const map = V.doc.maps[e.mapId]; if (!map) continue; if (V.doc.activeMapId !== e.mapId) V.switchMap(e.mapId); e.redo.forEach(op => applyOp(op, map)); undoStack.push(e); V.save(); emit({ redo: true, label: e.label }); return true; } return false; };
+  // anche annulla/ripeti rispettano il lucchetto: la voce resta in cima, si riprova dopo lo sblocco
+  const lockedEntry = (e) => { const m = V.doc.maps[e.mapId]; if (m && m.validated) { V.ui && V.ui.toast && V.ui.toast('Ideale validato \u{1F512}: apri il lucchetto per annullare o ripetere lì.'); return true; } return false; };
+  V.undo = () => { let e; while ((e = undoStack.pop())) { const map = V.doc.maps[e.mapId]; if (!map) continue; if (lockedEntry(e)) { undoStack.push(e); return false; } if (V.doc.activeMapId !== e.mapId) V.switchMap(e.mapId); e.ops.forEach(op => applyOp(op, map)); redoStack.push(e); V.save(); emit({ undo: true, label: e.label }); return true; } return false; };
+  V.redo = () => { let e; while ((e = redoStack.pop())) { const map = V.doc.maps[e.mapId]; if (!map) continue; if (lockedEntry(e)) { redoStack.push(e); return false; } if (V.doc.activeMapId !== e.mapId) V.switchMap(e.mapId); e.redo.forEach(op => applyOp(op, map)); undoStack.push(e); V.save(); emit({ redo: true, label: e.label }); return true; } return false; };
   V.canUndo = () => undoStack.length > 0; V.canRedo = () => redoStack.length > 0;
 
   // ---------- mappe: crea, cambia, elimina ----------
@@ -180,15 +188,42 @@ window.VSM = window.VSM || {};
   const fitClouds = (m) => { const R2 = V.render; if (!m || !Array.isArray(m.elements) || !R2 || !R2.cloudFit) return m; m.elements.forEach(el => { if ((el.type === 'storm' || el.type === 'fluffy') && !el.props.collapsed && el.props.text) el.h = Math.max(el.h, R2.cloudFit(el.w, el.props.text)); }); return m; };
   V.addMap = (map) => { V.doc.maps[map.id] = fitClouds(map); return map; };
   V.switchMap = (id) => { if (!V.doc.maps[id]) return; V.doc.activeMapId = id; V.save(); emit({ switched: true }); };
-  V.deleteMap = (id) => { const m = V.doc.maps[id]; if (!m) return; delete V.doc.maps[id]; Object.values(V.doc.maps).forEach(o => { if (o.pairId === id) o.pairId = null; if (o.parentId === id) o.parentId = null; }); if (V.doc.activeMapId === id) { const first = Object.keys(V.doc.maps)[0]; V.doc.activeMapId = first || V.addMap(V.newMap({ title: '' })).id; } V.save(); emit({ switched: true }); };
-  V.futureOf = (map) => map.kind === 'future' ? map : (map.pairId ? V.doc.maps[map.pairId] : null);
+  V.deleteMap = (id) => { const m = V.doc.maps[id]; if (!m) return; if (m.validated) { V.ui && V.ui.toast && V.ui.toast('Ideale validato \u{1F512}: apri il lucchetto prima di eliminarlo.'); return; } delete V.doc.maps[id]; Object.values(V.doc.maps).forEach(o => { if (o.pairId === id) o.pairId = null; if (o.parentId === id) o.parentId = null; }); if (V.doc.activeMapId === id) { const first = Object.keys(V.doc.maps)[0]; V.doc.activeMapId = first || V.addMap(V.newMap({ title: '' })).id; } V.save(); emit({ switched: true }); };
   V.currentOf = (map) => map.kind === 'current' ? map : (map.pairId ? V.doc.maps[map.pairId] : null);
+  /** i giri dell'attuale: dalla mappa si risale alla radice (verOf) e si scende ai giri successivi, in ordine */
+  V.versionsOf = (map) => {
+    if (!map) return [];
+    let m = map.kind === 'current' ? map : V.currentOf(map); if (!m) return [];
+    const seen = new Set();
+    while (m.verOf && V.doc.maps[m.verOf] && !seen.has(m.verOf)) { seen.add(m.verOf); m = V.doc.maps[m.verOf]; }
+    const out = []; const walk = (x) => { if (out.includes(x)) return; out.push(x); Object.values(V.doc.maps).filter(y => y.verOf === x.id && y.kind === 'current').forEach(walk); };
+    walk(m); return out;
+  };
+  /** l'Ideale e' UNO per catena di giri: si cerca su tutta la catena, non solo sulla mappa attiva */
+  V.idealOf = (map) => {
+    if (!map) return null; if (map.kind === 'future') return map;
+    for (const m of V.versionsOf(map)) { const f = m.pairId && V.doc.maps[m.pairId]; if (f && f.kind === 'future') return f; }
+    return null;
+  };
+  V.futureOf = (map) => V.idealOf(map);
+  /** nuovo giro dell'attuale: copia della mappa attiva, stesso Ideale, nome proposto dal numero del giro */
+  V.createVersion = (cur) => {
+    const chain = V.versionsOf(cur); const n = chain.length + 1;
+    const names = [null, null, 'secondo giro', 'terzo giro', 'quarto giro', 'quinto giro', 'sesto giro'];
+    const f = V.newMap(Object.assign(clone(cur), { id: uid(), kind: 'current', verOf: cur.id, verName: names[n] || (n + 'º giro'), validated: false, tint: Math.floor(Math.random() * 360), created: Date.now() }));
+    f.elements = clone(cur.elements); f.strokes = clone(cur.strokes); f.plan = clone(cur.plan);
+    V.addMap(f); V.save(); return f;
+  };
   V.createFuture = (cur) => {
-    if (cur.pairId && V.doc.maps[cur.pairId]) return V.doc.maps[cur.pairId];
-    const f = V.newMap(Object.assign(clone(cur), { id: uid(), kind: 'future', pairId: cur.id, title: cur.title, validation: V.newMap().validation, created: Date.now() }));
+    const have = V.idealOf(cur); if (have) return have;
+    const f = V.newMap(Object.assign(clone(cur), { id: uid(), kind: 'future', pairId: cur.id, verOf: null, verName: 'ideale', validated: false, tint: Math.floor(Math.random() * 360), title: cur.title, validation: V.newMap().validation, created: Date.now() }));
     f.elements = clone(cur.elements); f.strokes = []; f.plan = clone(cur.plan);
     V.addMap(f); cur.pairId = f.id; V.save(); return f;
   };
+  /** lucchetto dell'Ideale: non passa da commit (che a lucchetto chiuso rifiuta tutto) */
+  V.setValidated = (map, on) => { map.validated = !!on; map.updated = Date.now(); V.save(); emit({ label: on ? 'validata' : 's-validata', mapId: map.id, ops: [] }); };
+  /** etichetta leggibile del tipo di mappa (per testata, elenchi e sfondo del foglio) */
+  V.kindLabel = (m) => m.kind === 'future' ? 'ideale' : m.kind === 'detail' ? 'dettaglio' : (m.verName || 'attuale');
   V.createDetail = (parent, title) => { const d = V.newMap({ kind: 'detail', parentId: parent.id, title: title || ('Dettaglio di ' + (parent.title || 'mappa')), unit: parent.unit, authors: parent.authors }); V.addMap(d); V.save(); return d; };
 
   // ---------- storage: IndexedDB con fallback localStorage ----------
@@ -292,7 +327,7 @@ window.VSM = window.VSM || {};
   V.lint = (map) => {
     const out = []; const add = (level, phase, msg, elId) => out.push({ level, phase, msg, elId });
     const M = V.metrics(map); const boxes = map.elements.filter(e => e.type === 'box');
-    if (!map.title) add('bad', 0, 'Manca il titolo (in alto a destra: titolo, data, iniziali).');
+    if (!map.title) add('bad', 0, 'Manca il titolo (tocca l\'intestazione in barra: titolo, data, iniziali).');
     if (!map.authors) add('warn', 0, 'Mancano le iniziali degli autori.');
     if (!map.scope) add('warn', 0, 'Definisci lo scopo in una frase: "dalla richiesta X alla consegna Y".');
     if (map.kind === 'current' && !map.prep.drawer) add('warn', 0, 'Un solo responsabile del disegno: chi è?');

@@ -259,6 +259,8 @@
     const pop = $('#pop'); pop.innerHTML = h; pop.classList.remove('hidden'); P.place(el);
     $('#pop-x').onclick = P.close; $('#pop-why').onclick = () => { const w = $('#pop-whytext'); w.classList.toggle('hidden'); $('#pop-why').setAttribute('aria-expanded', !w.classList.contains('hidden')); };
     $$('[data-pa]', pop).forEach(b => b.onclick = () => { const a = b.dataset.pa; if (['dup', 'del', 'connect', 'reqtool', 'lockto', 'lockall'].includes(a)) P.close(); UI.quickAction(a, id); if (['invert', 'attach', 'unlock', 'legend'].includes(a) && V.byId(id)) P.open(id); });
+    // Ideale validato: il pop-up serve a leggere, i campi e le azioni restano spenti (la modifica riapre dal lucchetto)
+    if (map.validated) $$('input,textarea,select,button', pop).forEach(x => { if (x.id !== 'pop-x' && x.id !== 'pop-why') x.disabled = true; });
     const tp = $('#pop-toplan'); if (tp) tp.onclick = () => { const plan = clone(map.plan); plan.push({ id: uid(), what: p.text || 'kaizen', who: p.owner || '', when: '', outcome: '', a3: true }); V.commit({ t: 'plan_set', after: plan }, 'piano'); UI.toast('Aggiunto al piano.'); UI.renderPlan(); };
     const ol = $('#pop-openlink'); if (ol) ol.onclick = () => UI.openMap(p.link);
     const lf = $('#pop-legendfull'); if (lf) lf.onclick = () => UI.toggleGuide(true, 'simboli');
@@ -305,9 +307,9 @@
   P.refresh = (id) => { const pop = $('#pop'); if (pop.classList.contains('hidden') || P.current !== id) return; const map = V.map(); const el = V.byId(id, map); if (!el) return; const pv = $('.pop-preview', pop); if (pv) pv.outerHTML = preview(el, map); const sb = $('.pop-sub', pop); if (sb) sb.textContent = subtitleOf(el, map); };
   P.openTitle = () => {
     const map = V.map(); const pop = $('#pop'); P.current = '__title__';
-    pop.innerHTML = `<div class="pop-head"><b>Titolo, data, autori</b><button class="btn small ghost" id="pop-x" aria-label="Chiudi">✕</button></div><div class="why">In alto a destra: titolo, data e iniziali di chi ha disegnato. Con la piega a metà e a un quarto restano visibili nel raccoglitore.</div>
+    pop.innerHTML = `<div class="pop-head"><b>Titolo, data, autori</b><button class="btn small ghost" id="pop-x" aria-label="Chiudi">✕</button></div><div class="why">L'intestazione vive qui in barra: sul foglio digitale occupava solo spazio. Titolo, data e iniziali di chi ha disegnato restano salvati con la mappa.</div>
       ${field('Titolo', `<input data-m="title" value="${esc(map.title)}" autofocus>`)}<div class="row">${field('Data', `<input data-m="date" type="date" value="${esc(map.date)}">`)}${field('Iniziali autori', `<input data-m="authors" value="${esc(map.authors)}">`)}</div>${field('Reparto / unità', `<input data-m="unitName" value="${esc(map.unitName)}">`)}${field('Scopo in una frase', `<textarea data-m="scope" placeholder="Dalla richiesta di … alla consegna di …">${esc(map.scope)}</textarea>`)}<div class="row">${field('Unità di misura (unica)', `<select data-m="unit">${['secondi', 'minuti', 'ore', 'giorni'].map(u => `<option ${u === map.unit ? 'selected' : ''}>${u}</option>`).join('')}</select>`)}${field('N. misure', `<input data-m="samples" inputmode="numeric" value="${esc(map.samples)}">`)}</div>${field('Responsabile unico del disegno', `<input data-tdrawer value="${esc(map.prep.drawer || '')}" autocomplete="off">`)}`;
-    pop.classList.remove('hidden'); const st = $('#stage').getBoundingClientRect(); const s = I.toScreen(V.paperOf(map).w - 470, 90); pop.style.left = Math.max(10, Math.min(st.width - 340, s.x)) + 'px'; pop.style.top = Math.max(10, s.y + 6) + 'px';
+    pop.classList.remove('hidden'); const st = $('#stage').getBoundingClientRect(); const hr = $('#map-head').getBoundingClientRect(); pop.style.left = Math.max(10, Math.min(st.width - 340, hr.left - st.left)) + 'px'; pop.style.top = '10px';
     $('#pop-x').onclick = P.close;
     const td = $('[data-tdrawer]', pop); td.addEventListener('input', () => { const after = Object.assign(clone(V.map().prep), { drawer: td.value }); V.commit({ t: 'meta', after: { prep: after } }, 'intestazione', { silent: true }); });
     $$('[data-m]', pop).forEach(e => {
@@ -317,6 +319,7 @@
       if (e.tagName === 'SELECT') e.addEventListener('change', () => commit(true));
       else { e.addEventListener('input', () => commit(false)); e.addEventListener('change', () => commit(true)); }
     });
+    if (map.validated) $$('input,textarea,select', pop).forEach(x => { x.disabled = true; });
   };
 
   // ---------- header / mappe ----------
@@ -324,8 +327,17 @@
     // niente modalita' appese sulla mappa nuova: il primo tocco li' deve funzionare
     if (I.pickConn) I.cancelPickConnect(); if (I.pickLock) I.cancelPickLock(); UI.closePlaceMenu(); if (!V.doc.maps[id]) { UI.toast('Mappa non trovata.'); return; } P.close(); I.select([]); V.switchMap(id); I.restoreView(); };
   UI.renderHeader = () => {
-    const map = V.map(); $('#map-title').value = map.title || ''; const k = $('#map-kind'); k.textContent = map.kind === 'future' ? 'stato futuro' : map.kind === 'detail' ? 'dettaglio' : 'stato attuale'; k.className = map.kind;
+    const map = V.map();
+    $('#mh-title').textContent = map.title || '';
+    const fdate = (iso) => { if (!iso) return ''; const d = new Date(iso + 'T00:00:00'); return isNaN(d) ? iso : new Intl.DateTimeFormat('it-CH', { day: 'numeric', month: 'short', year: 'numeric' }).format(d); };
+    const provv = map.kind === 'current' && !map.validation.walked && map.elements.some(e => e.type === 'box');
+    $('#mh-sub').textContent = [fdate(map.date), map.unitName, map.authors && ('di ' + map.authors), provv ? 'provvisoria' : ''].filter(Boolean).join(' · ');
     $('#tab-current').setAttribute('aria-pressed', map.kind === 'current'); $('#tab-future').setAttribute('aria-pressed', map.kind === 'future');
+    const curM = map.kind === 'current' ? map : V.currentOf(map);
+    $('#cur-ver').textContent = curM ? (curM.verName || 'mappa iniziale') : '—';
+    const ideal = V.idealOf(map);
+    $('#ideal-state').classList.toggle('hidden', !(ideal && ideal.validated));
+    const lk = $('#tab-lock'); lk.classList.toggle('hidden', map.kind !== 'future'); lk.textContent = map.validated ? '\u{1F512}' : '\u{1F513}';
     const crumbs = []; let m = map; let guard = 0; while (m && m.parentId && V.doc.maps[m.parentId] && guard++ < 6) { m = V.doc.maps[m.parentId]; crumbs.unshift(m); }
     $('#crumbs').innerHTML = crumbs.map(c => `<button data-open="${c.id}">${esc(c.title || 'mappa')}</button><span>›</span>`).join('');
     $$('#crumbs [data-open]').forEach(b => b.onclick = () => UI.openMap(b.dataset.open));
@@ -335,7 +347,7 @@
   };
   UI.renderMaps = () => {
     const list = $('#maplist'); const maps = Object.values(V.doc.maps).sort((a, b) => (b.updated || 0) - (a.updated || 0));
-    list.innerHTML = maps.map(m => `<div class="maprow"><b>${esc(m.title || 'senza titolo')}<br><span class="k">${m.kind}${m.pairId ? ' · accoppiata' : ''}${m.parentId ? ' · dettaglio' : ''} · ${new Date(m.updated || m.created).toLocaleDateString('it-CH')} · ${m.elements.filter(e => e.type === 'box').length} box</span></b><button class="btn small primary" data-open="${m.id}">Apri</button></div>`).join('') || '<p class="hint">Nessuna mappa.</p>';
+    list.innerHTML = maps.map(m => `<div class="maprow"><b>${esc(m.title || 'senza titolo')}<br><span class="k">${esc(V.kindLabel(m))}${m.kind === 'future' && m.validated ? ' \u{1F512}' : ''}${m.parentId ? ' · dettaglio' : ''} · ${new Date(m.updated || m.created).toLocaleDateString('it-CH')} · ${m.elements.filter(e => e.type === 'box').length} box</span></b><button class="btn small primary" data-open="${m.id}">Apri</button></div>`).join('') || '<p class="hint">Nessuna mappa.</p>';
     $$('#maplist [data-open]').forEach(b => b.onclick = () => { $('#dlg-maps').close(); UI.openMap(b.dataset.open); });
   };
 
@@ -348,16 +360,16 @@
     { id: 'prima', t: 'La prima mappa', body: 'Sul foglio vuoto tocca i segnaposto ① Chi chiede? e ② Primo passo: è il modo più rapido per iniziare. Altrimenti scegli lo strumento nella barra in basso e tocca il punto del foglio dove vuoi l’elemento. Le mappe si salvano da sole, non c’è un tasto salva. Errore tipico: progettare tutto prima di disegnare — parti dal richiedente e segui il processo.' },
     { id: 'modifica', t: 'Modificare e collegare', body: 'Un tocco su un elemento apre le azioni rapide (+ Passo dopo, ← Richiesta…); un secondo tocco apre i dettagli. Per una freccia di flusso o di richiesta tieni premuto e trascina fino all’altro elemento. Un’estremità staccata è segnata in rosso tratteggiato: riagganciala, altrimenti resta fuori dalla timeline.' },
     { id: 'matita', t: 'Matita, coach, annulla', body: 'Con la Matita scrivi e disegni a mano libera (l’Apple Pencil scrive da sé, le dita muovono gli elementi). ✦ legge il foglio e propone modifiche: è un secondo parere, non un correttore — valuta prima di accettare. ↶ annulla l’ultima azione, tutte le volte che serve.' },
-    { id: 'foglio', t: 'Leggere il foglio', body: 'Sotto i passi la timeline: verde in basso il tempo a valore, rosso in alto le attese; il riepilogo in basso a destra fa i conti (VA, NVA, VA %, First Time Quality). Il lucchetto dice che un elemento è bloccato a un altro e si muove con lui («Blocca a…» / «Sblocca» nelle azioni rapide). Il badge ↗ apre la mappa collegata (dettaglio, turno, futuro). «Provvisoria» accanto al titolo resta finché non cammini e validi il processo (vedi Cammina e valida).' }
+    { id: 'foglio', t: 'Leggere il foglio', body: 'Sotto i passi la timeline: verde in basso il tempo a valore, rosso in alto le attese; il riepilogo in basso a destra fa i conti (VA, NVA, VA %, First Time Quality). Il lucchetto dice che un elemento è bloccato a un altro e si muove con lui («Blocca a…» / «Sblocca» nelle azioni rapide). Il badge ↗ apre la mappa collegata (dettaglio, turno, futuro). «Provvisoria» nell’intestazione in barra resta finché non cammini e validi il processo (vedi Cammina e valida).' }
   ];
   const METODO = [
-    { id: 'testata', t: 'Intestazione e scopo', body: 'Titolo, data e iniziali in alto a destra, come sul foglio A3 del libro. Lo scopo in una frase: dalla richiesta X alla consegna Y. Una mappa = un processo solo: se cambia turno o unità, fai un’altra mappa, non una variante.', q: 'Cosa soddisfa esattamente questa mappa?', acts: [['title', 'Apri l’intestazione']] },
+    { id: 'testata', t: 'Intestazione e scopo', body: 'Titolo, data e iniziali vivono in barra, in alto a sinistra: tocca l’intestazione per vederli e cambiarli (sul foglio A3 del libro stavano in alto a destra). Lo scopo in una frase: dalla richiesta X alla consegna Y. Una mappa = un processo solo: se cambia turno o unità, fai un’altra mappa, non una variante.', q: 'Cosa soddisfa esattamente questa mappa?', acts: [['title', 'Apri l’intestazione']] },
     { id: 'richiesta', t: 'La richiesta', body: 'Disegna il richiedente e tutte le vie reali con cui la richiesta arriva: telefono, fax, e-mail, a voce, di persona. La giungla di frecce in alto non è disordine da nascondere: è il primo spreco da attaccare, perché ogni via in più è una richiesta che può perdersi o essere fraintesa.', q: 'Quante mani tocca la richiesta prima di arrivare a chi eroga?', tools: [['person', 'Persona'], ['request', 'Richiesta']] },
     { id: 'flusso', t: 'Flusso e attese', body: 'Disegna i passi nell’ordine in cui avvengono davvero, non come dovrebbero: nello stato attuale ciò che sta nei box è valore adesso, si giudica dopo. Tra due passi metti sempre un delta se la cosa sta ferma. Più di 4-5 passi? Forse lo scopo è troppo largo.', q: 'Quale attività apre la porta del passo e quale la chiude?', tools: [['box', 'Passo'], ['delta', 'Attesa']] },
     { id: 'valida', t: 'Cammina e valida', body: 'Una mappa fatta alla scrivania è una bozza. Cammina il processo dall’inizio alla fine osservando, poi mostrala a chi fa il lavoro: accuratezza e adesione arrivano insieme. Le domande da fare sono due: «Ti sembra giusto? Ho lasciato fuori qualcosa?». Finché non l’hai fatto, la mappa resta provvisoria.', valida: true },
     { id: 'dati', t: 'Dati', body: 'Per ogni passo e ogni attesa raccogli Hi / Lo / Avg, un’unità sola per tutta la mappa. L’attesa non si cronometra: si calcola per differenza, fine del passo precedente → inizio del successivo. Servono ~30 misure per dati credibili, 8-10 per una prima vista; il massimo è dove si nascondono interruzioni e workaround.', q: 'Perché a volte 5 minuti e a volte 19?' },
     { id: 'analisi', t: 'Analisi', body: 'Una nuvola su ogni punto debole, con muda e regola violata: una riga, non un tema. Comincia dalle nuvole a monte: correggere la richiesta rende più di quanto sembri. Quando senti «a volte, dipende, forse» il processo non è specificato — è già una nuvola.', q: 'Così accade adesso: è abbastanza buono?', tools: [['storm', 'Nuvola']] },
-    { id: 'futuro', t: 'Stato futuro', body: 'Futuro non vuol dire ideale: dev’essere raggiungibile (persone, sponsor, data) e insieme più vicino all’ideale. Prima mossa quasi sempre: ridurre le vie della richiesta; poi eliminare o combinare passi; tempi standard solo dai dati raccolti. Se il futuro non è visibilmente più semplice dell’attuale, torna a osservare. E niente monumenti: non automatizzare ciò che non funziona a mano.', acts: [['future', 'Apri / crea lo stato futuro']], cmp: true },
+    { id: 'futuro', t: 'Ideale (stato futuro)', body: 'L’Ideale è dove volete arrivare: uno solo per processo, col lucchetto — una volta validato non si modifica finché non lo riapri. Dev’essere raggiungibile (persone, sponsor, data). Prima mossa quasi sempre: ridurre le vie della richiesta; poi eliminare o combinare passi; tempi standard solo dai dati raccolti. Se il futuro non è visibilmente più semplice dell’attuale, torna a osservare. E niente monumenti: non automatizzare ciò che non funziona a mano.', acts: [['future', 'Apri / crea l’Ideale']], cmp: true },
     { id: 'piano', t: 'Piano e follow-up', body: 'Ogni riga del piano: cosa, chi, entro quando, esito atteso; senza chi e quando non accadrà. L’ostacolo grosso merita un A3, non una riga di piano. A piano eseguito si rimisura: nuova mappa dello stato attuale e confronto fianco a fianco.', q: 'Chi fa cosa, entro quando?', acts: [['plan', 'Apri il piano']] }
   ];
   UI.guideFocusSec = null;
@@ -510,7 +522,7 @@
     { id: 'delta', when: (M) => M.boxes >= 2 && M.flows >= 1 && M.deltas === 0, tool: 'delta', msg: 'Tra un box e il successivo, quando nulla avanza? Aggiungi un delta sulla freccia.' },
     { id: 'data', when: (M) => M.boxes >= 2 && M.deltas >= 1 && !M.hasData, tool: 'select', msg: 'Ora i tempi: tocca un box o un delta e inserisci Hi / Lo / Avg (una sola unità).' },
     { id: 'storm', when: (M) => M.hasData && M.storms === 0, tool: 'storm', msg: 'Che cosa non è ideale? Segna i problemi con le nuvole temporalesche (muda + regola).' },
-    { id: 'future', when: (M, map) => map.kind === 'current' && M.storms >= 2 && M.hasData && !V.futureOf(map), tool: null, msg: 'Con nuvole e dati sei pronto per lo stato futuro: tocca «Futuro» in alto.' }
+    { id: 'future', when: (M, map) => map.kind === 'current' && M.storms >= 2 && M.hasData && !V.futureOf(map), tool: null, msg: 'Con nuvole e dati sei pronto per l’Ideale (lo stato futuro): tocca «Ideale» in alto.' }
   ];
   UI.evalSuggest = () => {
     if (!UI.suggestOn || !UI.guideOn) return; if (SUG.current) return; const map = V.map(); const M = V.metrics(map); const now = Date.now();
@@ -590,6 +602,8 @@
     if (V.pop && V.pop.current) { q.classList.add('hidden'); Q.el = ids[0]; return; }
     // mai far comparire UI sotto il dito durante un gesto: il menu si apre al RILASCIO (up() richiama qui)
     if (I.gestureBusy && I.gestureBusy()) { q.classList.add('hidden'); Q.el = ids[0]; return; }
+    // Ideale validato: si legge (secondo tocco = dettagli), non si agisce — niente menu di azioni
+    if (V.map().validated) { q.classList.add('hidden'); Q.el = ids[0]; return; }
     const map = V.map();
     let html = '';
     if (ids.length > 1) { // selezione multipla: azioni di gruppo

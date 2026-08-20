@@ -53,7 +53,6 @@
     return out;
   }
   /** taglia una riga sola a `max` caratteri, con "…" se serve */
-  const cut = (s, max) => { s = String(s || ''); return s.length > max ? s.slice(0, max - 1).trimEnd() + '…' : s; };
   R.wrap = wrap; R.fitLines = fitLines;
   /** righe di un elemento testo (a capo sulla larghezza scelta) */
   R.textLines = (el) => { const p = el.props, sz = p.size || 12; return wrap(p.text || '', Math.max(6, Math.floor(el.w / (sz * 0.5)))); };
@@ -63,7 +62,6 @@
     const sz = el.props.size || 12; const need = Math.round(R.textLines(el).length * sz * 1.25 + 4);
     return { w: el.w, h: Math.max(el.h, need) };
   };
-  const fmtDate = (iso) => { if (!iso) return ''; const d = new Date(iso + 'T00:00:00'); return isNaN(d) ? iso : new Intl.DateTimeFormat('it-CH', { day: 'numeric', month: 'long', year: 'numeric' }).format(d); };
   const cloudPath = (w, h) => { // nuvola che riempie w×h
     const r = h / 2.6; return `M${r * 0.9} ${h - 6} H${w - r * 0.9} a${r} ${r} 0 0 0 ${r * 0.55} -${r * 1.6} a${r * 1.1} ${r * 1.1} 0 0 0 -${r * 1.4} -${r * 1.1} a${r * 1.3} ${r * 1.3} 0 0 0 -${Math.max(8, w - 2 * r * 2.6)} 0 a${r * 1.1} ${r * 1.1} 0 0 0 -${r * 1.5} ${r * 1.1} a${r} ${r} 0 0 0 ${r * 0.5} ${r * 1.6} z`; };
   const burstPath = (w, h) => { const cx = w / 2, cy = h / 2, n = 12; let d = ''; for (let i = 0; i < n * 2; i++) { const a = Math.PI * i / n - Math.PI / 2; const rx = (i % 2 ? 0.7 : 1) * cx, ry = (i % 2 ? 0.7 : 1) * cy; d += (i ? 'L' : 'M') + (cx + rx * Math.cos(a)).toFixed(1) + ' ' + (cy + ry * Math.sin(a)).toFixed(1) + ' '; } return d + 'z'; };
@@ -72,14 +70,15 @@
   R.paper = (map) => {
     const { w, h } = V.paperOf(map);
     let g = `<rect class="paper" x="0" y="0" width="${w}" height="${h}" rx="2"/>`;
+    // ogni canvas ha la sua tinta leggera (map.tint, assegnata a caso alla creazione): si capisce a
+    // colpo d'occhio su quale mappa si sta lavorando, e il foglio resta leggibile
+    const tint = map.tint == null ? null : ((+map.tint || 0) % 360 + 360) % 360;
+    if (tint != null) g += `<rect x="0" y="0" width="${w}" height="${h}" rx="2" fill="hsl(${tint} 60% 55%)" opacity="0.07"/>`;
     g += `<line class="fold" x1="${w / 2}" y1="0" x2="${w / 2}" y2="${h}"/><line class="fold" x1="${w * 0.75}" y1="0" x2="${w * 0.75}" y2="${h}"/>`;
-    const tx = w - 30; const kind = map.kind === 'future' ? ' — stato futuro' : map.kind === 'detail' ? ' — dettaglio' : '';
-    g += `<g class="titleblock" data-title="1" style="cursor:text"><rect x="${w - 470}" y="14" width="450" height="76" fill="transparent"/>
-      <text class="hand" x="${tx}" y="42" text-anchor="end" font-size="20" font-weight="700">${esc(cut(map.title || 'Titolo della mappa', 44))}${kind}</text>
-      <text class="hand" x="${tx}" y="62" text-anchor="end" font-size="12">Data: ${esc(fmtDate(map.date))}${map.unitName ? '   ·   ' + esc(map.unitName) : ''}</text>
-      <text class="hand" x="${tx}" y="78" text-anchor="end" font-size="12">Di: ${esc(map.authors || '—')}${map.validation.validatedBy && map.kind === 'current' ? '   ·   validata da ' + esc(map.validation.validatedBy) : ''}</text></g>`;
-    if (map.kind === 'current' && !map.validation.walked && map.elements.some(e => e.type === 'box')) g += `<text class="hand" x="${w - 30}" y="96" text-anchor="end" font-size="11" fill="#b7791f">provvisoria: processo non ancora camminato</text>`;
-    if (map.scope) g += `<text class="hand muted" x="30" y="${h - 14}" font-size="10">${esc('Scopo: ' + map.scope.slice(0, 150))}</text>`;
+    // niente blocco titolo sul foglio (titolo, data e autori vivono in barra); in basso, semitrasparente,
+    // il nome della mappa: il giro dell'attuale, «ideale» (con lo stato del lucchetto) o «dettaglio»
+    const lbl = V.kindLabel(map) + (map.kind === 'future' ? (map.validated ? ' · validato \u{1F512}' : ' · da validare') : '');
+    g += `<text class="hand" x="30" y="${h - 26}" font-size="58" font-weight="800" fill="hsl(${tint == null ? 210 : tint} 45% 35%)" opacity="0.14">${esc(lbl)}</text>`;
     L.paper.innerHTML = g;
   };
 

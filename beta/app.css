@@ -48,13 +48,30 @@ header .brand svg{width:22px;height:22px}
 .btn.icon{width:36px;padding:0;justify-content:center;font-size:16px}
 .btn[disabled]{opacity:.45;cursor:default}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--panel-2)}
-.seg button{border:0;background:transparent;padding:6px 12px;color:var(--ink-2);white-space:nowrap;min-height:34px}
+.seg button{border:0;background:transparent;padding:4px 12px;color:var(--ink-2);white-space:nowrap;min-height:34px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;line-height:1.15}
+.seg button small{font-size:9.5px;color:var(--muted);max-width:92px;overflow:hidden;text-overflow:ellipsis}
 .seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
-#map-title{border:1px solid transparent;background:transparent;border-radius:8px;padding:6px 8px;font-weight:600;min-width:120px;max-width:34vw;font-size:15px}
-#map-title:hover,#map-title:focus{border-color:var(--line);background:var(--panel-2)}
-#map-kind{font-size:11px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);padding:2px 6px;border:1px solid var(--line);border-radius:6px}
-#map-kind.future{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 50%,transparent)}
-#map-kind.detail{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 50%,transparent)}
+.seg button[aria-pressed="true"] small{color:color-mix(in srgb,var(--accent-ink) 75%,transparent)}
+#tab-lock{font-size:15px;padding:4px 10px}
+/* elenco dei giri dell'attuale: si apre sotto il seg in testata */
+#vers-list{position:fixed;top:54px;right:110px;z-index:40;min-width:220px;max-width:300px;max-height:50vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);padding:6px;display:flex;flex-direction:column;gap:2px}
+#vers-list .vrow{display:flex;align-items:center;gap:2px}
+#vers-list .vrow>button:first-child{flex:1;text-align:left;border:0;background:transparent;color:var(--ink);padding:8px 10px;border-radius:8px;font-size:13px;min-height:var(--tap);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#vers-list .vrow>button:first-child:hover{background:rgba(31,78,121,.08)}
+#vers-list .vrow>button[aria-current="true"]{background:rgba(31,78,121,.12);font-weight:700}
+#vers-list .vrow .vrn{border:0;background:transparent;color:var(--muted);min-height:var(--tap);min-width:36px;border-radius:8px;cursor:pointer}
+#vers-list .vrow .vrn:hover{color:var(--accent);background:rgba(31,78,121,.08)}
+#vers-list .vnew{border:1px dashed var(--line);background:transparent;color:var(--accent);padding:8px 10px;border-radius:8px;font-size:13px;min-height:var(--tap);cursor:pointer;text-align:left}
+#vers-list input{border:1px solid var(--accent);border-radius:8px;padding:8px 10px;font-size:13px;width:100%}
+/* intestazione della mappa in barra: titolo piccolo + data/reparto, tocco = pop-up coi dati e la modifica.
+   (Il blocco titolo non sta più sul foglio: sul digitale occupava solo spazio.) */
+#map-head{display:flex;align-items:center;gap:8px;border:1px solid transparent;background:transparent;border-radius:8px;padding:3px 8px;min-width:0;max-width:38vw;text-align:left;cursor:pointer}
+#map-head:hover,#map-head:focus-visible{border-color:var(--line);background:var(--panel-2);outline:none}
+#map-head .mh-txt{display:flex;flex-direction:column;min-width:0}
+#map-head b{font-weight:600;font-size:14px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#map-head small{font-size:11px;color:var(--muted);line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#map-head .mh-pen{font-size:12px;color:var(--muted)}
+#map-head b:empty::before{content:'Titolo della mappa…';color:var(--muted);font-weight:500}
 #crumbs{display:flex;gap:4px;align-items:center;font-size:12px;color:var(--muted)}
 #crumbs button{border:0;background:transparent;color:var(--accent);padding:0 2px;min-height:30px}
 main{position:relative;min-height:0;display:grid;grid-template-columns:1fr auto}
@@ -309,7 +326,7 @@ dialog .d-foot{padding:10px 16px;border-top:1px solid var(--line);display:flex;g
 @media (max-width:900px),(max-height:560px){
   main{grid-template-columns:1fr}
   #drawer{position:absolute;right:0;top:0;bottom:0;width:min(420px,100vw);z-index:9;box-shadow:var(--shadow)}
-  #map-title{max-width:40vw}
+  #map-head{max-width:40vw}
   header .hide-m{display:none}
 }
 
@@ -318,8 +335,8 @@ dialog .d-foot{padding:10px 16px;border-top:1px solid var(--line);display:flex;g
 @media (max-width:760px),(max-height:560px){
   header.bar{flex-wrap:nowrap;gap:6px;padding:5px 8px;min-height:auto}
   header .brand span{display:none}
-  header #map-kind,header .seg,header #btn-maps{display:none}
-  #map-title{max-width:none;min-width:0;flex:1}
+  header .seg,header #btn-maps{display:none}
+  #map-head{max-width:none;min-width:0;flex:1}
   #crumbs{display:none}
   #menu .compact-only{display:block}
   #hint{max-width:80vw}
