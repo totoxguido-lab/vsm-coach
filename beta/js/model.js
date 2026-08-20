@@ -86,10 +86,12 @@ window.VSM = window.VSM || {};
   // Modalità di disegno dei collegamenti (come le "link render mode" di ComfyUI): riguarda il tracciato,
   // non il significato. Sta nella mappa e non nelle preferenze del dispositivo perché il foglio è un disegno:
   // deve arrivare uguale a chi lo apre, lo esporta o lo stampa.
+  // La squadrata automatica e' stata tolta su richiesta di Gt: le frecce vanno dritte al bersaglio
+  // e il percorso si piega A MANO trascinando la linea (props.via = punti di passaggio).
+  // Le mappe salvate in "squadrata" ricadono su "dritta" (linkModeOf valida contro questa lista).
   V.LINK_MODES = [
-    { id: 'squadrata', name: 'squadrata', hint: 'gomiti a 90°, vie di richiesta in corsie separate' },
-    { id: 'curva', name: 'curva', hint: 'come il disegno a mano del libro' },
-    { id: 'dritta', name: 'dritta', hint: 'linea diretta fra i due estremi' }
+    { id: 'dritta', name: 'dritta', hint: 'linea diretta; trascina la linea per piegarla dove serve' },
+    { id: 'curva', name: 'curva', hint: 'come il disegno a mano del libro' }
   ];
   V.linkModeOf = (map) => { const m = map && map.links && map.links.mode; return V.LINK_MODES.some(x => x.id === m) ? m : 'dritta'; };
 

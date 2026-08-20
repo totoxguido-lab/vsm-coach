@@ -125,6 +125,12 @@
       }
       case 'storm': case 'fluffy': {
         const cls = el.type === 'storm' ? 'cloud' : 'fluffy';
+        // ridotta a segnale: il problema resta sul foglio ma non occupa spazio; il testo si legge toccandolo
+        if (el.type === 'storm' && p.collapsed) {
+          s += `<path class="alert" d="M${w / 2} 2 L${w - 2} ${h - 3} H2 z"/>`;
+          s += `<path class="alert-mark" d="M${w / 2} ${h * 0.38} V${h * 0.66}"/><circle class="alert-dot" cx="${w / 2}" cy="${h * 0.82}" r="1.5"/>`;
+          break;
+        }
         s += `<path class="${cls}" d="${cloudPath(w, h)}"/>`;
         const lines = wrap(p.text || (el.type === 'storm' ? 'problema…' : 'idea…'), Math.max(10, Math.floor(w / 5.4))).slice(0, Math.max(1, Math.floor((h - 14) / 11)));
         s += `<text class="hand ${cls}-txt" x="${w / 2}" y="${h / 2 - (lines.length - 1) * 5.5 + 3}" text-anchor="middle" font-size="9.5">${tspans(lines, w / 2, h / 2 - (lines.length - 1) * 5.5 + 3, 11)}</text>`;
@@ -526,7 +532,9 @@
         P = mkPoly(r ? r.nodes : [a, { x: a.x - 26, y: a.y }, { x: a.x - 26, y: b.y - 30 }, { x: b.x, y: b.y - 30 }, b]);
         tDef = r ? r.tDef : 0.7;
       } else if (mode === 'dritta') {
-        P = mkPoly([a, b]);
+        // percorso piegato a mano: la linea passa per i punti che l'utente ha trascinato
+        const via = Array.isArray(c.props.via) ? c.props.via : [];
+        P = mkPoly([a, ...via, b]);
         tDef = 0.5 + (((c.props.offset || 0) % 3) - 1) * 0.14;
       } else {
         // curva dal richiedente (in alto a destra) verso il bordo alto del bersaglio; più vie stesso paio → offset
@@ -539,13 +547,10 @@
       const t = c.props.t == null ? tDef : c.props.t;
       return Object.assign(P, { mid: P.at(t), off, tDef });
     }
-    const a = from ? V.anchor(from, pt) : pf, b = to ? V.anchor(to, pf) : pt;
-    // flusso: fra passi allineati resta una retta in ogni modalità; se sono sfalsati, in squadrata prende un gomito
-    const dx = Math.abs(b.x - a.x), dy = Math.abs(b.y - a.y);
-    const P = (mode === 'squadrata' && dy > 6)
-      ? mkPoly(routeAvoid(dx >= dy ? [a, { x: (a.x + b.x) / 2, y: a.y }, { x: (a.x + b.x) / 2, y: b.y }, b]
-        : [a, { x: a.x, y: (a.y + b.y) / 2 }, { x: b.x, y: (a.y + b.y) / 2 }, b], R.obstacles(map, c)))
-      : mkPoly([a, b]);
+    const via = Array.isArray(c.props.via) ? c.props.via : [];
+    // le ancore guardano il primo/ultimo punto di via, cosi' la freccia esce dal lato giusto del box
+    const a = from ? V.anchor(from, via[0] || pt) : pf, b = to ? V.anchor(to, via[via.length - 1] || pf) : pt;
+    const P = mkPoly([a, ...via, b]);
     const t = c.props.t == null ? 0.5 : c.props.t;
     return Object.assign(P, { mid: P.at(t), tDef: 0.5 });
   };
@@ -592,11 +597,24 @@
   R.LOCKABLE = ['storm', 'fluffy', 'burst', 'text', 'inbox', 'inventory', 'distance', 'delta', 'person', 'box', 'icon', 'face'];
   R.children = (id, map) => map.elements.filter(e => e.props && (e.props.lockTo === id || (e.type === 'delta' && e.props.attachedTo === id)));
 
+  /** Area sensibile: molti elementi sono disegnati a sole linee (l'omino ha tratti da 1.6 px su un
+   *  riquadro di 40x78) e col dito diventano quasi impossibili da prendere — collegarne uno richiedeva
+   *  piu' tentativi. Un rettangolo trasparente da' a ognuno un bersaglio pieno, un po' piu' grande del
+   *  disegno. La corsia e' esclusa: e' gia' una fascia piena e coprirebbe tutto cio' che contiene. */
+  const HIT_PAD = 3; // stretto: ogni pixel in piu' e' spazio rubato al lazo, alla matita e alle frecce sottostanti
+  const hitRect = (el) => {
+    if (el.type === 'lane') return '';
+    const z = R.elSize(el);
+    const extra = el.type === 'person' ? 30 : 0; // l'omino ha nome e ruolo scritti sotto la figura
+    return `<rect class="el-hit" x="${-HIT_PAD}" y="${-HIT_PAD}" width="${z.w + HIT_PAD * 2}" height="${z.h + HIT_PAD * 2 + extra}"/>`;
+  };
+  R.hitRect = hitRect;
+
   R.elements = (map) => {
     const zOrder = { lane: 0, legend: 1, text: 2, box: 3, inventory: 3, inbox: 3, distance: 3, person: 3, delta: 4, icon: 4, face: 4, storm: 5, fluffy: 5, burst: 5 };
     const els = map.elements.filter(e => !V.isConnector(e)).slice().sort((a, b) => (zOrder[a.type] || 3) - (zOrder[b.type] || 3) || (a.z || 0) - (b.z || 0));
     let lanes = '', body = '';
-    els.forEach(el => { const pos = R.elPos(el, map); const g = `<g class="el el-${el.type}" data-id="${el.id}" data-type="${el.type}" transform="translate(${pos.x} ${pos.y})">${drawEl(el)}</g>`; if (el.type === 'lane') lanes += g; else body += g; });
+    els.forEach(el => { const pos = R.elPos(el, map); const g = `<g class="el el-${el.type}" data-id="${el.id}" data-type="${el.type}" transform="translate(${pos.x} ${pos.y})">${hitRect(el)}${drawEl(el)}</g>`; if (el.type === 'lane') lanes += g; else body += g; });
     L.lanes.innerHTML = lanes; L.el.innerHTML = body;
     L.conn.innerHTML = map.elements.filter(V.isConnector).map(c => `<g class="conn" data-id="${c.id}" data-type="${c.type}">${drawConn(c, map)}</g>`).join('');
     R.handles(map);
@@ -607,7 +625,7 @@
     const el = V.byId(id, map); if (!el) return;
     if (V.isConnector(el)) { const g = L.conn.querySelector(`[data-id="${id}"]`); if (g) g.innerHTML = drawConn(el, map); updHandle(el, map); if (!isChild) R.children(el.id, map).forEach(d => R.updateEl(d.id, map, true)); return; }
     const g = (el.type === 'lane' ? L.lanes : L.el).querySelector(`[data-id="${id}"]`); const pos = R.elPos(el, map);
-    if (g) { g.setAttribute('transform', `translate(${pos.x} ${pos.y})`); g.innerHTML = drawEl(el); }
+    if (g) { g.setAttribute('transform', `translate(${pos.x} ${pos.y})`); g.innerHTML = hitRect(el) + drawEl(el); }
     // connettori toccati (e i loro figli agganciati/bloccati)
     map.elements.filter(c => V.isConnector(c) && (c.from.el === id || c.to.el === id)).forEach(c => { const cg = L.conn.querySelector(`[data-id="${c.id}"]`); if (cg) cg.innerHTML = drawConn(c, map); updHandle(c, map); R.children(c.id, map).forEach(d => R.updateEl(d.id, map, true)); });
     // figli bloccati a questo elemento
@@ -727,7 +745,7 @@
     let s = traceSVG(ids, map) + R.lockLinks(ids, map);
     ids.forEach(id => {
       const el = V.byId(id, map); if (!el) return;
-      if (V.isConnector(el)) { const P = R.connPath(el, map); s += `<path class="sel-ring" d="${P.d}"/>`; if (ids.length === 1) s += `<circle class="end-hit" data-endhandle="from" data-conn="${id}" cx="${P.a.x}" cy="${P.a.y}" r="18" fill="transparent"/><circle class="end-hit" data-endhandle="to" data-conn="${id}" cx="${P.b.x}" cy="${P.b.y}" r="18" fill="transparent"/><circle class="handle end" data-endhandle="from" data-conn="${id}" cx="${P.a.x}" cy="${P.a.y}" r="7"/><circle class="handle end" data-endhandle="to" data-conn="${id}" cx="${P.b.x}" cy="${P.b.y}" r="7"/>`; return; }
+      if (V.isConnector(el)) { const P = R.connPath(el, map); s += `<path class="sel-ring" d="${P.d}"/>`; if (ids.length === 1) { s += `<circle class="end-hit" data-endhandle="from" data-conn="${id}" cx="${P.a.x}" cy="${P.a.y}" r="18" fill="transparent"/><circle class="end-hit" data-endhandle="to" data-conn="${id}" cx="${P.b.x}" cy="${P.b.y}" r="18" fill="transparent"/><circle class="handle end" data-endhandle="from" data-conn="${id}" cx="${P.a.x}" cy="${P.a.y}" r="7"/><circle class="handle end" data-endhandle="to" data-conn="${id}" cx="${P.b.x}" cy="${P.b.y}" r="7"/>`; (el.props.via || []).forEach((v2) => { s += `<circle class="handle via" cx="${v2.x}" cy="${v2.y}" r="5"/>`; }); } return; }
       const pos = R.elPos(el, map); const pad = 6; const sz = R.elSize(el);
       s += `<rect class="sel-ring" x="${pos.x - pad}" y="${pos.y - pad}" width="${sz.w + pad * 2}" height="${sz.h + pad * 2}" rx="4"/>`;
       if (el.props.lockTo || (el.type === 'delta' && el.props.attachedTo)) s += lockGlyph(pos.x - pad - 14, pos.y - pad - 2);

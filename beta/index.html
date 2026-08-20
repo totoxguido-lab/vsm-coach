@@ -43,6 +43,10 @@
       <div id="palette" role="toolbar" aria-label="Strumenti"></div>
       <div id="more-tools" class="hidden"></div>
       <div id="suggest" class="hidden" role="status" aria-live="polite"></div>
+      <div id="levelsctl" class="hidden">
+        <button class="btn" id="levels-btn" title="Livelli (mappe collegate)" aria-label="Livelli"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg></button>
+        <div id="levels-list" class="hidden"></div>
+      </div>
       <div id="zoomctl">
         <button class="btn" id="zoom-in" title="Ingrandisci" aria-label="Ingrandisci">+</button>
         <button class="btn" id="zoom-fit" title="Adatta il foglio" aria-label="Adatta il foglio">⤢</button>
@@ -103,6 +107,7 @@
   <button data-m="settings">Impostazioni coach…</button>
   <button data-m="clear-ink">Cancella tutto l'inchiostro</button>
   <button data-m="delete" class="danger">Elimina questa mappa</button>
+  <button data-m="exit">Esci dall'app</button>
 </div>
 <input type="file" id="file-open" accept="application/json" hidden>
 

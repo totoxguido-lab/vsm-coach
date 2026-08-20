@@ -532,7 +532,9 @@
         P = mkPoly(r ? r.nodes : [a, { x: a.x - 26, y: a.y }, { x: a.x - 26, y: b.y - 30 }, { x: b.x, y: b.y - 30 }, b]);
         tDef = r ? r.tDef : 0.7;
       } else if (mode === 'dritta') {
-        P = mkPoly([a, b]);
+        // percorso piegato a mano: la linea passa per i punti che l'utente ha trascinato
+        const via = Array.isArray(c.props.via) ? c.props.via : [];
+        P = mkPoly([a, ...via, b]);
         tDef = 0.5 + (((c.props.offset || 0) % 3) - 1) * 0.14;
       } else {
         // curva dal richiedente (in alto a destra) verso il bordo alto del bersaglio; più vie stesso paio → offset
@@ -545,13 +547,10 @@
       const t = c.props.t == null ? tDef : c.props.t;
       return Object.assign(P, { mid: P.at(t), off, tDef });
     }
-    const a = from ? V.anchor(from, pt) : pf, b = to ? V.anchor(to, pf) : pt;
-    // flusso: fra passi allineati resta una retta in ogni modalità; se sono sfalsati, in squadrata prende un gomito
-    const dx = Math.abs(b.x - a.x), dy = Math.abs(b.y - a.y);
-    const P = (mode === 'squadrata' && dy > 6)
-      ? mkPoly(routeAvoid(dx >= dy ? [a, { x: (a.x + b.x) / 2, y: a.y }, { x: (a.x + b.x) / 2, y: b.y }, b]
-        : [a, { x: a.x, y: (a.y + b.y) / 2 }, { x: b.x, y: (a.y + b.y) / 2 }, b], R.obstacles(map, c)))
-      : mkPoly([a, b]);
+    const via = Array.isArray(c.props.via) ? c.props.via : [];
+    // le ancore guardano il primo/ultimo punto di via, cosi' la freccia esce dal lato giusto del box
+    const a = from ? V.anchor(from, via[0] || pt) : pf, b = to ? V.anchor(to, via[via.length - 1] || pf) : pt;
+    const P = mkPoly([a, ...via, b]);
     const t = c.props.t == null ? 0.5 : c.props.t;
     return Object.assign(P, { mid: P.at(t), tDef: 0.5 });
   };
@@ -746,7 +745,7 @@
     let s = traceSVG(ids, map) + R.lockLinks(ids, map);
     ids.forEach(id => {
       const el = V.byId(id, map); if (!el) return;
-      if (V.isConnector(el)) { const P = R.connPath(el, map); s += `<path class="sel-ring" d="${P.d}"/>`; if (ids.length === 1) s += `<circle class="end-hit" data-endhandle="from" data-conn="${id}" cx="${P.a.x}" cy="${P.a.y}" r="18" fill="transparent"/><circle class="end-hit" data-endhandle="to" data-conn="${id}" cx="${P.b.x}" cy="${P.b.y}" r="18" fill="transparent"/><circle class="handle end" data-endhandle="from" data-conn="${id}" cx="${P.a.x}" cy="${P.a.y}" r="7"/><circle class="handle end" data-endhandle="to" data-conn="${id}" cx="${P.b.x}" cy="${P.b.y}" r="7"/>`; return; }
+      if (V.isConnector(el)) { const P = R.connPath(el, map); s += `<path class="sel-ring" d="${P.d}"/>`; if (ids.length === 1) { s += `<circle class="end-hit" data-endhandle="from" data-conn="${id}" cx="${P.a.x}" cy="${P.a.y}" r="18" fill="transparent"/><circle class="end-hit" data-endhandle="to" data-conn="${id}" cx="${P.b.x}" cy="${P.b.y}" r="18" fill="transparent"/><circle class="handle end" data-endhandle="from" data-conn="${id}" cx="${P.a.x}" cy="${P.a.y}" r="7"/><circle class="handle end" data-endhandle="to" data-conn="${id}" cx="${P.b.x}" cy="${P.b.y}" r="7"/>`; (el.props.via || []).forEach((v2) => { s += `<circle class="handle via" cx="${v2.x}" cy="${v2.y}" r="5"/>`; }); } return; }
       const pos = R.elPos(el, map); const pad = 6; const sz = R.elSize(el);
       s += `<rect class="sel-ring" x="${pos.x - pad}" y="${pos.y - pad}" width="${sz.w + pad * 2}" height="${sz.h + pad * 2}" rx="4"/>`;
       if (el.props.lockTo || (el.type === 'delta' && el.props.attachedTo)) s += lockGlyph(pos.x - pad - 14, pos.y - pad - 2);

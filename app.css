@@ -80,6 +80,12 @@ svg .lane{fill:rgba(31,78,121,.05);stroke:rgba(31,78,121,.35);stroke-dasharray:6
 svg .delta{fill:var(--delta);stroke:var(--delta)}
 svg .delta-txt{fill:var(--delta)}
 svg .cloud{fill:#fff;stroke:var(--cloud);stroke-width:1.4}
+/* area sensibile invisibile: da' un bersaglio pieno agli elementi disegnati a sole linee (l'omino) */
+svg .el-hit{fill:transparent;stroke:none}
+/* problema ridotto a segnale: triangolo di allerta, si riapre toccandolo */
+svg .alert{fill:#fff4e5;stroke:var(--cloud);stroke-width:1.6;stroke-linejoin:round}
+svg .alert-mark{stroke:var(--cloud);stroke-width:2;stroke-linecap:round;fill:none}
+svg .alert-dot{fill:var(--cloud)}
 svg .cloud-txt{fill:var(--cloud)}
 svg .fluffy{fill:#f3f8f4;stroke:var(--sage);stroke-width:1.2}
 svg .fluffy-txt{fill:var(--sage)}
@@ -354,3 +360,32 @@ dialog .d-foot{padding:10px 16px;border-top:1px solid var(--line);display:flex;g
   #stage{position:static;overflow:visible}
   #canvas{position:static;width:100%;height:auto}
 }
+
+
+/* ---------- menu a comparsa rotondo: che cosa mettere in fondo alla freccia ---------- */
+/* compare dove il dito ha lasciato il collegamento nel vuoto; un tocco fuori annulla tutto */
+.placemenu{position:absolute;z-index:60;width:0;height:0}
+.placemenu .pm-dot{position:absolute;left:-7px;top:-7px;width:14px;height:14px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px rgba(31,78,121,.18)}
+.placemenu .pm-btn{position:absolute;width:54px;height:54px;margin:-27px 0 0 -27px;border-radius:50%;border:1px solid var(--line);
+  background:var(--panel);color:var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+  box-shadow:0 6px 18px rgba(0,0,0,.18);font-size:9px;line-height:1;cursor:pointer;animation:pm-in .12s ease-out}
+.placemenu .pm-btn svg{width:20px;height:20px}
+.placemenu .pm-btn:hover,.placemenu .pm-btn:focus-visible{border-color:var(--accent);color:var(--accent);outline:none}
+@keyframes pm-in{from{opacity:0;transform:scale(.7)}to{opacity:1;transform:scale(1)}}
+/* uscita dallo strumento attivo: prende il posto del vecchio tasto "Seleziona" */
+#palette .tool.done{color:var(--accent)}
+
+
+/* ---------- livelli (mappe collegate) a destra, sopra lo zoom ---------- */
+#levelsctl{position:absolute;right:12px;bottom:calc(160px + env(safe-area-inset-bottom));z-index:6}
+#levelsctl .btn{width:40px;height:40px;padding:0;justify-content:center;background:var(--panel)}
+#levels-list{position:absolute;right:46px;bottom:0;min-width:210px;max-width:290px;max-height:50vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);padding:6px;display:flex;flex-direction:column;gap:2px}
+#levels-list button{display:block;width:100%;text-align:left;border:0;background:transparent;color:var(--ink);padding:8px 10px;border-radius:8px;font-size:13px;min-height:var(--tap);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#levels-list button:hover{background:rgba(31,78,121,.08)}
+#levels-list button[aria-current="true"]{background:rgba(31,78,121,.12);font-weight:700}
+#levels-list button.sub{padding-left:26px}
+#app.clean #levelsctl{display:none}
+@media print{#levelsctl{display:none!important}}
+@media (pointer:coarse){#levelsctl .btn{width:var(--tap);height:var(--tap)}#levelsctl{bottom:calc(170px + env(safe-area-inset-bottom))}}
+/* pallino di via di un connettore selezionato */
+svg .handle.via{fill:var(--panel);stroke:var(--sel);stroke-width:2;pointer-events:none}

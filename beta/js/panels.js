@@ -29,18 +29,19 @@
     legend: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h8M8 13h8M8 17h5" stroke-linecap="round"/></svg>',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 9h3l1.5 3-1.5 1a5 5 0 002.5 2.5l1-1.5 3 1.5v2a1.5 1.5 0 01-1.5 1.5A9 9 0 018.5 10.5 1.5 1.5 0 018.5 9z"/></svg>',
     face: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5q3.5 3 7 0"/><circle cx="9" cy="9.5" r=".9" fill="currentColor"/><circle cx="15" cy="9.5" r=".9" fill="currentColor"/></svg>',
+    area: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="4 3"><rect x="4" y="5" width="16" height="14" rx="1.5"/></svg>',
     more: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="18" cy="12" r="2"/></svg>'
   };
   // Seleziona e Mano non sono nella barra: col dito si seleziona toccando e si sposta il foglio trascinando
   // il vuoto, quindi erano due bottoni che non facevano nulla di nuovo. Matita e Gomma invece restano:
   // col dito non c'e' modo di distinguere "disegno" da "trascino" senza un interruttore (con la penna parte da se').
-  const MAIN_TOOLS = [['box', 'Process box (B)'], ['delta', 'Delta / attesa (D)'], ['flow', 'Freccia di flusso (F)'], ['request', 'Via di richiesta (R)'], ['person', 'Persona / richiedente (O)'], ['storm', 'Nuvola temporalesca (N)'], null, ['ink', 'Matita (P)'], ['eraser', 'Gomma (E)'], null, ['more', 'Altri elementi del libro']];
+  const MAIN_TOOLS = [['box', 'Process box (B)'], ['delta', 'Delta / attesa (D)'], ['flow', 'Freccia di flusso (F)'], ['request', 'Via di richiesta (R)'], ['person', 'Persona / richiedente (O)'], ['storm', 'Nuvola temporalesca (N)'], null, ['area', 'Seleziona un\u2019area (A)'], ['ink', 'Matita (P)'], ['eraser', 'Gomma (E)'], null, ['more', 'Altri elementi del libro']];
   const MORE_TOOLS = [['fluffy', 'Nuvola soffice'], ['burst', 'Kaizen burst'], ['face', 'Faccia (esperienza)'], ['icon', 'Icona (canale, mezzo, documento…)'], ['inventory', 'Scorta'], ['inbox', 'In-box / attesa'], ['distance', 'Distanza'], ['lane', 'Corsia (reparto)'], ['text', 'Testo'], ['legend', 'Legenda']];
   const INK_COLORS = [['#2b2b2b', 'grafite'], ['#c8321e', 'rosso'], ['#1f4e79', 'blu'], ['#3f7d5a', 'verde']];
 
   UI.buildPalette = () => {
     const pal = $('#palette'); pal.innerHTML = '';
-    const SHORT = { ink: 'Matita', eraser: 'Gomma', box: 'Passo', delta: 'Attesa', flow: 'Flusso', request: 'Richiesta', person: 'Persona', storm: 'Problema', more: 'Altro' };
+    const SHORT = { ink: 'Matita', eraser: 'Gomma', area: 'Area', box: 'Passo', delta: 'Attesa', flow: 'Flusso', request: 'Richiesta', person: 'Persona', storm: 'Problema', more: 'Altro' };
     // "✓ Fine" compare solo quando uno strumento e' attivo: e' l'uscita, al posto del vecchio tasto Seleziona
     const done = document.createElement('button');
     done.className = 'tool done hidden'; done.id = 'tool-done'; done.title = 'Torna a selezionare (Esc)';
@@ -56,10 +57,34 @@
     $$('#palette .tool, #more-tools .tool').forEach(b => b.setAttribute('aria-pressed', b.dataset.tool === t));
     const dn = $('#tool-done'); if (dn) dn.classList.toggle('hidden', t === 'select');
     if (MORE_TOOLS.some(x => x[0] === t)) $('#palette [data-tool="more"]').setAttribute('aria-pressed', 'true');
-    const hints = { ink: 'Matita attiva: tieni premuto e trascina sul foglio per tracciare (dito, mouse o penna). Tocca di nuovo la matita per colore e spessore; ✓ Fine per finire.', eraser: 'Gomma attiva: passa sui tratti da cancellare.', box: 'Passo: tocca il foglio dove vuoi il process box (o trascina per la dimensione).', delta: 'Attesa: tocca vicino a una freccia di flusso — il delta si aggancia ed entra nella timeline.', flow: 'Flusso: tieni premuto su un box e trascina fino al box successivo.', request: 'Richiesta: tieni premuto sull\'omino e trascina fino al primo passo; una freccia per ogni via reale.', person: 'Persona: tocca il foglio — il primo omino è il richiedente (in alto a destra).', storm: 'Problema: tocca dove sta il problema. Che cosa non è ideale?', fluffy: 'Nuvola soffice: tocca dove va l\'idea o la cosa che funziona.', burst: 'Kaizen: tocca dove va il candidato a progetto.', inventory: 'Scorta: tocca dove sta la scorta.', inbox: 'In-box/attesa: tocca dove aspetta l\'informazione o la persona.', distance: 'Distanza: tocca dove segnare i metri percorsi.', lane: 'Corsia: trascina per una fascia orizzontale (un reparto).', text: 'Testo: tocca per una nota.', icon: 'Icona: tocca dove metterla (su un passo o una freccia si blocca da sola), poi scegli il simbolo.', face: 'Faccia: tocca dove sta chi vive quel momento (paziente, operatore) e scegli l\'espressione.', legend: 'Legenda: tocca dove metterla (di solito in alto a sinistra).', pan: 'Mano: trascina per spostare il foglio; pinch (o Ctrl+rotella) per lo zoom.', select: '' };
+    const hints = { ink: 'Matita attiva: tieni premuto e trascina sul foglio per tracciare (dito, mouse o penna). Tocca di nuovo la matita per colore e spessore; ✓ Fine per finire.', eraser: 'Gomma attiva: passa sui tratti da cancellare.', area: 'Area: disegna un riquadro intorno a un settore. Poi puoi eliminarlo, duplicarlo o trasformarlo in un sotto-foglio.', box: 'Passo: tocca il foglio dove vuoi il process box (o trascina per la dimensione).', delta: 'Attesa: tocca vicino a una freccia di flusso — il delta si aggancia ed entra nella timeline.', flow: 'Flusso: tieni premuto su un box e trascina fino al box successivo.', request: 'Richiesta: tieni premuto sull\'omino e trascina fino al primo passo; una freccia per ogni via reale.', person: 'Persona: tocca il foglio — il primo omino è il richiedente (in alto a destra).', storm: 'Problema: tocca dove sta il problema. Che cosa non è ideale?', fluffy: 'Nuvola soffice: tocca dove va l\'idea o la cosa che funziona.', burst: 'Kaizen: tocca dove va il candidato a progetto.', inventory: 'Scorta: tocca dove sta la scorta.', inbox: 'In-box/attesa: tocca dove aspetta l\'informazione o la persona.', distance: 'Distanza: tocca dove segnare i metri percorsi.', lane: 'Corsia: trascina per una fascia orizzontale (un reparto).', text: 'Testo: tocca per una nota.', icon: 'Icona: tocca dove metterla (su un passo o una freccia si blocca da sola), poi scegli il simbolo.', face: 'Faccia: tocca dove sta chi vive quel momento (paziente, operatore) e scegli l\'espressione.', legend: 'Legenda: tocca dove metterla (di solito in alto a sinistra).', pan: 'Mano: trascina per spostare il foglio; pinch (o Ctrl+rotella) per lo zoom.', select: '' };
     if (hints[t]) I.hint(hints[t], 0); else I.hint('');
     UI.hideSuggestIfTool(t);
   };
+  /** Livelli: le mappe collegate viste come piani di lavoro. L'icona a destra compare quando i piani
+   *  sono almeno due; il pannello elenca le mappe madri con i loro sotto-fogli rientrati. Gli stati
+   *  futuri non compaiono: hanno gia' il loro interruttore Attuale/Futuro in testata. */
+  UI.renderLevels = () => {
+    const ctl = $('#levelsctl'); if (!ctl) return;
+    const maps = Object.values(V.doc.maps).filter(m => m.kind !== 'future');
+    if (maps.length < 2) { ctl.classList.add('hidden'); $('#levels-list').classList.add('hidden'); return; }
+    ctl.classList.remove('hidden');
+    const list = $('#levels-list');
+    const cur = V.doc.activeMapId;
+    const kids = (id) => maps.filter(m => m.parentId === id);
+    const row = (m, sub) => `<button data-lv="${m.id}" class="${sub ? 'sub' : ''}" aria-current="${m.id === cur}">${sub ? '\u21b3 ' : ''}${esc(m.title || 'senza titolo')}</button>`;
+    let h = '';
+    maps.filter(m => !m.parentId || !V.doc.maps[m.parentId]).forEach(m => { h += row(m, false); kids(m.id).forEach(k => { h += row(k, true); kids(k.id).forEach(k2 => h += row(k2, true)); }); });
+    list.innerHTML = h;
+    $$('[data-lv]', list).forEach(b => b.onclick = () => { list.classList.add('hidden'); if (b.dataset.lv !== cur) UI.openMap(b.dataset.lv); });
+  };
+  UI.bindLevels = () => {
+    const btn = $('#levels-btn'); if (!btn) return;
+    btn.onclick = () => { const list = $('#levels-list'); UI.renderLevels(); list.classList.toggle('hidden'); };
+    // un tocco altrove chiude il pannello
+    document.addEventListener('pointerdown', (ev) => { const list = $('#levels-list'); if (!list || list.classList.contains('hidden')) return; if (!ev.target.closest || !ev.target.closest('#levelsctl')) list.classList.add('hidden'); }, true);
+  };
+
   /** Trascinato un flusso o una richiesta nel vuoto: invece di far sparire il gesto, si propone qui
    *  l'elemento di arrivo. Sceglierne uno lo crea sul punto gia' collegato; toccare fuori annulla tutto. */
   // le voci vengono da I.CONN_TARGETS, la stessa lista della validazione: offrire "Persona" a una
@@ -440,7 +465,7 @@
     if (ids.length > 1) { // selezione multipla: azioni di gruppo
       const els = ids.map(id => V.byId(id, map)).filter(Boolean); const lockable = els.filter(e => !V.isConnector(e) && R.LOCKABLE.includes(e.type)); const locked = els.filter(e => e.props && (e.props.lockTo || (e.type === 'delta' && e.props.attachedTo)));
       Q.el = ids[0]; A.push(`<span class="qinfo">${ids.length} selezionati</span>`);
-      if (lockable.length) btn('lockall', '🔒 Blocca tutti a…', 'Blocca gli elementi selezionati a un passo, persona, corsia o freccia che tocchi'); if (locked.length) btn('unlockall', '🔓 Sblocca tutti'); btn('dupall', '⎘ Duplica tutti'); btn('del', 'Elimina');
+      if (lockable.length) btn('lockall', '🔒 Blocca tutti a…', 'Blocca gli elementi selezionati a un passo, persona, corsia o freccia che tocchi'); if (locked.length) btn('unlockall', '🔓 Sblocca tutti'); if (els.filter(e => !V.isConnector(e) && e.type !== 'lane').length >= 2) btn('sheetify', '⧉ In un sotto-foglio', 'Sposta il settore in una nuova mappa collegata: al suo posto resta un passo con ↗'); btn('dupall', '⎘ Duplica tutti'); btn('del', 'Elimina');
       q.innerHTML = A.join(''); q.classList.remove('hidden'); UI.positionQuick(); $$('[data-qa]', q).forEach(b => b.onclick = () => UI.quickAction(b.dataset.qa, ids[0]));
       return;
     }
@@ -468,6 +493,7 @@
       case 'icon': case 'face': btn('dup', 'Duplica'); break;
       case 'legend': btn('legend', el.props.collapsed ? 'Apri' : 'Chiudi'); btn('legendfull', 'Legenda completa', 'Tutti i simboli con significato e varianti, nel cassetto'); break;
     }
+    if (V.isConnector(el) && Array.isArray(el.props.via) && el.props.via.length) btn('straighten', '― Raddrizza', 'Toglie le pieghe fatte a mano: la freccia torna diretta');
     const locked = el.props && (el.props.lockTo || (el.type === 'delta' && el.props.attachedTo));
     if (locked) { const par = V.byId(locked, map); btn('unlock', '🔓 Sblocca', 'Bloccato a ' + (par ? (par.props.title || par.props.label || par.props.name || V.TYPES[par.type].name) : '?') + ': smette di seguirlo'); }
     else if (!V.isConnector(el) && R.LOCKABLE.includes(el.type) && el.type !== 'delta') btn('lockto', '🔒 Blocca a…', 'Si muove insieme all\'elemento che tocchi (passo, freccia, persona, corsia)');
@@ -506,6 +532,8 @@
       case 'unlockkids': I.unlockChildren(id); break;
       case 'dup': I.duplicate(id); break;
       case 'dupall': I.duplicateMany(I.selection.slice()); break;
+      case 'sheetify': I.groupToDetail(I.selection.slice()); break;
+      case 'straighten': { const c = V.byId(id); if (!c) break; V.commit({ t: 'props', id, after: { via: null }, before: { via: clone(c.props.via) || null } }, 'raddrizza'); I.select([id]); break; }
       case 'del': if (I.selection.length <= 1) I.select([id], { keepPop: true }); I.deleteSelection(); break;
     }
   };

@@ -29,27 +29,99 @@
     legend: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h8M8 13h8M8 17h5" stroke-linecap="round"/></svg>',
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 9h3l1.5 3-1.5 1a5 5 0 002.5 2.5l1-1.5 3 1.5v2a1.5 1.5 0 01-1.5 1.5A9 9 0 018.5 10.5 1.5 1.5 0 018.5 9z"/></svg>',
     face: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5q3.5 3 7 0"/><circle cx="9" cy="9.5" r=".9" fill="currentColor"/><circle cx="15" cy="9.5" r=".9" fill="currentColor"/></svg>',
+    area: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="4 3"><rect x="4" y="5" width="16" height="14" rx="1.5"/></svg>',
     more: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="18" cy="12" r="2"/></svg>'
   };
-  const MAIN_TOOLS = [['select', 'Seleziona / sposta (V)'], ['pan', 'Mano (H)'], ['ink', 'Matita (P)'], ['eraser', 'Gomma (E)'], null, ['box', 'Process box (B)'], ['delta', 'Delta / attesa (D)'], ['flow', 'Freccia di flusso (F)'], ['request', 'Via di richiesta (R)'], ['person', 'Persona / richiedente (O)'], ['storm', 'Nuvola temporalesca (N)'], null, ['more', 'Altri elementi del libro']];
+  // Seleziona e Mano non sono nella barra: col dito si seleziona toccando e si sposta il foglio trascinando
+  // il vuoto, quindi erano due bottoni che non facevano nulla di nuovo. Matita e Gomma invece restano:
+  // col dito non c'e' modo di distinguere "disegno" da "trascino" senza un interruttore (con la penna parte da se').
+  const MAIN_TOOLS = [['box', 'Process box (B)'], ['delta', 'Delta / attesa (D)'], ['flow', 'Freccia di flusso (F)'], ['request', 'Via di richiesta (R)'], ['person', 'Persona / richiedente (O)'], ['storm', 'Nuvola temporalesca (N)'], null, ['area', 'Seleziona un\u2019area (A)'], ['ink', 'Matita (P)'], ['eraser', 'Gomma (E)'], null, ['more', 'Altri elementi del libro']];
   const MORE_TOOLS = [['fluffy', 'Nuvola soffice'], ['burst', 'Kaizen burst'], ['face', 'Faccia (esperienza)'], ['icon', 'Icona (canale, mezzo, documento…)'], ['inventory', 'Scorta'], ['inbox', 'In-box / attesa'], ['distance', 'Distanza'], ['lane', 'Corsia (reparto)'], ['text', 'Testo'], ['legend', 'Legenda']];
   const INK_COLORS = [['#2b2b2b', 'grafite'], ['#c8321e', 'rosso'], ['#1f4e79', 'blu'], ['#3f7d5a', 'verde']];
 
   UI.buildPalette = () => {
     const pal = $('#palette'); pal.innerHTML = '';
-    const SHORT = { select: 'Seleziona', pan: 'Mano', ink: 'Matita', eraser: 'Gomma', box: 'Passo', delta: 'Attesa', flow: 'Flusso', request: 'Richiesta', person: 'Persona', storm: 'Problema', more: 'Altro' };
-    MAIN_TOOLS.forEach(t => { if (!t) { const s = document.createElement('div'); s.className = 'sep'; pal.appendChild(s); return; } const b = document.createElement('button'); b.className = 'tool'; b.dataset.tool = t[0]; b.title = t[1]; b.setAttribute('aria-label', t[1]); b.innerHTML = IC[t[0]] + `<span class="lbl">${SHORT[t[0]]}</span>`; b.onclick = () => { if (t[0] === 'more') { $('#more-tools').classList.toggle('hidden'); return; } $('#more-tools').classList.add('hidden'); if (t[0] === 'ink' && I.tool === 'ink') { UI.inkOptions(); return; } I.setTool(t[0]); }; pal.appendChild(b); });
+    const SHORT = { ink: 'Matita', eraser: 'Gomma', area: 'Area', box: 'Passo', delta: 'Attesa', flow: 'Flusso', request: 'Richiesta', person: 'Persona', storm: 'Problema', more: 'Altro' };
+    // "✓ Fine" compare solo quando uno strumento e' attivo: e' l'uscita, al posto del vecchio tasto Seleziona
+    const done = document.createElement('button');
+    done.className = 'tool done hidden'; done.id = 'tool-done'; done.title = 'Torna a selezionare (Esc)';
+    done.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 7"/></svg><span class="lbl">Fine</span>';
+    done.onclick = () => { $('#more-tools').classList.add('hidden'); I.setTool('select'); };
+    pal.appendChild(done);
+    MAIN_TOOLS.forEach(t => { if (!t) { const s = document.createElement('div'); s.className = 'sep'; pal.appendChild(s); return; } const b = document.createElement('button'); b.className = 'tool'; b.dataset.tool = t[0]; b.title = t[1]; b.setAttribute('aria-label', t[1]); b.innerHTML = IC[t[0]] + `<span class="lbl">${SHORT[t[0]]}</span>`; b.onclick = () => { if (t[0] === 'more') { $('#more-tools').classList.toggle('hidden'); return; } $('#more-tools').classList.add('hidden'); if (t[0] === 'ink' && I.tool === 'ink') { UI.inkOptions(); return; } if (I.tool === t[0]) { I.setTool('select'); return; } I.setTool(t[0]); }; pal.appendChild(b); });
     const more = $('#more-tools'); more.innerHTML = '';
     MORE_TOOLS.forEach(t => { const b = document.createElement('button'); b.className = 'tool'; b.dataset.tool = t[0]; b.innerHTML = IC[t[0]] + '<span>' + t[1] + '</span>'; b.onclick = () => { I.setTool(t[0]); more.classList.add('hidden'); }; more.appendChild(b); });
     UI.onTool(I.tool);
   };
   UI.onTool = (t) => {
     $$('#palette .tool, #more-tools .tool').forEach(b => b.setAttribute('aria-pressed', b.dataset.tool === t));
+    const dn = $('#tool-done'); if (dn) dn.classList.toggle('hidden', t === 'select');
     if (MORE_TOOLS.some(x => x[0] === t)) $('#palette [data-tool="more"]').setAttribute('aria-pressed', 'true');
-    const hints = { ink: 'Matita attiva: tieni premuto e trascina sul foglio per tracciare (dito, mouse o penna). Tocca di nuovo la matita per colore e spessore; ✓ Seleziona per finire.', eraser: 'Gomma attiva: passa sui tratti da cancellare.', box: 'Passo: tocca il foglio dove vuoi il process box (o trascina per la dimensione).', delta: 'Attesa: tocca vicino a una freccia di flusso — il delta si aggancia ed entra nella timeline.', flow: 'Flusso: tieni premuto su un box e trascina fino al box successivo.', request: 'Richiesta: tieni premuto sull\'omino e trascina fino al primo passo; una freccia per ogni via reale.', person: 'Persona: tocca il foglio — il primo omino è il richiedente (in alto a destra).', storm: 'Problema: tocca dove sta il problema. Che cosa non è ideale?', fluffy: 'Nuvola soffice: tocca dove va l\'idea o la cosa che funziona.', burst: 'Kaizen: tocca dove va il candidato a progetto.', inventory: 'Scorta: tocca dove sta la scorta.', inbox: 'In-box/attesa: tocca dove aspetta l\'informazione o la persona.', distance: 'Distanza: tocca dove segnare i metri percorsi.', lane: 'Corsia: trascina per una fascia orizzontale (un reparto).', text: 'Testo: tocca per una nota.', icon: 'Icona: tocca dove metterla (su un passo o una freccia si blocca da sola), poi scegli il simbolo.', face: 'Faccia: tocca dove sta chi vive quel momento (paziente, operatore) e scegli l\'espressione.', legend: 'Legenda: tocca dove metterla (di solito in alto a sinistra).', pan: 'Mano: trascina per spostare il foglio; pinch (o Ctrl+rotella) per lo zoom.', select: '' };
+    const hints = { ink: 'Matita attiva: tieni premuto e trascina sul foglio per tracciare (dito, mouse o penna). Tocca di nuovo la matita per colore e spessore; ✓ Fine per finire.', eraser: 'Gomma attiva: passa sui tratti da cancellare.', area: 'Area: disegna un riquadro intorno a un settore. Poi puoi eliminarlo, duplicarlo o trasformarlo in un sotto-foglio.', box: 'Passo: tocca il foglio dove vuoi il process box (o trascina per la dimensione).', delta: 'Attesa: tocca vicino a una freccia di flusso — il delta si aggancia ed entra nella timeline.', flow: 'Flusso: tieni premuto su un box e trascina fino al box successivo.', request: 'Richiesta: tieni premuto sull\'omino e trascina fino al primo passo; una freccia per ogni via reale.', person: 'Persona: tocca il foglio — il primo omino è il richiedente (in alto a destra).', storm: 'Problema: tocca dove sta il problema. Che cosa non è ideale?', fluffy: 'Nuvola soffice: tocca dove va l\'idea o la cosa che funziona.', burst: 'Kaizen: tocca dove va il candidato a progetto.', inventory: 'Scorta: tocca dove sta la scorta.', inbox: 'In-box/attesa: tocca dove aspetta l\'informazione o la persona.', distance: 'Distanza: tocca dove segnare i metri percorsi.', lane: 'Corsia: trascina per una fascia orizzontale (un reparto).', text: 'Testo: tocca per una nota.', icon: 'Icona: tocca dove metterla (su un passo o una freccia si blocca da sola), poi scegli il simbolo.', face: 'Faccia: tocca dove sta chi vive quel momento (paziente, operatore) e scegli l\'espressione.', legend: 'Legenda: tocca dove metterla (di solito in alto a sinistra).', pan: 'Mano: trascina per spostare il foglio; pinch (o Ctrl+rotella) per lo zoom.', select: '' };
     if (hints[t]) I.hint(hints[t], 0); else I.hint('');
     UI.hideSuggestIfTool(t);
   };
+  /** Livelli: le mappe collegate viste come piani di lavoro. L'icona a destra compare quando i piani
+   *  sono almeno due; il pannello elenca le mappe madri con i loro sotto-fogli rientrati. Gli stati
+   *  futuri non compaiono: hanno gia' il loro interruttore Attuale/Futuro in testata. */
+  UI.renderLevels = () => {
+    const ctl = $('#levelsctl'); if (!ctl) return;
+    const maps = Object.values(V.doc.maps).filter(m => m.kind !== 'future');
+    if (maps.length < 2) { ctl.classList.add('hidden'); $('#levels-list').classList.add('hidden'); return; }
+    ctl.classList.remove('hidden');
+    const list = $('#levels-list');
+    const cur = V.doc.activeMapId;
+    const kids = (id) => maps.filter(m => m.parentId === id);
+    const row = (m, sub) => `<button data-lv="${m.id}" class="${sub ? 'sub' : ''}" aria-current="${m.id === cur}">${sub ? '\u21b3 ' : ''}${esc(m.title || 'senza titolo')}</button>`;
+    let h = '';
+    maps.filter(m => !m.parentId || !V.doc.maps[m.parentId]).forEach(m => { h += row(m, false); kids(m.id).forEach(k => { h += row(k, true); kids(k.id).forEach(k2 => h += row(k2, true)); }); });
+    list.innerHTML = h;
+    $$('[data-lv]', list).forEach(b => b.onclick = () => { list.classList.add('hidden'); if (b.dataset.lv !== cur) UI.openMap(b.dataset.lv); });
+  };
+  UI.bindLevels = () => {
+    const btn = $('#levels-btn'); if (!btn) return;
+    btn.onclick = () => { const list = $('#levels-list'); UI.renderLevels(); list.classList.toggle('hidden'); };
+    // un tocco altrove chiude il pannello
+    document.addEventListener('pointerdown', (ev) => { const list = $('#levels-list'); if (!list || list.classList.contains('hidden')) return; if (!ev.target.closest || !ev.target.closest('#levelsctl')) list.classList.add('hidden'); }, true);
+  };
+
+  /** Trascinato un flusso o una richiesta nel vuoto: invece di far sparire il gesto, si propone qui
+   *  l'elemento di arrivo. Sceglierne uno lo crea sul punto gia' collegato; toccare fuori annulla tutto. */
+  // le voci vengono da I.CONN_TARGETS, la stessa lista della validazione: offrire "Persona" a una
+  // richiesta creava un collegamento che poi il ricollegamento rifiutava per sempre
+  const PLACE_LBL = { box: 'Passo', inventory: 'Scorta', inbox: 'In-box' };
+  UI.closePlaceMenu = () => { const m = $('#placemenu'); if (!m) return false; m.remove(); document.removeEventListener('pointerdown', UI._pmAway, true); return true; };
+  UI.proposePlace = (clientX, clientY, ctype, fromId, w) => {
+    UI.closePlaceMenu();
+    const stage = $('#stage'); const r = stage.getBoundingClientRect();
+    const kinds = I.CONN_TARGETS[ctype] || ['box'];
+    const m = document.createElement('div'); m.id = 'placemenu'; m.className = 'placemenu';
+    m.style.left = Math.min(Math.max(clientX - r.left, 78), r.width - 78) + 'px';
+    m.style.top = Math.min(Math.max(clientY - r.top, 78), r.height - 78) + 'px';
+    const n = kinds.length, RAD = 66;
+    m.innerHTML = '<span class="pm-dot"></span>' + kinds.map((k, i) => {
+      const a = -Math.PI / 2 + (i - (n - 1) / 2) * (Math.PI / 2.6);
+      const x = Math.round(Math.cos(a) * RAD), y = Math.round(Math.sin(a) * RAD);
+      return `<button class="pm-btn" data-kind="${k}" style="left:${x}px;top:${y}px" title="${V.TYPES[k].name} collegato">${IC[k] || ''}<span>${PLACE_LBL[k] || k}</span></button>`;
+    }).join('');
+    stage.appendChild(m);
+    $$('.pm-btn', m).forEach(b => b.onclick = (ev) => { ev.stopPropagation(); const k = b.dataset.kind; UI.closePlaceMenu(); I.placeAndConnect(k, w, fromId, ctype); });
+    // un tocco fuori dal menu annulla: niente elemento, niente freccia
+    // Chiudere il menu non deve mangiarsi il tocco: se si tocca un comando (✓ Fine, Annulla, il cassetto)
+    // quel tocco deve arrivare a destinazione. Si blocca solo quando il dito finisce sul foglio, dove
+    // altrimenti partirebbe subito un altro gesto.
+    UI._pmAway = (ev) => {
+      if (ev.target.closest && ev.target.closest('#placemenu')) return;
+      // il secondo dito di un pinch non chiude ne' blocca nulla: bloccarlo spezzava il conteggio
+      // dei puntatori e il pinch degenerava in un pan a scatti
+      if (ev.isPrimary === false) return;
+      UI.closePlaceMenu();
+      if (ev.target.closest && ev.target.closest('#canvas')) { ev.stopPropagation(); ev.preventDefault(); }
+    };
+    setTimeout(() => document.addEventListener('pointerdown', UI._pmAway, true), 0);
+    I.hint('Scegli che cosa mettere qui: nasce gi\u00e0 collegato. Tocca fuori per annullare.', 4000);
+  };
+
   UI.inkOptions = () => { const p = $('#pop'); p.innerHTML = `<div class="pop-head"><b>Matita</b><button class="btn small ghost" id="pop-x" aria-label="Chiudi">✕</button></div><div class="actions">${INK_COLORS.map(c => `<button class="btn small" data-c="${c[0]}" style="border-color:${c[0]};${I.ink.color === c[0] ? 'background:' + c[0] + ';color:#fff' : ''}">${c[1]}</button>`).join('')}</div><div class="actions">${[1.2, 1.8, 3].map(w => `<button class="btn small" data-w="${w}" ${I.ink.width === w ? 'style="border-color:var(--accent);color:var(--accent)"' : ''}>${w === 1.2 ? 'sottile' : w === 1.8 ? 'media' : 'spessa'}</button>`).join('')}</div>`; p.classList.remove('hidden'); const st = $('#stage').getBoundingClientRect(); p.style.left = Math.max(10, st.width / 2 - 100) + 'px'; p.style.top = (st.height - 200) + 'px'; $$('[data-c]', p).forEach(b => b.onclick = () => { I.ink.color = b.dataset.c; UI.inkOptions(); }); $$('[data-w]', p).forEach(b => b.onclick = () => { I.ink.width = +b.dataset.w; UI.inkOptions(); }); $('#pop-x').onclick = () => V.pop.close(); };
 
   // ---------- popover degli elementi ----------
@@ -240,7 +312,9 @@
   };
 
   // ---------- header / mappe ----------
-  UI.openMap = (id) => { if (!V.doc.maps[id]) { UI.toast('Mappa non trovata.'); return; } P.close(); I.select([]); V.switchMap(id); I.restoreView(); };
+  UI.openMap = (id) => {
+    // niente modalita' appese sulla mappa nuova: il primo tocco li' deve funzionare
+    if (I.pickConn) I.cancelPickConnect(); if (I.pickLock) I.cancelPickLock(); UI.closePlaceMenu(); if (!V.doc.maps[id]) { UI.toast('Mappa non trovata.'); return; } P.close(); I.select([]); V.switchMap(id); I.restoreView(); };
   UI.renderHeader = () => {
     const map = V.map(); $('#map-title').value = map.title || ''; const k = $('#map-kind'); k.textContent = map.kind === 'future' ? 'stato futuro' : map.kind === 'detail' ? 'dettaglio' : 'stato attuale'; k.className = map.kind;
     $('#tab-current').setAttribute('aria-pressed', map.kind === 'current'); $('#tab-future').setAttribute('aria-pressed', map.kind === 'future');
@@ -391,7 +465,7 @@
     if (ids.length > 1) { // selezione multipla: azioni di gruppo
       const els = ids.map(id => V.byId(id, map)).filter(Boolean); const lockable = els.filter(e => !V.isConnector(e) && R.LOCKABLE.includes(e.type)); const locked = els.filter(e => e.props && (e.props.lockTo || (e.type === 'delta' && e.props.attachedTo)));
       Q.el = ids[0]; A.push(`<span class="qinfo">${ids.length} selezionati</span>`);
-      if (lockable.length) btn('lockall', '🔒 Blocca tutti a…', 'Blocca gli elementi selezionati a un passo, persona, corsia o freccia che tocchi'); if (locked.length) btn('unlockall', '🔓 Sblocca tutti'); btn('dupall', '⎘ Duplica tutti'); btn('del', 'Elimina');
+      if (lockable.length) btn('lockall', '🔒 Blocca tutti a…', 'Blocca gli elementi selezionati a un passo, persona, corsia o freccia che tocchi'); if (locked.length) btn('unlockall', '🔓 Sblocca tutti'); if (els.filter(e => !V.isConnector(e) && e.type !== 'lane').length >= 2) btn('sheetify', '⧉ In un sotto-foglio', 'Sposta il settore in una nuova mappa collegata: al suo posto resta un passo con ↗'); btn('dupall', '⎘ Duplica tutti'); btn('del', 'Elimina');
       q.innerHTML = A.join(''); q.classList.remove('hidden'); UI.positionQuick(); $$('[data-qa]', q).forEach(b => b.onclick = () => UI.quickAction(b.dataset.qa, ids[0]));
       return;
     }
@@ -414,10 +488,12 @@
       case 'person': if (el.props.requestor) btn('reqtool', '+ Via di richiesta', 'Trascina dall\'omino al primo passo'); break;
       case 'delta': if (!el.props.attachedTo) btn('attach', 'Aggancia alla freccia'); break;
       case 'flow': btn('deltaOn', '+ Attesa qui'); btn('invert', 'Inverti'); break;
-      case 'storm': case 'fluffy': case 'burst': case 'text': btn('dup', 'Duplica'); break;
+      case 'storm': btn('shrink', el.props.collapsed ? '▽ Espandi' : '⚠ Riduci a segnale', el.props.collapsed ? 'Torna nuvola con il testo visibile' : 'Diventa un triangolo di allerta: il foglio resta pulito, il testo si legge toccandolo'); btn('dup', 'Duplica'); break;
+      case 'fluffy': case 'burst': case 'text': btn('dup', 'Duplica'); break;
       case 'icon': case 'face': btn('dup', 'Duplica'); break;
       case 'legend': btn('legend', el.props.collapsed ? 'Apri' : 'Chiudi'); btn('legendfull', 'Legenda completa', 'Tutti i simboli con significato e varianti, nel cassetto'); break;
     }
+    if (V.isConnector(el) && Array.isArray(el.props.via) && el.props.via.length) btn('straighten', '― Raddrizza', 'Toglie le pieghe fatte a mano: la freccia torna diretta');
     const locked = el.props && (el.props.lockTo || (el.type === 'delta' && el.props.attachedTo));
     if (locked) { const par = V.byId(locked, map); btn('unlock', '🔓 Sblocca', 'Bloccato a ' + (par ? (par.props.title || par.props.label || par.props.name || V.TYPES[par.type].name) : '?') + ': smette di seguirlo'); }
     else if (!V.isConnector(el) && R.LOCKABLE.includes(el.type) && el.type !== 'delta') btn('lockto', '🔒 Blocca a…', 'Si muove insieme all\'elemento che tocchi (passo, freccia, persona, corsia)');
@@ -431,15 +507,23 @@
       case 'next': { const nx = Math.min(el.x + el.w + 90, V.paperOf(map).w - V.TYPES.box.w - 20); const nb = V.newElement('box', nx, el.y, {}); const f = V.newConnector('flow', { el: el.id }, { el: nb.id }); const d = V.newElement('delta', 0, 0, {}); d.props.attachedTo = f.id; d.props.dx = 0; d.props.dy = 0; V.commit([{ t: 'add', el: nb }, { t: 'add', el: f }, { t: 'add', el: d }], 'passo successivo'); I.select([nb.id], { keepPop: true }); V.pop.open(nb.id); UI.toast('Passo aggiunto con freccia e attesa: tocca il delta per i tempi.'); break; }
       case 'delta': { const f = map.elements.find(c => c.type === 'flow' && c.from.el === el.id); if (!f) return; const d = V.newElement('delta', 0, 0, {}); d.props.attachedTo = f.id; d.props.dx = 0; d.props.dy = 0; V.commit({ t: 'add', el: d }, 'attesa'); I.select([d.id], { keepPop: true }); V.pop.open(d.id); break; }
       case 'cloud': { const s = V.newElement('storm', el.x + el.w - 60, el.y - 62, {}); V.commit({ t: 'add', el: s }, 'nuvola'); I.select([s.id], { keepPop: true }); V.pop.open(s.id); break; }
-      case 'connect': I.setTool('flow'); I.select([id], { keepPop: true }); I.hint('Ora tieni premuto su questo box e trascina fino al passo successivo.', 0); break;
-      case 'request': { const r = map.elements.find(e => e.type === 'person' && e.props.requestor); if (!r) return; const c = V.newConnector('request', { el: r.id }, { el: el.id }); c.props.offset = map.elements.filter(x => x.type === 'request' && x.from.el === r.id).length; V.commit({ t: 'add', el: c }, 'via di richiesta'); I.select([c.id], { keepPop: true }); V.pop.open(c.id); break; }
-      case 'reqtool': I.setTool('request'); I.select([id], { keepPop: true }); I.hint('Tieni premuto sull\'omino e trascina fino al primo passo.', 0); break;
+      case 'connect': I.select([id], { keepPop: true }); I.startPickConnect(id, 'flow'); break;
+      case 'request': { const r = map.elements.find(e => e.type === 'person' && e.props.requestor); if (!r) return; const c = V.newConnector('request', { el: r.id }, { el: el.id }); c.props.offset = I.reqOffset(map, r.id); V.commit({ t: 'add', el: c }, 'via di richiesta'); I.select([c.id], { keepPop: true }); V.pop.open(c.id); break; }
+      case 'reqtool': I.select([id], { keepPop: true }); I.startPickConnect(id, 'request'); break;
       case 'attach': { const pos = R.elPos(el, map); let best = null, bd = 120; map.elements.filter(c => c.type === 'flow').forEach(c => { const Pc = R.connPath(c, map); const d = Math.hypot(Pc.mid.x - (pos.x + el.w / 2), Pc.mid.y - pos.y); if (d < bd) { bd = d; best = c; } }); if (!best) { UI.toast('Nessuna freccia di flusso vicina: avvicina il delta a una freccia.'); return; } V.commit({ t: 'props', id, after: { attachedTo: best.id, dx: 0, dy: 0 } }, 'aggancia'); I.select([id]); break; }
       case 'deltaOn': { const d = V.newElement('delta', 0, 0, {}); d.props.attachedTo = id; d.props.dx = 0; d.props.dy = 0; V.commit({ t: 'add', el: d }, 'attesa'); I.select([d.id], { keepPop: true }); V.pop.open(d.id); break; }
       case 'invert': V.commit({ t: 'update', id, after: { from: clone(el.to), to: clone(el.from) }, before: { from: clone(el.from), to: clone(el.to) } }, 'inverti'); I.select([id]); break;
       case 'legend': { const collapsed = !el.props.collapsed; V.commit([{ t: 'props', id, after: { collapsed } }, { t: 'update', id, after: { w: collapsed ? 74 : 170, h: collapsed ? 18 : 104 } }], 'legenda'); I.select([id]); break; }
       case 'edit': V.pop.open(id); break;
       case 'legendfull': UI.showTab('legend'); break;
+      case 'shrink': {
+        const T = V.TYPES.storm; const collapsed = !el.props.collapsed;
+        // la misura di prima si tiene da parte: chi allarga una nuvola non vuole ritrovarla piccola al ritorno
+        const props = collapsed ? { collapsed, w0: el.w, h0: el.h } : { collapsed };
+        const size = collapsed ? { w: 30, h: 26 } : { w: el.props.w0 || T.w, h: el.props.h0 || T.h };
+        V.commit([{ t: 'props', id, after: props }, { t: 'update', id, after: size, before: { w: el.w, h: el.h } }], collapsed ? 'riduci a segnale' : 'espandi');
+        I.select([id]); break;
+      }
       case 'lockto': I.startPickLock([id]); break;
       case 'unlock': I.unlock(id); break;
       case 'lockall': I.startPickLock(I.selection.slice()); break;
@@ -448,6 +532,8 @@
       case 'unlockkids': I.unlockChildren(id); break;
       case 'dup': I.duplicate(id); break;
       case 'dupall': I.duplicateMany(I.selection.slice()); break;
+      case 'sheetify': I.groupToDetail(I.selection.slice()); break;
+      case 'straighten': { const c = V.byId(id); if (!c) break; V.commit({ t: 'props', id, after: { via: null }, before: { via: clone(c.props.via) || null } }, 'raddrizza'); I.select([id]); break; }
       case 'del': if (I.selection.length <= 1) I.select([id], { keepPop: true }); I.deleteSelection(); break;
     }
   };

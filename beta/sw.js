@@ -3,7 +3,7 @@
 // cancella solo le versioni vecchie della PROPRIA famiglia. Senza questo, aprire la beta avrebbe svuotato
 // la cache dell'app gia' installata sull'iPad — cioe' le avrebbe tolto il funzionamento senza rete.
 const FAMILY = 'vsm-coach-beta';
-const CACHE = FAMILY + '-v11';
+const CACHE = FAMILY + '-v12';
 const FILES = ['./', './index.html', './app.css', './prompt.js', './js/model.js', './js/render.js', './js/interact.js', './js/panels.js', './js/legend.js', './js/coach.js', './js/main.js', './manifest.webmanifest', './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
 // Install atomico, di proposito: se un file manca, l'install FALLISCE e restano in servizio il service
 // worker e la cache precedenti, completi e funzionanti. La variante "tollerante" (cache file per file)

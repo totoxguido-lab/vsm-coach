@@ -6,7 +6,7 @@
   let svg, stage;
   const ptrs = new Map(); let gesture = null;
   let nudgeSession = null, nudgeTimer = null;
-  const TOOL_KINDS = { select: 'select', pan: 'pan', ink: 'ink', eraser: 'eraser', flow: 'connect', request: 'connect' };
+  const TOOL_KINDS = { select: 'select', pan: 'pan', ink: 'ink', eraser: 'eraser', area: 'area', flow: 'connect', request: 'connect' };
   I.kindOf = (t) => TOOL_KINDS[t] || 'create';
 
   // ---------- vista ----------
@@ -42,12 +42,51 @@
 
   // ---------- selezione ----------
   I.select = (ids, opts = {}) => { I.selection = Array.from(new Set(ids)).filter(id => V.byId(id)); R.selection(I.selection, V.map()); if (!opts.keepPop) V.pop && V.pop.close(); V.ui && V.ui.onSelection && V.ui.onSelection(I.selection); };
-  I.setTool = (t, opts = {}) => { I.tool = t; svg.className.baseVal = 'tool-' + I.kindOf(t) + ' t-' + t; V.ui && V.ui.onTool && V.ui.onTool(t, opts); if (t !== 'select') { V.pop && V.pop.close(); V.ui.hideQuick && V.ui.hideQuick(); } else V.ui.onSelection && V.ui.onSelection(I.selection); };
+  I.setTool = (t, opts = {}) => { if (I.pickConn) I.cancelPickConnect(); I.tool = t; svg.className.baseVal = 'tool-' + I.kindOf(t) + ' t-' + t; V.ui && V.ui.onTool && V.ui.onTool(t, opts); if (t !== 'select') { V.pop && V.pop.close(); V.ui.hideQuick && V.ui.hideQuick(); } else V.ui.onSelection && V.ui.onSelection(I.selection); };
 
   // ---------- helpers ----------
   const hitEl = (target) => { const g = target && target.closest && target.closest('[data-id]'); return g ? { id: g.dataset.id, g, type: g.dataset.type } : null; };
   // durante il pointer capture e.target è l'svg: usa elementFromPoint
   const hitAt = (e) => hitEl(document.elementFromPoint(e.clientX, e.clientY));
+  /** Elemento piu' vicino al punto, entro `px` pixel di schermo. Col dito il bersaglio esatto non si
+   *  prende sempre: chiedere il colpo perfetto costringeva a ripetere il gesto. Se il punto e' dentro
+   *  un elemento la distanza e' 0, quindi il contenuto vince sempre sul semplice "vicino". */
+  /** Che cosa puo' stare in fondo a un collegamento. Senza questo elenco si potevano tirare frecce
+   *  verso la legenda, una nota di testo o una nuvola: agganciate per il programma, senza senso sul foglio. */
+  I.CONN_TARGETS = { flow: ['box', 'inventory', 'inbox'], request: ['box', 'inventory', 'inbox'] };
+  I.CONN_SOURCES = { flow: ['box', 'inventory', 'inbox'], request: ['person'] };
+  const nearEl = (w, map, px = 28, skip = [], only = null) => {
+    // la tolleranza segue lo zoom, ma con un tetto: a foglio intero 28 px valevano ~190 unita' di mondo
+    // e il rilascio si agganciava a qualunque cosa passasse di li'
+    const tol = Math.min(px / I.view.k, 70); let best = null, bd = tol;
+    (map.elements || []).forEach(el => {
+      if (V.isConnector(el) || el.type === 'lane' || skip.includes(el.id)) return;
+      if (only && !only.includes(el.type)) return;
+      const q = R.elPos(el, map), z = R.elSize(el);
+      const dx = Math.max(q.x - w.x, 0, w.x - (q.x + z.w)), dy = Math.max(q.y - w.y, 0, w.y - (q.y + z.h));
+      const d = Math.hypot(dx, dy);
+      if (d < bd) { bd = d; best = el; }
+    });
+    return best;
+  };
+  I.nearEl = nearEl;
+  /** Connettore la cui linea passa entro `px` pixel dal punto (serve a non farsi rubare il tocco
+   *  dal rettangolo invisibile di un elemento che ci sta sopra). */
+  const nearConn = (w, map, px = 12, excludeEl = null) => {
+    // tolleranza in soli pixel di schermo: il pavimento in unita' di mondo, a zoom panoramico,
+    // trasformava il cerchio di cattura in un disco che copriva mezzo omino
+    const tol = px / I.view.k; let best = null, bd = tol;
+    (map.elements || []).forEach(c => {
+      if (!V.isConnector(c)) return;
+      // le frecce ancorate all'elemento stesso non gli rubano il tocco: vicino all'ancoraggio
+      // vincerebbero sempre loro, e l'elemento tornerebbe imprendibile (il male che curiamo)
+      if (excludeEl && (c.from.el === excludeEl || c.to.el === excludeEl)) return;
+      const P = R.connPath(c, map); if (!P || !P.pts || P.pts.length < 2) return;
+      const pts = P.pts;
+      for (let i = 0; i < pts.length - 1; i++) { const d = distToSeg(w, pts[i], pts[i + 1]); if (d < bd) { bd = d; best = c; } }
+    });
+    return best;
+  };
   const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
   const pinchInfo = () => { const [a, b] = Array.from(ptrs.values()); return { d: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }; };
   const stagePt = (e) => { const r = stage.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
@@ -62,11 +101,13 @@
   // ---------- pointer FSM ----------
   function down(e) {
     if (e.button !== undefined && e.button > 0 && e.pointerType === 'mouse') { if (e.button === 1) { startPan(e); return; } return; }
-    svg.setPointerCapture(e.pointerId);
+    // se la cattura del puntatore fallisce (succede con eventi sintetici e su qualche browser) il gesto
+    // deve comunque partire: prima un'eccezione qui buttava via l'intero tocco
+    try { svg.setPointerCapture(e.pointerId); } catch (err) { /* si prosegue senza cattura */ }
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (ptrs.size === 2) { // pinch: annulla il gesto in corso (rollback delle mutazioni non committate)
       if (gesture && gesture.type === 'ink' && gesture.pathEl) gesture.pathEl.remove();
-      if (gesture && (gesture.type === 'drag' || gesture.type === 'resize' || gesture.type === 'chan')) rollback(gesture);
+      if (gesture && (gesture.type === 'drag' || gesture.type === 'resize' || gesture.type === 'chan' || gesture.type === 'via')) rollback(gesture);
       if (gesture && gesture.type === 'erase') gesture.removed.forEach(s => { const elx = svg.querySelector(`[data-sid="${s.id}"]`); if (elx) elx.style.opacity = ''; });
       R.ghost('');
       const p = pinchInfo(); gesture = { type: 'pinch', d0: p.d, k0: I.view.k, c0: I.toWorld(p.cx, p.cy) }; return;
@@ -74,11 +115,29 @@
     if (ptrs.size > 2) return;
     const map = V.map(); const w = I.toWorld(e.clientX, e.clientY);
     const handleTarget = e.target.closest && e.target.closest('[data-handle],[data-endhandle],[data-chan-handle]');
-    const hit = hitEl(e.target); const t = effectiveTool(e, hit || handleTarget);
+    let hit = hitEl(e.target);
+    // Il rettangolo invisibile sta in uno strato sopra i connettori: senza questo, una freccia che passa
+    // sotto un omino (o sotto il suo nome) non si poteva piu' toccare. Se il tocco cade proprio sulla linea,
+    // il connettore vince. Vale solo per il rettangolo di comodo, non per il disegno vero dell'elemento.
+    const onPad = e.target.classList && e.target.classList.contains('el-hit');
+    if (onPad && I.tool === 'select') {
+      const near = nearConn(w, map, 12, hit && hit.id);
+      if (near) hit = { id: near.id, g: null, type: near.type };
+    }
+    const t = effectiveTool(e, (onPad && e.pointerType === 'pen') ? null : (hit || handleTarget));
     const kind = I.kindOf(t);
     if (e.pointerType === 'pen') seenOnce('pen', 'Penna: sulla carta vuota scrivi a matita; sugli elementi selezioni e sposti. Cambia in ⋯ → "Penna = matita".');
     else if (e.pointerType === 'touch') seenOnce('touch', 'Un dito: tocca un elemento per le azioni rapide, trascina per spostarlo, sul vuoto sposti il foglio. Due dita: zoom.');
     if (e.target.closest && e.target.closest('[data-link]')) { const link = e.target.closest('[data-link]').dataset.link; gesture = { type: 'link', link }; return; }
+    if (I.pickConn && !V.byId(I.pickConn.from, map)) I.cancelPickConnect(); // la partenza non c'e' piu' (undo/elimina): il tocco prosegue normale
+    if (I.pickConn) {
+      const pc = I.pickConn; I.cancelPickConnect();
+      // conta solo il colpo diretto: lo snap "al piu' vicino" trasformava il tocco sul vuoto
+      // (che qui promette di ANNULLARE) in un collegamento a sorpresa
+      const tgt = hit && !V.isConnector(V.byId(hit.id, map)) ? hit.id : null;
+      if (tgt && tgt !== pc.from) I.connectTo(pc.from, tgt, pc.ctype);
+      gesture = { type: 'noop' }; return;
+    }
     if (I.pickLock) { const kids = I.pickLock; if (hit && !kids.includes(hit.id)) { I.cancelPickLock(); if (!I.lockMany(kids, hit.id)) I.hint('Non si può bloccare a questo elemento.', 2500); } else if (!hit) I.cancelPickLock(); gesture = { type: 'noop' }; return; }
     if (e.target.closest && e.target.closest('[data-toggle-legend]')) { gesture = { type: 'legend', id: e.target.closest('[data-toggle-legend]').dataset.toggleLegend }; return; }
     if (e.target.closest && e.target.closest('[data-place]')) { const g = e.target.closest('[data-place]'); gesture = { type: 'place', kind: g.dataset.place, x: +g.dataset.px, y: +g.dataset.py }; return; }
@@ -89,13 +148,28 @@
     }
     if (e.target.closest && e.target.closest('[data-title]')) { gesture = { type: 'title' }; return; }
     if (t === 'pan' || (e.pointerType === 'touch' && I.fingerPans && (t === 'select' && !hit) )) { startPan(e); return; }
+    if (t === 'area') { gesture = { type: 'lasso', start: w, startClient: { x: e.clientX, y: e.clientY }, shift: e.shiftKey, fromTool: true }; return; }
     if (t === 'ink') { const s = { id: uid(), color: I.ink.color, width: I.ink.width, points: [[+w.x.toFixed(1), +w.y.toFixed(1)]] }; gesture = { type: 'ink', s, pathEl: R.addStrokeEl(s), last: w }; return; }
     if (t === 'eraser') { gesture = { type: 'erase', removed: [] }; eraseAt(w, gesture); return; }
     if (kind === 'connect') {
-      if (!hit || V.isConnector(V.byId(hit.id, map))) { I.hint(t === 'flow' ? 'Freccia di flusso: parti da un box e trascina fino al box successivo.' : 'Via di richiesta: parti dal richiedente (omino) e trascina fino al primo passo.'); gesture = { type: 'noop' }; return; }
+      const src = hit && V.byId(hit.id, map);
+      // la partenza si controlla subito: prima si poteva iniziare il gesto da una nuvola o dalla legenda,
+      // e il rifiuto arrivava solo alla fine (o peggio, il menu rotondo creava il collegamento comunque)
+      if (!src || V.isConnector(src) || !I.CONN_SOURCES[t].includes(src.type)) { I.hint(t === 'flow' ? 'Freccia di flusso: parti da un passo e trascina fino al passo successivo.' : 'Via di richiesta: parti dal richiedente (omino) e trascina fino al primo passo.'); gesture = { type: 'noop' }; return; }
       gesture = { type: 'connect', ctype: t, from: hit.id, start: w, moved: false }; return;
     }
     if (kind === 'create') { gesture = { type: 'create', ctype: t, start: w, startClient: { x: e.clientX, y: e.clientY }, connHit: (t === 'delta' && e.target.classList.contains('conn-hit')) ? hit && hit.id : null }; return; }
+    // trascinare la LINEA di un connettore (non i cerchi alle estremita') piega il percorso:
+    // si prende il punto di via piu' vicino, o se ne crea uno nuovo dove si e' toccato
+    // vale sia il tocco diretto sulla linea (conn-hit) sia quello arrivato dal margine di un elemento
+    // vicino via nearConn (caso tipico: il delta agganciato copre il centro della freccia)
+    if (hit && t === 'select' && V.isConnector(V.byId(hit.id, map)) && e.target.classList && (e.target.classList.contains('conn-hit') || e.target.classList.contains('el-hit'))) {
+      const c = V.byId(hit.id, map); const via = Array.isArray(c.props.via) ? c.props.via.map(v2 => ({ x: v2.x, y: v2.y })) : [];
+      const grab = 16 / I.view.k; let idx = -1;
+      via.forEach((v2, i2) => { if (Math.hypot(v2.x - w.x, v2.y - w.y) < grab && idx < 0) idx = i2; });
+      gesture = { type: 'via', id: c.id, via, idx, before: clone(c.props.via) || null, start: w, startClient: { x: e.clientX, y: e.clientY }, moved: false, hitId: c.id, wasSelected: I.selection.includes(c.id) };
+      return;
+    }
     // select
     if (hit) {
       const el = V.byId(hit.id, map); const wasSelected = I.selection.includes(hit.id);
@@ -111,6 +185,7 @@
     if (g.type === 'drag') { g.before.forEach(b => { if (b.skip) return; const el = V.byId(b.id, map); if (!el) return; if (b.attached) { el.props.dx = b.dx; el.props.dy = b.dy; } else { el.x = b.x; el.y = b.y; } R.updateEl(el.id, map); }); }
     if (g.type === 'resize') { const el = V.byId(g.id, map); if (el) { el.w = g.w0; el.h = g.h0; R.updateEl(el.id, map); } }
     if (g.type === 'chan') { const c = V.byId(g.id, map); if (c) { c.props.t = g.t0; R.updateEl(c.id, map); } }
+    if (g.type === 'via') { const c = V.byId(g.id, map); if (c) { c.props.via = g.before; R.updateEl(c.id, map); } }
     R.selection(I.selection, map);
   }
   function startPan(e) { gesture = { type: 'pan', sx: e.clientX, sy: e.clientY, v0: clone(I.view), moved: false }; svg.style.cursor = 'grabbing'; }
@@ -125,6 +200,23 @@
       case 'pan': { if (Math.hypot(e.clientX - gesture.sx, e.clientY - gesture.sy) > 4) gesture.moved = true; I.view.x = gesture.v0.x - (e.clientX - gesture.sx) / I.view.k; I.view.y = gesture.v0.y - (e.clientY - gesture.sy) / I.view.k; applyView(); break; }
       case 'ink': { if (dist(w, gesture.last) < 1.2 / I.view.k) return; gesture.s.points.push([+w.x.toFixed(1), +w.y.toFixed(1)]); gesture.last = w; gesture.pathEl.setAttribute('d', R.strokePath(gesture.s)); break; }
       case 'erase': eraseAt(w, gesture); break;
+      case 'via': {
+        if (!gesture.moved && Math.hypot(e.clientX - gesture.startClient.x, e.clientY - gesture.startClient.y) < 6) return;
+        const c = V.byId(gesture.id, map); if (!c) return;
+        if (!gesture.moved) {
+          gesture.moved = true; V.ui.hideQuick && V.ui.hideQuick(); V.pop.close();
+          if (gesture.idx < 0) {
+            // nuovo punto: si inserisce sul segmento del percorso piu' vicino al tocco iniziale
+            const P = R.connPath(c, map); const nodes = [P.a, ...gesture.via, P.b];
+            let seg = 0, bd = Infinity;
+            for (let i2 = 0; i2 < nodes.length - 1; i2++) { const d2 = distToSeg(gesture.start, nodes[i2], nodes[i2 + 1]); if (d2 < bd) { bd = d2; seg = i2; } }
+            gesture.via.splice(seg, 0, { x: w.x, y: w.y }); gesture.idx = seg;
+          }
+        }
+        gesture.via[gesture.idx] = { x: Math.round(w.x), y: Math.round(w.y) };
+        c.props.via = gesture.via; R.updateEl(c.id, map); R.selection(I.selection, map);
+        break;
+      }
       case 'drag': {
         const dx = w.x - gesture.start.x, dy = w.y - gesture.start.y;
         if (!gesture.moved && Math.hypot(e.clientX - gesture.startClient.x, e.clientY - gesture.startClient.y) < 5) return;
@@ -137,7 +229,7 @@
       case 'reconnect': { gesture.moved = true; const c = V.byId(gesture.id, map); const other = gesture.end === 'from' ? c.to : c.from; const o = V.endPoint(other, map); const over = hitAt(e); const okOver = over && !V.isConnector(V.byId(over.id, map)) && over.id !== (other.el || null) ? over.id : null; gesture.over = okOver; R.ghost(`<path class="ghost" d="M${o.x} ${o.y} L${w.x} ${w.y}"/>${okOver ? (() => { const el = V.byId(okOver, map); const p = R.elPos(el, map); return `<rect class="sel-ring" x="${p.x - 4}" y="${p.y - 4}" width="${el.w + 8}" height="${el.h + 8}"/>`; })() : ''}`); break; }
       case 'resize': { const el = V.byId(gesture.id, map); const min = el.type === 'text' ? 40 : 30; el.w = Math.max(min, gesture.w0 + (w.x - gesture.start.x)); el.h = Math.max(20, gesture.h0 + (w.y - gesture.start.y)); R.updateEl(el.id, map); R.selection(I.selection, map); break; }
       case 'lasso': { const x = Math.min(w.x, gesture.start.x), y = Math.min(w.y, gesture.start.y), ww = Math.abs(w.x - gesture.start.x), hh = Math.abs(w.y - gesture.start.y); gesture.rect = { x, y, w: ww, h: hh }; R.ghost(`<rect class="lasso" x="${x}" y="${y}" width="${ww}" height="${hh}"/>`); break; }
-      case 'connect': { gesture.moved = true; const from = V.byId(gesture.from, map); const a = V.anchor(from, w); const over = hitAt(e); gesture.over = over && over.id !== gesture.from && !V.isConnector(V.byId(over.id, map)) ? over.id : null; R.ghost(`<path class="ghost" d="M${a.x} ${a.y} L${w.x} ${w.y}"/>${gesture.over ? (() => { const oe = V.byId(gesture.over, map); const op = R.elPos(oe, map); return `<rect class="sel-ring ok" x="${op.x - 4}" y="${op.y - 4}" width="${oe.w + 8}" height="${oe.h + 8}"/>`; })() : ''}`); break; }
+      case 'connect': { gesture.moved = true; const from = V.byId(gesture.from, map); const a = V.anchor(from, w); const over = hitAt(e); const okDirect = over && over.id !== gesture.from && !V.isConnector(V.byId(over.id, map)) && I.CONN_TARGETS[gesture.ctype].includes((V.byId(over.id, map) || {}).type); gesture.over = (okDirect ? over.id : null) || (nearEl(w, map, 28, [gesture.from], I.CONN_TARGETS[gesture.ctype]) || {}).id || null; R.ghost(`<path class="ghost" d="M${a.x} ${a.y} L${w.x} ${w.y}"/>${gesture.over ? (() => { const oe = V.byId(gesture.over, map); const op = R.elPos(oe, map); return `<rect class="sel-ring ok" x="${op.x - 4}" y="${op.y - 4}" width="${oe.w + 8}" height="${oe.h + 8}"/>`; })() : ''}`); break; }
       case 'create': { if (['box', 'lane', 'storm', 'fluffy', 'burst', 'text'].includes(gesture.ctype) && Math.hypot(e.clientX - gesture.startClient.x, e.clientY - gesture.startClient.y) > 8) { gesture.rect = { x: Math.min(w.x, gesture.start.x), y: Math.min(w.y, gesture.start.y), w: Math.abs(w.x - gesture.start.x), h: Math.abs(w.y - gesture.start.y) }; R.ghost(`<rect class="ghost" x="${gesture.rect.x}" y="${gesture.rect.y}" width="${gesture.rect.w}" height="${gesture.rect.h}"/>`); } break; }
     }
   }
@@ -161,13 +253,32 @@
       case 'reconnect': {
         R.ghost(''); const c = V.byId(g.id, map); if (!c) break;
         const over = hitAt(e); const other = g.end === 'from' ? c.to : c.from;
-        const okOver = over && !V.isConnector(V.byId(over.id, map)) && over.id !== (other.el || null) ? over.id : g.over;
+        const okOver = (over && !V.isConnector(V.byId(over.id, map)) && over.id !== (other.el || null) ? over.id : g.over) || (g.moved ? (nearEl(w, map, 28, [c.id, other.el].filter(Boolean), (g.end === 'from' ? I.CONN_SOURCES : I.CONN_TARGETS)[c.type]) || {}).id : null);
         const before = clone(c[g.end]);
+        const okList = (g.end === 'from' ? I.CONN_SOURCES : I.CONN_TARGETS)[c.type];
+        const overEl = okOver && V.byId(okOver, map);
+        const okType = !okList || (overEl && okList.includes(overEl.type));
+        if (okOver && !okType) { I.hint('Quel capo non pu\u00f2 attaccarsi l\u00ec.', 3000); I.select([c.id], { keepPop: true }); break; }
         if (okOver) { V.commit({ t: 'update', id: c.id, after: { [g.end]: { el: okOver } }, before: { [g.end]: before } }, 'ricollega'); I.hint('Freccia ricollegata.', 1500); }
         else if (g.moved) { V.commit({ t: 'update', id: c.id, after: { [g.end]: { x: Math.round(w.x), y: Math.round(w.y) } }, before: { [g.end]: before } }, 'stacca'); I.hint('Estremità staccata: trascina il cerchio su un altro elemento per ricollegarla.', 3500); }
         I.select([c.id], { keepPop: true }); break;
       }
       case 'title': V.pop.openTitle(); break;
+      case 'via': {
+        const c = V.byId(g.id, map); if (!c) break;
+        if (!g.moved) { // tocco fermo sulla linea: comportamento di sempre
+          if (g.wasSelected && I.selection.length === 1) { V.pop.open(g.hitId); break; }
+          I.select([g.hitId]); break;
+        }
+        // se il punto e' finito quasi in linea coi vicini, si toglie da solo (per "raddrizzare" un tratto)
+        const P = R.connPath(c, map); const nodes = [P.a, ...g.via, P.b];
+        const v2 = g.via[g.idx];
+        if (v2 && distToSeg(v2, nodes[g.idx], nodes[g.idx + 2]) < 6 / I.view.k) g.via.splice(g.idx, 1);
+        const after = g.via.length ? g.via : null;
+        c.props.via = g.before; // torna com'era: il commit riapplica e registra l'undo
+        V.commit({ t: 'props', id: c.id, after: { via: after }, before: { via: g.before } }, 'piega il percorso');
+        I.select([c.id], { keepPop: true }); break;
+      }
       case 'ink': { if (g.s.points.length < 2) { g.pathEl.remove(); break; } g.pathEl.remove(); V.commit({ t: 'stroke_add', s: g.s }, 'tratto'); break; }
       case 'erase': { if (g.removed.length) { V.commit(g.removed.map(s => ({ t: 'stroke_remove', s })), 'gomma'); } break; }
       case 'drag': {
@@ -186,17 +297,26 @@
         R.ghost('');
         if (!g.rect || (g.rect.w < 4 && g.rect.h < 4)) { I.select([]); V.pop.close(); break; }
         const inside = map.elements.filter(el => !V.isConnector(el)).filter(el => { const p = R.elPos(el, map); return p.x + el.w >= g.rect.x && p.x <= g.rect.x + g.rect.w && p.y + el.h >= g.rect.y && p.y <= g.rect.y + g.rect.h && el.type !== 'lane'; }).map(el => el.id);
-        I.select(g.shift ? [...I.selection, ...inside] : inside); break;
+        if (g.fromTool) I.setTool('select');
+        I.select(g.shift ? [...I.selection, ...inside] : inside);
+        if (g.fromTool && !inside.length) I.hint('Nessun elemento nell\u2019area: riprova disegnando il riquadro intorno a un settore.', 2500);
+        break;
       }
       case 'connect': {
         R.ghost('');
-        const over = hitAt(e); const toId = over && over.id !== g.from && !V.isConnector(V.byId(over.id, map)) ? over.id : g.over;
-        if (!toId) { if (g.moved) I.hint('Rilascia sopra l\'elemento di arrivo.'); break; }
-        const c = V.newConnector(g.ctype, { el: g.from }, { el: toId });
-        // ogni via che parte dallo stesso richiedente prende una corsia diversa, anche se va a un altro passo:
-        // contando solo le vie con lo stesso paio partenza→arrivo, due vie verso box diversi restavano sovrapposte
-        if (g.ctype === 'request') c.props.offset = map.elements.filter(x => x.type === 'request' && x.from.el === g.from).length;
-        V.commit({ t: 'add', el: c }, 'collega'); I.setTool('select'); I.select([c.id], { keepPop: true }); V.pop.open(c.id); break;
+        const over = hitAt(e);
+        const okType = (id) => { const oe = id && V.byId(id, map); return oe && I.CONN_TARGETS[g.ctype].includes(oe.type) ? id : null; };
+        const okOver = okType(over && over.id !== g.from && !V.isConnector(V.byId(over.id, map)) ? over.id : null) || g.over;
+        // se il dito non ha centrato nulla, si prende l'elemento piu' vicino invece di buttare via il gesto
+        // — ma solo dopo un trascinamento vero: da un tocco fermo non deve mai nascere una freccia
+        const toId = okOver || (g.moved ? (nearEl(w, map, 28, [g.from], I.CONN_TARGETS[g.ctype]) || {}).id : null);
+        if (!toId) {
+          // rilasciato nel vuoto: invece di far sparire tutto, si propone di mettere li' l'elemento di arrivo
+          if (g.moved && V.ui && V.ui.proposePlace) V.ui.proposePlace(e.clientX, e.clientY, g.ctype, g.from, w);
+          else if (g.moved) I.hint('Rilascia sopra l\'elemento di arrivo.');
+          break;
+        }
+        I.connectTo(g.from, toId, g.ctype); break;
       }
       case 'create': {
         R.ghost('');
@@ -212,7 +332,9 @@
         if (g.ctype === 'delta') {
           // aggancia alla freccia di flusso più vicina (entro 40 unità)
           let best = null, bd = 44 / I.view.k; // 44 px a schermo
-          map.elements.filter(c => c.type === 'flow').forEach(c => { const P = R.connPath(c, map); const d = Math.hypot(P.mid.x - g.start.x, P.mid.y - g.start.y); const dseg = distToSeg(g.start, P.a, P.b); const dd = Math.min(d, dseg); if (dd < bd) { bd = dd; best = c; } });
+          // distanza misurata sul percorso disegnato (P.pts), non sulla corda a\u2192b: con i gomiti la corda
+          // passa lontano dalla linea vera e il delta si agganciava alla freccia sbagliata
+          map.elements.filter(c => c.type === 'flow').forEach(c => { const P = R.connPath(c, map); if (!P.pts || P.pts.length < 2) return; let dd = Infinity; for (let i = 0; i < P.pts.length - 1; i++) dd = Math.min(dd, distToSeg(g.start, P.pts[i], P.pts[i + 1])); if (dd < bd) { bd = dd; best = c; } });
           if (g.connHit) best = V.byId(g.connHit, map) || best;
           if (best) { el.props.attachedTo = best.id; el.props.dx = 0; el.props.dy = 0; }
         }
@@ -270,8 +392,111 @@
   I.unlockChildren = (parentId) => { const map = V.map(); I.unlockMany(R.children(parentId, map).map(k => k.id)); I.select([parentId]); };
   I.selectWithChildren = (parentId) => { const map = V.map(); const kids = R.children(parentId, map).map(k => k.id); I.select([parentId, ...kids]); };
   I.pickLock = null; // modalità "Blocca a…": prossimo tocco su un elemento = genitore (per uno o più figli)
+  /** Crea il collegamento fra due elementi. Sta qui da solo perche' ci si arriva in tre modi:
+   *  trascinando, toccando il bersaglio dopo "Collega", e scegliendo un elemento nuovo dal menu a comparsa. */
+  /** ogni via che parte dallo stesso richiedente prende una corsia diversa (anche verso box diversi) */
+  const reqOffset = (map, fromId) => map.elements.filter(x => x.type === 'request' && x.from.el === fromId).length;
+  I.reqOffset = reqOffset;
+  I.connectTo = (fromId, toId, ctype) => {
+    const map = V.map();
+    if (!fromId || !toId || fromId === toId) return null;
+    const a = V.byId(fromId, map), b = V.byId(toId, map);
+    if (!a || !b || V.isConnector(a) || V.isConnector(b)) return null;
+    const okTo = I.CONN_TARGETS[ctype], okFrom = I.CONN_SOURCES[ctype];
+    if (okFrom && !okFrom.includes(a.type)) { I.hint(ctype === 'request' ? 'La via di richiesta parte da una persona.' : 'La freccia di flusso parte da un passo.', 3000); return null; }
+    if (okTo && !okTo.includes(b.type)) { I.hint('Qui non ci arriva un collegamento: scegli un passo (o una scorta/in-box).', 3000); return null; }
+    const c = V.newConnector(ctype, { el: fromId }, { el: toId });
+    if (ctype === 'request') c.props.offset = reqOffset(map, fromId);
+    V.commit({ t: 'add', el: c }, 'collega'); I.setTool('select'); I.select([c.id], { keepPop: true }); V.pop.open(c.id);
+    return c;
+  };
+
+  /** "Collega" senza trascinare: si tocca il bersaglio. Non blocca nulla — si esce toccando il vuoto o con Esc. */
+  I.startPickConnect = (fromId, ctype) => {
+    I.pickConn = { from: fromId, ctype };
+    svg.classList.add('picking'); V.ui.hideQuick && V.ui.hideQuick(); V.pop && V.pop.close();
+    const map = V.map();
+    const okTypes = I.CONN_TARGETS[ctype]; // stessa lista usata dalla validazione: gli anelli non mentono
+    const rings = map.elements.filter(el => !V.isConnector(el) && el.id !== fromId && okTypes.includes(el.type))
+      .map(el => { const q = R.elPos(el, map), z = R.elSize(el); return `<rect class="sel-ring ok" x="${q.x - 5}" y="${q.y - 5}" width="${z.w + 10}" height="${z.h + 10}"/>`; }).join('');
+    R.ghost(rings);
+    I.hint(ctype === 'flow' ? 'Tocca il passo di arrivo (tocca il foglio vuoto per annullare).' : 'Tocca il passo a cui arriva la richiesta (tocca il foglio vuoto per annullare).', 0);
+  };
+  I.cancelPickConnect = () => {
+    I.pickConn = null; svg.classList.remove('picking'); R.ghost(''); I.hint('');
+    // gli anelli dei bersagli erano disegnati nello stesso strato di anello e maniglie della selezione:
+    // svuotarlo lasciava l'elemento selezionato ma senza contorno, e il tocco dopo apriva il pop-up
+    R.selection(I.selection, V.map());
+  };
+
+  /** Trascinato nel vuoto: l'elemento nuovo nasce li' e il collegamento lo raggiunge, in un solo passo di undo. */
+  I.placeAndConnect = (kind, w, fromId, ctype) => {
+    const map = V.map(); const T = V.TYPES[kind]; const P = V.paperOf(map);
+    // col menu aperto si puo' annullare (Ctrl+Z) la creazione dell'elemento di partenza: senza questo
+    // controllo nascerebbe una freccia con un capo nel vuoto, e il percorso finirebbe a coordinate NaN
+    const from = V.byId(fromId, map);
+    if (!from) { I.hint('L\u2019elemento di partenza non c\u2019\u00e8 pi\u00f9.', 2500); return; }
+    // le stesse regole di connectTo: il menu rotondo non deve creare cio' che il resto dell'app rifiuta
+    if (!I.CONN_SOURCES[ctype].includes(from.type) || !I.CONN_TARGETS[ctype].includes(kind)) { I.hint('Questo collegamento non si puo\u2019 fare da qui.', 2500); return; }
+    const nx = Math.max(0, Math.min(P.w - T.w, Math.round(w.x - T.w / 2)));
+    const ny = Math.max(0, Math.min(P.h - T.h, Math.round(w.y - T.h / 2)));
+    const el = V.newElement(kind, nx, ny);
+    const c = V.newConnector(ctype, { el: fromId }, { el: el.id });
+    if (ctype === 'request') c.props.offset = reqOffset(map, fromId);
+    V.commit([{ t: 'add', el }, { t: 'add', el: c }], 'aggiungi ' + T.name + ' collegato');
+    I.setTool('select'); I.select([el.id], { keepPop: true }); V.pop.open(el.id);
+  };
+
   I.startPickLock = (childIds) => { I.pickLock = Array.isArray(childIds) ? childIds : [childIds]; svg.classList.add('picking'); I.hint(I.pickLock.length > 1 ? `Tocca il passo, la persona, la corsia o la freccia a cui bloccare i ${I.pickLock.length} elementi (Esc per annullare).` : 'Tocca il passo, la persona, la corsia o la freccia a cui bloccarlo (Esc per annullare).', 0); };
   I.cancelPickLock = () => { I.pickLock = null; svg.classList.remove('picking'); I.hint(''); };
+
+  // ---------- da selezione a sotto-foglio ----------
+  /** Porta gli elementi selezionati in una nuova mappa di dettaglio e li sostituisce, nel foglio madre,
+   *  con un solo passo collegato (props.link): un settore affollato diventa un livello a parte.
+   *  I collegamenti interamente dentro migrano; quelli a cavallo si riattaccano al passo riassuntivo.
+   *  L'undo (una voce sola) ripristina il foglio madre; la mappa di dettaglio resta fra le mappe. */
+  I.groupToDetail = (ids) => {
+    const map = V.map();
+    const inside = new Set(ids.filter(id => { const el = V.byId(id, map); return el && !V.isConnector(el) && el.type !== 'lane'; }));
+    if (inside.size < 2) { I.hint('Seleziona almeno due elementi (con lo strumento Area) per farne un sotto-foglio.', 3000); return; }
+    // i figli bloccati/agganciati a chi migra vengono con lui (finche' l'insieme non cresce piu')
+    let grew = true;
+    while (grew) {
+      grew = false;
+      map.elements.forEach(el => {
+        if (inside.has(el.id) || V.isConnector(el)) return;
+        const par = el.props && (el.props.lockTo || (el.type === 'delta' && el.props.attachedTo));
+        if (par && inside.has(par)) { inside.add(el.id); grew = true; }
+      });
+    }
+    const conns = map.elements.filter(V.isConnector);
+    const moveConns = conns.filter(c => inside.has(c.from.el) && inside.has(c.to.el));
+    // i delta agganciati alle frecce che migrano
+    map.elements.forEach(el => { if (el.type === 'delta' && el.props.attachedTo && moveConns.some(c => c.id === el.props.attachedTo)) inside.add(el.id); });
+    const movingEls = map.elements.filter(e => inside.has(e.id));
+    const crossConns = conns.filter(c => !moveConns.includes(c) && (inside.has(c.from.el) !== inside.has(c.to.el)));
+    // riquadro del settore: il passo riassuntivo nasce al suo centro
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    movingEls.forEach(el => { const q = R.elPos(el, map); x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x + el.w); y1 = Math.max(y1, q.y + el.h); });
+    // la mappa di dettaglio riceve copie normalizzate verso l'angolo in alto a sinistra
+    const d = V.createDetail(map, 'Sotto-foglio');
+    const sx = 120 - x0, sy = 140 - y0;
+    const shift = (o) => { const n = clone(o); if (!V.isConnector(n)) { n.x += sx; n.y += sy; } else { if (!n.from.el) { n.from.x += sx; n.from.y += sy; } if (!n.to.el) { n.to.x += sx; n.to.y += sy; } if (Array.isArray(n.props.via)) n.props.via = n.props.via.map(v2 => ({ x: v2.x + sx, y: v2.y + sy })); } return n; };
+    d.elements = movingEls.map(shift).concat(moveConns.map(shift));
+    V.save();
+    // nel foglio madre: un passo con il link, e le operazioni di sostituzione in UNA voce di undo
+    const T = V.TYPES.box;
+    const nb = V.newElement('box', Math.round((x0 + x1) / 2 - T.w / 2), Math.round((y0 + y1) / 2 - T.h / 2));
+    nb.props.title = 'Sotto-foglio'; nb.props.link = d.id;
+    const ops = [{ t: 'add', el: nb }];
+    movingEls.forEach(el => ops.push({ t: 'remove', el: clone(el) }));
+    moveConns.forEach(c => ops.push({ t: 'remove', el: clone(c) }));
+    crossConns.forEach(c => { const end = inside.has(c.from.el) ? 'from' : 'to'; ops.push({ t: 'update', id: c.id, after: { [end]: { el: nb.id } }, before: { [end]: clone(c[end]) } }); });
+    V.commit(ops, 'trasforma in sotto-foglio');
+    I.select([nb.id], { keepPop: true }); V.pop.open(nb.id);
+    if (V.ui && V.ui.toast) V.ui.toast('Settore spostato nel sotto-foglio: apri con \u2197 (annulla per tornare indietro).');
+    if (V.ui && V.ui.renderLevels) V.ui.renderLevels();
+  };
 
   // ---------- eliminazione / duplicazione ----------
   I.deleteSelection = () => {
@@ -317,7 +542,7 @@
       if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) V.redo(); else V.undo(); return; }
       if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); V.redo(); return; }
       if (e.key === 'Delete' || e.key === 'Backspace') { if (I.selection.length) { e.preventDefault(); I.deleteSelection(); } return; }
-      if (e.key === 'Escape') { if (I.pickLock) { I.cancelPickLock(); return; } if (V.pop.current) { V.pop.close(); return; } if (I.tool !== 'select') { I.setTool('select'); return; } I.select([]); return; }
+      if (e.key === 'Escape') { if (I.pickConn) { I.cancelPickConnect(); return; } if (V.ui && V.ui.closePlaceMenu && V.ui.closePlaceMenu()) return; if (I.pickLock) { I.cancelPickLock(); return; } if (V.pop.current) { V.pop.close(); return; } if (I.tool !== 'select') { I.setTool('select'); return; } I.select([]); return; }
       if (mod && e.key.toLowerCase() === 'a') { e.preventDefault(); I.select(V.map().elements.filter(x => !V.isConnector(x) && x.type !== 'lane').map(x => x.id)); return; }
       if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); if (I.selection.length) I.duplicateMany(I.selection); return; }
       if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key) && I.selection.length) {
@@ -339,7 +564,7 @@
       }
       if (e.key === 'Enter' && I.selection.length === 1) { e.preventDefault(); V.pop.open(I.selection[0]); return; }
       if (!mod && e.key.toLowerCase() === 'u') { e.preventDefault(); V.ui.toggleChrome(); return; }
-      const keys = { v: 'select', h: 'pan', p: 'ink', e: 'eraser', b: 'box', d: 'delta', f: 'flow', r: 'request', o: 'person', n: 'storm', t: 'text', l: 'lane' };
+      const keys = { v: 'select', h: 'pan', p: 'ink', e: 'eraser', a: 'area', b: 'box', d: 'delta', f: 'flow', r: 'request', o: 'person', n: 'storm', t: 'text', l: 'lane' };
       if (!mod && keys[e.key.toLowerCase()]) I.setTool(keys[e.key.toLowerCase()]);
       if (e.key === '+' || e.key === '=') I.zoomAt(1.15, stage.clientWidth / 2 + stage.getBoundingClientRect().left, stage.clientHeight / 2 + stage.getBoundingClientRect().top);
       if (e.key === '-') I.zoomAt(1 / 1.15, stage.clientWidth / 2 + stage.getBoundingClientRect().left, stage.clientHeight / 2 + stage.getBoundingClientRect().top);

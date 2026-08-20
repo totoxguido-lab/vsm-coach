@@ -4,7 +4,7 @@
   const I = V.interact, R = V.render, UI = V.ui, C = V.coach; const { clone, today } = V.util;
   const $ = (s, r = document) => r.querySelector(s); const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 
-  function fullRender() { const map = V.map(); R.all(map, { selection: I.selection.filter(id => V.byId(id, map)) }); UI.renderHeader(); if (!$('#drawer').classList.contains('closed')) { if (!$('#pane-guide').classList.contains('hidden')) UI.renderGuide(); if (!$('#pane-plan').classList.contains('hidden')) UI.renderPlan(); } }
+  function fullRender() { const map = V.map(); R.all(map, { selection: I.selection.filter(id => V.byId(id, map)) }); UI.renderHeader(); UI.renderLevels && UI.renderLevels(); if (!$('#drawer').classList.contains('closed')) { if (!$('#pane-guide').classList.contains('hidden')) UI.renderGuide(); if (!$('#pane-plan').classList.contains('hidden')) UI.renderPlan(); } }
   let sugTimer = null;
   V.onChange((info) => {
     if (info.switched) { I.selection = []; V.pop.close(); UI.hideQuick(); fullRender(); return; }
@@ -86,6 +86,13 @@
       case 'settings': C.openSettings(); break;
       case 'clear-ink': if (map.strokes.length && confirm('Cancellare tutti i tratti a matita di questa mappa?')) V.commit({ t: 'strokes_set', after: [] }, 'cancella inchiostro'); break;
       case 'delete': if (confirm(`Eliminare la mappa "${map.title || 'senza titolo'}"? Non si può annullare.`)) { V.deleteMap(map.id); I.restoreView(); UI.toast('Mappa eliminata.'); } break;
+      case 'exit': { // nell'app Android chiude davvero; nel browser/PWA la scheda non si puo' chiudere da codice
+        const cap = window.Capacitor;
+        if (cap && cap.Plugins && cap.Plugins.App && cap.Plugins.App.exitApp) { cap.Plugins.App.exitApp(); break; }
+        window.close();
+        setTimeout(() => UI.toast('Qui il foglio si chiude dalla schermata Home (le mappe sono gi\u00e0 salvate).'), 250);
+        break;
+      }
     }
   }
 
@@ -95,7 +102,7 @@
     I.penDraws = localStorage.getItem('vsm.penDraws') !== '0';
     UI.guideOn = localStorage.getItem('vsm.guideOn') !== '0';
     try { R.traceOn = localStorage.getItem('vsm.trace') !== '0'; } catch (e) { /* storage bloccato */ }
-    UI.buildPalette(); bindHeader(); C.init(); UI.menuCheck('#btn-pen-mode', I.penDraws); UI.menuCheck('#btn-overlays', V.map().overlays !== false); UI.menuCheck('#btn-trace', R.traceOn);
+    UI.buildPalette(); bindHeader(); UI.bindLevels(); UI.renderLevels(); C.init(); UI.menuCheck('#btn-pen-mode', I.penDraws); UI.menuCheck('#btn-overlays', V.map().overlays !== false); UI.menuCheck('#btn-trace', R.traceOn);
     { let chrome = '1', tools = '0'; try { chrome = localStorage.getItem('vsm.chrome') ?? '1'; tools = localStorage.getItem('vsm.toolsLeft') ?? '0'; } catch (e) { /* storage bloccato */ }
       UI.setToolsLeft(tools === '1'); if (chrome === '0') UI.setChrome(false, { hint: false }); }
     fullRender(); I.restoreView();

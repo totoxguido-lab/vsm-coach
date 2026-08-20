@@ -6,7 +6,7 @@
   let svg, stage;
   const ptrs = new Map(); let gesture = null;
   let nudgeSession = null, nudgeTimer = null;
-  const TOOL_KINDS = { select: 'select', pan: 'pan', ink: 'ink', eraser: 'eraser', flow: 'connect', request: 'connect' };
+  const TOOL_KINDS = { select: 'select', pan: 'pan', ink: 'ink', eraser: 'eraser', area: 'area', flow: 'connect', request: 'connect' };
   I.kindOf = (t) => TOOL_KINDS[t] || 'create';
 
   // ---------- vista ----------
@@ -107,7 +107,7 @@
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (ptrs.size === 2) { // pinch: annulla il gesto in corso (rollback delle mutazioni non committate)
       if (gesture && gesture.type === 'ink' && gesture.pathEl) gesture.pathEl.remove();
-      if (gesture && (gesture.type === 'drag' || gesture.type === 'resize' || gesture.type === 'chan')) rollback(gesture);
+      if (gesture && (gesture.type === 'drag' || gesture.type === 'resize' || gesture.type === 'chan' || gesture.type === 'via')) rollback(gesture);
       if (gesture && gesture.type === 'erase') gesture.removed.forEach(s => { const elx = svg.querySelector(`[data-sid="${s.id}"]`); if (elx) elx.style.opacity = ''; });
       R.ghost('');
       const p = pinchInfo(); gesture = { type: 'pinch', d0: p.d, k0: I.view.k, c0: I.toWorld(p.cx, p.cy) }; return;
@@ -148,6 +148,7 @@
     }
     if (e.target.closest && e.target.closest('[data-title]')) { gesture = { type: 'title' }; return; }
     if (t === 'pan' || (e.pointerType === 'touch' && I.fingerPans && (t === 'select' && !hit) )) { startPan(e); return; }
+    if (t === 'area') { gesture = { type: 'lasso', start: w, startClient: { x: e.clientX, y: e.clientY }, shift: e.shiftKey, fromTool: true }; return; }
     if (t === 'ink') { const s = { id: uid(), color: I.ink.color, width: I.ink.width, points: [[+w.x.toFixed(1), +w.y.toFixed(1)]] }; gesture = { type: 'ink', s, pathEl: R.addStrokeEl(s), last: w }; return; }
     if (t === 'eraser') { gesture = { type: 'erase', removed: [] }; eraseAt(w, gesture); return; }
     if (kind === 'connect') {
@@ -158,6 +159,17 @@
       gesture = { type: 'connect', ctype: t, from: hit.id, start: w, moved: false }; return;
     }
     if (kind === 'create') { gesture = { type: 'create', ctype: t, start: w, startClient: { x: e.clientX, y: e.clientY }, connHit: (t === 'delta' && e.target.classList.contains('conn-hit')) ? hit && hit.id : null }; return; }
+    // trascinare la LINEA di un connettore (non i cerchi alle estremita') piega il percorso:
+    // si prende il punto di via piu' vicino, o se ne crea uno nuovo dove si e' toccato
+    // vale sia il tocco diretto sulla linea (conn-hit) sia quello arrivato dal margine di un elemento
+    // vicino via nearConn (caso tipico: il delta agganciato copre il centro della freccia)
+    if (hit && t === 'select' && V.isConnector(V.byId(hit.id, map)) && e.target.classList && (e.target.classList.contains('conn-hit') || e.target.classList.contains('el-hit'))) {
+      const c = V.byId(hit.id, map); const via = Array.isArray(c.props.via) ? c.props.via.map(v2 => ({ x: v2.x, y: v2.y })) : [];
+      const grab = 16 / I.view.k; let idx = -1;
+      via.forEach((v2, i2) => { if (Math.hypot(v2.x - w.x, v2.y - w.y) < grab && idx < 0) idx = i2; });
+      gesture = { type: 'via', id: c.id, via, idx, before: clone(c.props.via) || null, start: w, startClient: { x: e.clientX, y: e.clientY }, moved: false, hitId: c.id, wasSelected: I.selection.includes(c.id) };
+      return;
+    }
     // select
     if (hit) {
       const el = V.byId(hit.id, map); const wasSelected = I.selection.includes(hit.id);
@@ -173,6 +185,7 @@
     if (g.type === 'drag') { g.before.forEach(b => { if (b.skip) return; const el = V.byId(b.id, map); if (!el) return; if (b.attached) { el.props.dx = b.dx; el.props.dy = b.dy; } else { el.x = b.x; el.y = b.y; } R.updateEl(el.id, map); }); }
     if (g.type === 'resize') { const el = V.byId(g.id, map); if (el) { el.w = g.w0; el.h = g.h0; R.updateEl(el.id, map); } }
     if (g.type === 'chan') { const c = V.byId(g.id, map); if (c) { c.props.t = g.t0; R.updateEl(c.id, map); } }
+    if (g.type === 'via') { const c = V.byId(g.id, map); if (c) { c.props.via = g.before; R.updateEl(c.id, map); } }
     R.selection(I.selection, map);
   }
   function startPan(e) { gesture = { type: 'pan', sx: e.clientX, sy: e.clientY, v0: clone(I.view), moved: false }; svg.style.cursor = 'grabbing'; }
@@ -187,6 +200,23 @@
       case 'pan': { if (Math.hypot(e.clientX - gesture.sx, e.clientY - gesture.sy) > 4) gesture.moved = true; I.view.x = gesture.v0.x - (e.clientX - gesture.sx) / I.view.k; I.view.y = gesture.v0.y - (e.clientY - gesture.sy) / I.view.k; applyView(); break; }
       case 'ink': { if (dist(w, gesture.last) < 1.2 / I.view.k) return; gesture.s.points.push([+w.x.toFixed(1), +w.y.toFixed(1)]); gesture.last = w; gesture.pathEl.setAttribute('d', R.strokePath(gesture.s)); break; }
       case 'erase': eraseAt(w, gesture); break;
+      case 'via': {
+        if (!gesture.moved && Math.hypot(e.clientX - gesture.startClient.x, e.clientY - gesture.startClient.y) < 6) return;
+        const c = V.byId(gesture.id, map); if (!c) return;
+        if (!gesture.moved) {
+          gesture.moved = true; V.ui.hideQuick && V.ui.hideQuick(); V.pop.close();
+          if (gesture.idx < 0) {
+            // nuovo punto: si inserisce sul segmento del percorso piu' vicino al tocco iniziale
+            const P = R.connPath(c, map); const nodes = [P.a, ...gesture.via, P.b];
+            let seg = 0, bd = Infinity;
+            for (let i2 = 0; i2 < nodes.length - 1; i2++) { const d2 = distToSeg(gesture.start, nodes[i2], nodes[i2 + 1]); if (d2 < bd) { bd = d2; seg = i2; } }
+            gesture.via.splice(seg, 0, { x: w.x, y: w.y }); gesture.idx = seg;
+          }
+        }
+        gesture.via[gesture.idx] = { x: Math.round(w.x), y: Math.round(w.y) };
+        c.props.via = gesture.via; R.updateEl(c.id, map); R.selection(I.selection, map);
+        break;
+      }
       case 'drag': {
         const dx = w.x - gesture.start.x, dy = w.y - gesture.start.y;
         if (!gesture.moved && Math.hypot(e.clientX - gesture.startClient.x, e.clientY - gesture.startClient.y) < 5) return;
@@ -234,6 +264,21 @@
         I.select([c.id], { keepPop: true }); break;
       }
       case 'title': V.pop.openTitle(); break;
+      case 'via': {
+        const c = V.byId(g.id, map); if (!c) break;
+        if (!g.moved) { // tocco fermo sulla linea: comportamento di sempre
+          if (g.wasSelected && I.selection.length === 1) { V.pop.open(g.hitId); break; }
+          I.select([g.hitId]); break;
+        }
+        // se il punto e' finito quasi in linea coi vicini, si toglie da solo (per "raddrizzare" un tratto)
+        const P = R.connPath(c, map); const nodes = [P.a, ...g.via, P.b];
+        const v2 = g.via[g.idx];
+        if (v2 && distToSeg(v2, nodes[g.idx], nodes[g.idx + 2]) < 6 / I.view.k) g.via.splice(g.idx, 1);
+        const after = g.via.length ? g.via : null;
+        c.props.via = g.before; // torna com'era: il commit riapplica e registra l'undo
+        V.commit({ t: 'props', id: c.id, after: { via: after }, before: { via: g.before } }, 'piega il percorso');
+        I.select([c.id], { keepPop: true }); break;
+      }
       case 'ink': { if (g.s.points.length < 2) { g.pathEl.remove(); break; } g.pathEl.remove(); V.commit({ t: 'stroke_add', s: g.s }, 'tratto'); break; }
       case 'erase': { if (g.removed.length) { V.commit(g.removed.map(s => ({ t: 'stroke_remove', s })), 'gomma'); } break; }
       case 'drag': {
@@ -252,7 +297,10 @@
         R.ghost('');
         if (!g.rect || (g.rect.w < 4 && g.rect.h < 4)) { I.select([]); V.pop.close(); break; }
         const inside = map.elements.filter(el => !V.isConnector(el)).filter(el => { const p = R.elPos(el, map); return p.x + el.w >= g.rect.x && p.x <= g.rect.x + g.rect.w && p.y + el.h >= g.rect.y && p.y <= g.rect.y + g.rect.h && el.type !== 'lane'; }).map(el => el.id);
-        I.select(g.shift ? [...I.selection, ...inside] : inside); break;
+        if (g.fromTool) I.setTool('select');
+        I.select(g.shift ? [...I.selection, ...inside] : inside);
+        if (g.fromTool && !inside.length) I.hint('Nessun elemento nell\u2019area: riprova disegnando il riquadro intorno a un settore.', 2500);
+        break;
       }
       case 'connect': {
         R.ghost('');
@@ -402,6 +450,54 @@
   I.startPickLock = (childIds) => { I.pickLock = Array.isArray(childIds) ? childIds : [childIds]; svg.classList.add('picking'); I.hint(I.pickLock.length > 1 ? `Tocca il passo, la persona, la corsia o la freccia a cui bloccare i ${I.pickLock.length} elementi (Esc per annullare).` : 'Tocca il passo, la persona, la corsia o la freccia a cui bloccarlo (Esc per annullare).', 0); };
   I.cancelPickLock = () => { I.pickLock = null; svg.classList.remove('picking'); I.hint(''); };
 
+  // ---------- da selezione a sotto-foglio ----------
+  /** Porta gli elementi selezionati in una nuova mappa di dettaglio e li sostituisce, nel foglio madre,
+   *  con un solo passo collegato (props.link): un settore affollato diventa un livello a parte.
+   *  I collegamenti interamente dentro migrano; quelli a cavallo si riattaccano al passo riassuntivo.
+   *  L'undo (una voce sola) ripristina il foglio madre; la mappa di dettaglio resta fra le mappe. */
+  I.groupToDetail = (ids) => {
+    const map = V.map();
+    const inside = new Set(ids.filter(id => { const el = V.byId(id, map); return el && !V.isConnector(el) && el.type !== 'lane'; }));
+    if (inside.size < 2) { I.hint('Seleziona almeno due elementi (con lo strumento Area) per farne un sotto-foglio.', 3000); return; }
+    // i figli bloccati/agganciati a chi migra vengono con lui (finche' l'insieme non cresce piu')
+    let grew = true;
+    while (grew) {
+      grew = false;
+      map.elements.forEach(el => {
+        if (inside.has(el.id) || V.isConnector(el)) return;
+        const par = el.props && (el.props.lockTo || (el.type === 'delta' && el.props.attachedTo));
+        if (par && inside.has(par)) { inside.add(el.id); grew = true; }
+      });
+    }
+    const conns = map.elements.filter(V.isConnector);
+    const moveConns = conns.filter(c => inside.has(c.from.el) && inside.has(c.to.el));
+    // i delta agganciati alle frecce che migrano
+    map.elements.forEach(el => { if (el.type === 'delta' && el.props.attachedTo && moveConns.some(c => c.id === el.props.attachedTo)) inside.add(el.id); });
+    const movingEls = map.elements.filter(e => inside.has(e.id));
+    const crossConns = conns.filter(c => !moveConns.includes(c) && (inside.has(c.from.el) !== inside.has(c.to.el)));
+    // riquadro del settore: il passo riassuntivo nasce al suo centro
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    movingEls.forEach(el => { const q = R.elPos(el, map); x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x + el.w); y1 = Math.max(y1, q.y + el.h); });
+    // la mappa di dettaglio riceve copie normalizzate verso l'angolo in alto a sinistra
+    const d = V.createDetail(map, 'Sotto-foglio');
+    const sx = 120 - x0, sy = 140 - y0;
+    const shift = (o) => { const n = clone(o); if (!V.isConnector(n)) { n.x += sx; n.y += sy; } else { if (!n.from.el) { n.from.x += sx; n.from.y += sy; } if (!n.to.el) { n.to.x += sx; n.to.y += sy; } if (Array.isArray(n.props.via)) n.props.via = n.props.via.map(v2 => ({ x: v2.x + sx, y: v2.y + sy })); } return n; };
+    d.elements = movingEls.map(shift).concat(moveConns.map(shift));
+    V.save();
+    // nel foglio madre: un passo con il link, e le operazioni di sostituzione in UNA voce di undo
+    const T = V.TYPES.box;
+    const nb = V.newElement('box', Math.round((x0 + x1) / 2 - T.w / 2), Math.round((y0 + y1) / 2 - T.h / 2));
+    nb.props.title = 'Sotto-foglio'; nb.props.link = d.id;
+    const ops = [{ t: 'add', el: nb }];
+    movingEls.forEach(el => ops.push({ t: 'remove', el: clone(el) }));
+    moveConns.forEach(c => ops.push({ t: 'remove', el: clone(c) }));
+    crossConns.forEach(c => { const end = inside.has(c.from.el) ? 'from' : 'to'; ops.push({ t: 'update', id: c.id, after: { [end]: { el: nb.id } }, before: { [end]: clone(c[end]) } }); });
+    V.commit(ops, 'trasforma in sotto-foglio');
+    I.select([nb.id], { keepPop: true }); V.pop.open(nb.id);
+    if (V.ui && V.ui.toast) V.ui.toast('Settore spostato nel sotto-foglio: apri con \u2197 (annulla per tornare indietro).');
+    if (V.ui && V.ui.renderLevels) V.ui.renderLevels();
+  };
+
   // ---------- eliminazione / duplicazione ----------
   I.deleteSelection = () => {
     const map = V.map(); const ids = new Set(I.selection); if (!ids.size) return;
@@ -468,7 +564,7 @@
       }
       if (e.key === 'Enter' && I.selection.length === 1) { e.preventDefault(); V.pop.open(I.selection[0]); return; }
       if (!mod && e.key.toLowerCase() === 'u') { e.preventDefault(); V.ui.toggleChrome(); return; }
-      const keys = { v: 'select', h: 'pan', p: 'ink', e: 'eraser', b: 'box', d: 'delta', f: 'flow', r: 'request', o: 'person', n: 'storm', t: 'text', l: 'lane' };
+      const keys = { v: 'select', h: 'pan', p: 'ink', e: 'eraser', a: 'area', b: 'box', d: 'delta', f: 'flow', r: 'request', o: 'person', n: 'storm', t: 'text', l: 'lane' };
       if (!mod && keys[e.key.toLowerCase()]) I.setTool(keys[e.key.toLowerCase()]);
       if (e.key === '+' || e.key === '=') I.zoomAt(1.15, stage.clientWidth / 2 + stage.getBoundingClientRect().left, stage.clientHeight / 2 + stage.getBoundingClientRect().top);
       if (e.key === '-') I.zoomAt(1 / 1.15, stage.clientWidth / 2 + stage.getBoundingClientRect().left, stage.clientHeight / 2 + stage.getBoundingClientRect().top);

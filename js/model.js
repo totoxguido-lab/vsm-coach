@@ -56,7 +56,7 @@ window.VSM = window.VSM || {};
       why: 'Il triangolo rovesciato rosso segna il tempo in cui nulla avanza (richiesta nel vassoio, campione in coda, viaggio, paziente in sala d\'attesa): è spreco reso visibile. Il tempo si ottiene per differenza tra la fine del box precedente e l\'inizio del successivo, non si cronometra. Aggancialo a una freccia di flusso per entrare nella timeline.' },
     person: { name: 'Persona', w: 40, h: 78, props: { label: 'richiedente', role: '', mood: 'neutro', requestor: true },
       why: 'L\'omino rappresenta chi origina la richiesta (a destra, nella fascia alta) o un operatore. L\'espressione (felice/neutro/triste) racconta l\'esperienza. Le vie di richiesta partono da qui.' },
-    storm: { name: 'Nuvola temporalesca', w: 120, h: 50, props: { text: '', muda: '', rule: '', a3: false },
+    storm: { name: 'Nuvola temporalesca', w: 120, h: 50, props: { text: '', muda: '', rule: '', a3: false, collapsed: false },
       why: 'Un problema del processo, mai una colpa: "che cosa, del modo in cui il lavoro accade ora, non è ideale?". Etichettalo con il muda (confusione, movimento, attesa, sovra-processo, scorte, difetti, sovrapproduzione) e la regola violata. Le nuvole diventano candidate ad A3 (5 perché → contromisure → test → follow-up).' },
     fluffy: { name: 'Nuvola soffice', w: 120, h: 50, props: { text: '' },
       why: 'Una buona pratica o un\'idea da conservare: ciò che già funziona (e va replicato) o un\'idea per lo stato futuro.' },
@@ -86,12 +86,14 @@ window.VSM = window.VSM || {};
   // Modalità di disegno dei collegamenti (come le "link render mode" di ComfyUI): riguarda il tracciato,
   // non il significato. Sta nella mappa e non nelle preferenze del dispositivo perché il foglio è un disegno:
   // deve arrivare uguale a chi lo apre, lo esporta o lo stampa.
+  // La squadrata automatica e' stata tolta su richiesta di Gt: le frecce vanno dritte al bersaglio
+  // e il percorso si piega A MANO trascinando la linea (props.via = punti di passaggio).
+  // Le mappe salvate in "squadrata" ricadono su "dritta" (linkModeOf valida contro questa lista).
   V.LINK_MODES = [
-    { id: 'squadrata', name: 'squadrata', hint: 'gomiti a 90°, vie di richiesta in corsie separate' },
-    { id: 'curva', name: 'curva', hint: 'come il disegno a mano del libro' },
-    { id: 'dritta', name: 'dritta', hint: 'linea diretta fra i due estremi' }
+    { id: 'dritta', name: 'dritta', hint: 'linea diretta; trascina la linea per piegarla dove serve' },
+    { id: 'curva', name: 'curva', hint: 'come il disegno a mano del libro' }
   ];
-  V.linkModeOf = (map) => { const m = map && map.links && map.links.mode; return V.LINK_MODES.some(x => x.id === m) ? m : 'squadrata'; };
+  V.linkModeOf = (map) => { const m = map && map.links && map.links.mode; return V.LINK_MODES.some(x => x.id === m) ? m : 'dritta'; };
 
   V.CONNECTOR_TYPES = ['flow', 'request'];
   V.isConnector = (el) => V.CONNECTOR_TYPES.includes(el.type);
@@ -112,7 +114,7 @@ window.VSM = window.VSM || {};
     analysis: { goodEnough: '', questions: {} },
     futureCheck: { people: false, sponsor: '', date: '', constraints: '', validatedBy: '' },
     closure: { remeasureDate: '', notes: '', checks: {} },
-    guidePhase: 0, view: null, overlays: true, paper: clone(V.PAPER), links: { mode: 'squadrata' }, created: Date.now(), updated: Date.now()
+    guidePhase: 0, view: null, overlays: true, paper: clone(V.PAPER), links: { mode: 'dritta' }, created: Date.now(), updated: Date.now()
   }, o);
 
   // ---------- documento ----------
@@ -207,9 +209,11 @@ window.VSM = window.VSM || {};
     return V.doc;
   };
   /** una mappa salvata prima che il foglio diventasse grande resta della sua misura: spostarle gli elementi sarebbe peggio */
-  /** aspetto ereditato: una mappa salvata prima che esistessero foglio grande e modalità dei collegamenti
-      non deve cambiare aspetto quando la riapri — foglio A3 e tratto curvo come quando è stata disegnata */
-  const keepLook = (m) => { if (m && !m.paper) m.paper = clone(V.PAPER_A3); if (m && !m.links) m.links = { mode: 'curva' }; return m; };
+  /** aspetto ereditato: una mappa salvata prima che esistessero il foglio grande e le modalità dei
+      collegamenti riprende il foglio A3. Il tratto invece viene normalizzato a "dritta", come ogni mappa
+      nuova: è la lettura scelta per l'app, e la modalità resta cambiabile per singola mappa dal menu ⋯.
+      (Le mappe che hanno già una modalità salvata non vengono toccate.) */
+  const keepLook = (m) => { if (m && !m.paper) m.paper = clone(V.PAPER_A3); if (m && !m.links) m.links = { mode: 'dritta' }; return m; };
   V.replaceDoc = (d) => { if (!d || d.version !== 2 || !d.maps) throw new Error('Formato non riconosciuto (serve un JSON di VSM Coach v2)'); V.doc = d; Object.values(V.doc.maps).forEach(m => { keepLook(m); Object.assign(m, Object.assign(V.newMap(), m)); }); if (!V.doc.maps[V.doc.activeMapId]) V.doc.activeMapId = Object.keys(V.doc.maps)[0]; undoStack.length = 0; redoStack.length = 0; V.save(); emit({ switched: true }); };
   V.importMaps = (d) => { // aggiunge le mappe di un altro documento senza sostituire (id già esistenti → rigenerati, per non perdere le modifiche fatte nel frattempo)
     if (d.version === 2 && d.maps) {
@@ -232,7 +236,7 @@ window.VSM = window.VSM || {};
   // ---------- migrazione dalla v1 (modulo → elementi posizionati) ----------
   V.fromV1 = (S) => {
     const build = (m, kind, meta) => {
-      const map = V.newMap({ paper: clone(V.PAPER_A3), links: { mode: 'curva' }, kind, title: (S.meta && S.meta.title) || '', date: S.meta?.date, authors: S.meta?.authors, unitName: S.meta?.unitName, scope: S.meta?.scope, ideal: S.meta?.ideal, unit: m.unit || 'minuti', samples: m.samples || '', requestor: m.requestor || '', prep: S.prep, validation: S.validation, data: S.data, analysis: S.analysis, futureCheck: S.futureCheck, closure: S.closure, plan: S.plan || [], guidePhase: S.ui?.phase || 0 });
+      const map = V.newMap({ paper: clone(V.PAPER_A3), links: { mode: 'dritta' }, kind, title: (S.meta && S.meta.title) || '', date: S.meta?.date, authors: S.meta?.authors, unitName: S.meta?.unitName, scope: S.meta?.scope, ideal: S.meta?.ideal, unit: m.unit || 'minuti', samples: m.samples || '', requestor: m.requestor || '', prep: S.prep, validation: S.validation, data: S.data, analysis: S.analysis, futureCheck: S.futureCheck, closure: S.closure, plan: S.plan || [], guidePhase: S.ui?.phase || 0 });
       const n = m.boxes.length; const left = 90; let bw = 150, gap = 80; const avail = 1000; if (n * bw + (n - 1) * gap > avail) { const k = avail / (n * bw + (n - 1) * gap); bw *= k; gap *= k; }
       const boxes = m.boxes.map((b, i) => { const el = V.newElement('box', left + i * (bw + gap), 300, { title: b.title, activities: b.activities || [], hi: b.hi, lo: b.lo, avg: b.avg }); el.w = bw; map.elements.push(el); (b.clouds || []).forEach((c, j) => map.elements.push(V.newElement('storm', el.x + bw - 60, 232 - j * 40, { text: c.text, muda: c.muda, rule: c.rule }))); return el; });
       boxes.forEach((b, i) => { if (i < n - 1) { const c = V.newConnector('flow', { el: b.id }, { el: boxes[i + 1].id }); map.elements.push(c); const d = m.deltas[i]; if (d) { const de = V.newElement('delta', (b.x + b.w + boxes[i + 1].x) / 2 - 15, 328, { note: d.note, hi: d.hi, lo: d.lo, avg: d.avg }); de.props.attachedTo = c.id; map.elements.push(de); (d.clouds || []).forEach((cl, j) => map.elements.push(V.newElement('storm', de.x - 40, 232 - j * 40, { text: cl.text, muda: cl.muda, rule: cl.rule }))); } } });
@@ -354,7 +358,7 @@ window.VSM = window.VSM || {};
 
   // ---------- esempio (visita ambulatoriale, numeri dalla Fig. 5.1 del libro) ----------
   V.example = () => {
-    const m = V.newMap({ paper: clone(V.PAPER_A3), links: { mode: 'curva' }, title: 'Visita ambulatoriale (esempio dal libro)', authors: 'AJ, CJ', unitName: 'Ambulatorio', scope: 'Dalla chiamata del paziente in sala d\'attesa alla programmazione del follow-up', ideal: 'Il paziente è visto all\'orario previsto, una sola raccolta dati, nessuna attesa tra i passi.', unit: 'minuti', samples: '30', requestor: 'Paziente con appuntamento' });
+    const m = V.newMap({ paper: clone(V.PAPER_A3), links: { mode: 'dritta' }, title: 'Visita ambulatoriale (esempio dal libro)', authors: 'AJ, CJ', unitName: 'Ambulatorio', scope: 'Dalla chiamata del paziente in sala d\'attesa alla programmazione del follow-up', ideal: 'Il paziente è visto all\'orario previsto, una sola raccolta dati, nessuna attesa tra i passi.', unit: 'minuti', samples: '30', requestor: 'Paziente con appuntamento' });
     m.prep = { observable: true, frequent: true, worthy: true, drawer: 'CJ', owner: 'Direttore ambulatori', physicians: true, stable: true, staffing: true };
     m.validation = { walked: true, walkedBy: 'CJ', walkedDate: today(), prepared: true, validatedBy: 'staff ambulatorio (2 RN, 1 MD, 1 segretaria)', validatedDate: today(), corrections: 'aggiunta la conferma telefonica come seconda via di richiesta' };
     m.data = { tool: true, boundariesAgreed: true, feedback: true, notes: 'i massimi del consulto medico coincidono con la fascia 11-12' };

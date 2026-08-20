@@ -374,3 +374,18 @@ dialog .d-foot{padding:10px 16px;border-top:1px solid var(--line);display:flex;g
 @keyframes pm-in{from{opacity:0;transform:scale(.7)}to{opacity:1;transform:scale(1)}}
 /* uscita dallo strumento attivo: prende il posto del vecchio tasto "Seleziona" */
 #palette .tool.done{color:var(--accent)}
+
+
+/* ---------- livelli (mappe collegate) a destra, sopra lo zoom ---------- */
+#levelsctl{position:absolute;right:12px;bottom:calc(160px + env(safe-area-inset-bottom));z-index:6}
+#levelsctl .btn{width:40px;height:40px;padding:0;justify-content:center;background:var(--panel)}
+#levels-list{position:absolute;right:46px;bottom:0;min-width:210px;max-width:290px;max-height:50vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);padding:6px;display:flex;flex-direction:column;gap:2px}
+#levels-list button{display:block;width:100%;text-align:left;border:0;background:transparent;color:var(--ink);padding:8px 10px;border-radius:8px;font-size:13px;min-height:var(--tap);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#levels-list button:hover{background:rgba(31,78,121,.08)}
+#levels-list button[aria-current="true"]{background:rgba(31,78,121,.12);font-weight:700}
+#levels-list button.sub{padding-left:26px}
+#app.clean #levelsctl{display:none}
+@media print{#levelsctl{display:none!important}}
+@media (pointer:coarse){#levelsctl .btn{width:var(--tap);height:var(--tap)}#levelsctl{bottom:calc(170px + env(safe-area-inset-bottom))}}
+/* pallino di via di un connettore selezionato */
+svg .handle.via{fill:var(--panel);stroke:var(--sel);stroke-width:2;pointer-events:none}
