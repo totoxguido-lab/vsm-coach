@@ -27,9 +27,6 @@
     <div class="spacer"></div>
     <button class="btn icon" id="btn-undo" title="Annulla (Cmd/Ctrl+Z)" aria-label="Annulla">↶</button>
     <button class="btn icon" id="btn-redo" title="Ripeti (Cmd/Ctrl+Shift+Z)" aria-label="Ripeti">↷</button>
-    <button class="btn" id="btn-help" title="Come si usa" aria-label="Come si usa">?</button>
-    <button class="btn hide-m" id="btn-legend" aria-pressed="false" title="Legenda dei simboli">Legenda</button>
-    <button class="btn" id="btn-guide" aria-pressed="false" title="Guida passo-passo (facoltativa)">Guida</button>
     <button class="btn" id="btn-maps" title="Le tue mappe">Mappe</button>
     <button class="btn icon" id="btn-menu" title="Menu" aria-label="Menu" aria-haspopup="menu">⋯</button>
   </header>
@@ -61,7 +58,6 @@
       <div class="tabs">
         <button id="tab-coach" aria-selected="true">Coach ✦</button>
         <button id="tab-plan" aria-selected="false">Piano</button>
-        <button id="tab-legend" aria-selected="false">Legenda</button>
         <button class="close" id="drawer-close" title="Chiudi" aria-label="Chiudi il cassetto">✕</button>
       </div>
       <section class="pane" id="pane-coach">
@@ -76,7 +72,6 @@
         <div class="status"><span class="dot" id="status-dot"></span><span id="status-text"></span><span class="spacer"></span><button class="btn small ghost" id="btn-clear-chat">Svuota</button><button class="btn small ghost" id="btn-settings" aria-label="Impostazioni coach" title="Impostazioni coach">⚙︎</button></div>
       </section>
       <section class="pane hidden" id="pane-plan"><div class="pane-body" id="plan-body"></div></section>
-      <section class="pane hidden" id="pane-legend"><div class="pane-body" id="legend-body"></div></section>
     </aside>
   </main>
 </div>
@@ -87,11 +82,9 @@
   <button data-m="new"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9z"/><path d="M13 3v6h6"/><path d="M12 12v6M9 15h6"/></svg>Nuova mappa</button>
   <button data-m="detail"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="8" y="3" width="13" height="13" rx="1.5"/><path d="M16 16v3a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h3" stroke-linecap="round"/></svg>Sotto-foglio di dettaglio</button>
   <button data-m="example"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5c-2-1.4-4.5-2-8-2v16c3.5 0 6 .6 8 2 2-1.4 4.5-2 8-2V3c-3.5 0-6 .6-8 2z"/><path d="M12 5v16"/></svg>Esempio del libro</button>
-  <button data-m="legend"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h8M8 13h8M8 17h5" stroke-linecap="round"/></svg>Legenda</button>
+  <button data-m="guide"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.6 2.6 0 1 1 3.6 2.4c-.9.4-1.2 1-1.2 1.8"/><circle cx="12" cy="17" r=".4" fill="currentColor"/></svg>Guida pratica</button>
   <button class="compact-only" data-m="af"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13M14 4l4 4-4 4M20 16H7M10 12l-4 4 4 4"/></svg>Attuale ⇄ Futuro</button>
-  <button class="compact-only" data-m="guide"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.6 2.6 0 1 1 3.6 2.4c-.9.4-1.2 1-1.2 1.8"/><circle cx="12" cy="17" r=".4" fill="currentColor"/></svg>Guida</button>
   <button class="compact-only" data-m="maps"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>Le tue mappe</button>
-  <button class="compact-only" data-m="help"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>Come si usa</button>
   <hr>
   <button class="sub-head" data-sub="file" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 5a1 1 0 0 1 1-1h11l4 4v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M8 4v5h7V4M7 20v-7h10v7"/></svg>File e stampa<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
   <div class="submenu hidden" id="sub-file">
@@ -119,19 +112,6 @@
   <button data-m="exit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 8l-4 4 4 4M6 12h9"/></svg>Esci</button>
 </div>
 <input type="file" id="file-open" accept="application/json" hidden>
-
-<dialog id="dlg-help">
-  <div class="d-head">Come si usa — in 3 mosse</div>
-  <div class="d-body">
-    <ol class="howto">
-      <li><b>Metti gli elementi.</b> Strumento in basso, poi tocca il foglio dove vuoi l'elemento. Sul foglio vuoto bastano i segnaposto ① Chi chiede? e ② Primo passo.</li>
-      <li><b>Collega e completa.</b> Un tocco su un elemento apre le azioni rapide (<i>+ Passo dopo</i>, <i>← Richiesta</i>…); un secondo tocco apre i dettagli, col <b>?</b> che spiega il simbolo. Con Flusso o Richiesta: tieni premuto e trascina fino all'altro elemento.</li>
-      <li><b>Scrivi e chiedi.</b> Matita per l'inchiostro (l'Apple Pencil disegna da sé), <b>✦</b> per il coach che legge il foglio e propone modifiche. ↶ annulla tutto.</li>
-    </ol>
-    <p class="hint">La <b>Guida</b> in alto è il promemoria del metodo, una sezione alla volta. La <b>Legenda</b> spiega ogni simbolo — e da lì attivi lo strumento giusto. Le mappe si salvano da sole.</p>
-  </div>
-  <div class="d-foot"><button class="btn" id="help-example">Carica l'esempio del libro</button><button class="btn primary" id="help-close">Inizia</button></div>
-</dialog>
 
 <dialog id="dlg-maps">
   <div class="d-head">Le tue mappe</div>

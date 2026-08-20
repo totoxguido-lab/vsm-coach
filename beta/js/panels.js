@@ -231,7 +231,7 @@
       case 'distance': main += `<div class="row">${field('Metri', inp('meters', p.meters, 'inputmode="decimal"'))}</div>`; adv += `<div class="row">${field('Da', inp('from', p.from))}${field('A', inp('to', p.to))}</div>`; break;
       case 'lane': main += field('Reparto / corsia', inp('name', p.name, 'autofocus')); adv += field('Colore (opzionale, es. #1f4e79)', inp('color', p.color)); break;
       case 'text': main += field('Testo', ta('text', p.text, 'autofocus')); adv += field('Dimensione', sel('size', String(p.size), ['10', '12', '14', '18', '24'])); break;
-      case 'legend': main += `<div class="hint">Legenda compatta per la stampa: spostala in alto a sinistra. La legenda completa (tutti i simboli, varianti, significato) è nel cassetto.</div>`; break;
+      case 'legend': main += `<div class="hint">Legenda compatta per la stampa: spostala in alto a sinistra. Tutti i simboli con significato e varianti sono nella Guida pratica (menu ⋯).</div>`; break;
       case 'flow': adv += field('Etichetta (opzionale)', inp('label', p.label)) + field('Stile', sel('style', p.style, ['solid', 'info', 'material']), 'solid = flusso; info = tratteggiata (informazione); material = spessa (materiale/paziente)') + chk('or', p.or, '"or" — alternativa a un altro passo'); main += `<div class="hint">Per staccare o spostare un capo: trascina il cerchio all'estremità della freccia.</div>`; break;
       case 'request': main += field('Canale (una freccia per ogni via reale)', sel('channel', p.channel, V.CHANNELS)) + field('Verso chi', inp('to', p.to, 'placeholder="segreteria, laboratorio…"')); adv += `<div class="row">${field('Quante mani tocca', inp('hands', p.hands, 'inputmode="numeric"'))}</div>` + field('Nota (cosa si perde, quando)', inp('note', p.note)); break;
     }
@@ -259,7 +259,7 @@
     $$('[data-pa]', pop).forEach(b => b.onclick = () => { const a = b.dataset.pa; if (['dup', 'del', 'connect', 'reqtool', 'lockto', 'lockall'].includes(a)) P.close(); UI.quickAction(a, id); if (['invert', 'attach', 'unlock', 'legend'].includes(a) && V.byId(id)) P.open(id); });
     const tp = $('#pop-toplan'); if (tp) tp.onclick = () => { const plan = clone(map.plan); plan.push({ id: uid(), what: p.text || 'kaizen', who: p.owner || '', when: '', outcome: '', a3: true }); V.commit({ t: 'plan_set', after: plan }, 'piano'); UI.toast('Aggiunto al piano.'); UI.renderPlan(); };
     const ol = $('#pop-openlink'); if (ol) ol.onclick = () => UI.openMap(p.link);
-    const lf = $('#pop-legendfull'); if (lf) lf.onclick = () => UI.showTab('legend');
+    const lf = $('#pop-legendfull'); if (lf) lf.onclick = () => UI.toggleGuide(true, 'simboli');
     const cv = $('[data-convert]', pop); if (cv) cv.onchange = () => { const t = cv.value; if (!t) return; const before = clone(el); const T2 = V.TYPES[t]; const text = p.text || p.what || p.note || ''; const nprops = Object.assign(clone(T2.props), t === 'text' || t === 'storm' || t === 'fluffy' || t === 'burst' ? { text } : t === 'inventory' ? { what: text } : t === 'delta' ? { note: text, avg: p.avg || '' } : {}); if (p.link) nprops.link = p.link; const after = { type: t, w: T2.w, h: T2.h, props: nprops }; V.commit({ t: 'update', id, after, before: { type: before.type, w: before.w, h: before.h, props: before.props } }, 'trasforma'); P.open(id); };
     // aspetto forzato a mano: si scrive tutto insieme in props.override (assente = derivato dal significato)
     const applyOv = (o) => {
@@ -332,58 +332,94 @@
     $$('#maplist [data-open]').forEach(b => b.onclick = () => { $('#dlg-maps').close(); UI.openMap(b.dataset.open); });
   };
 
-  // ---------- guida: promemoria del metodo, una sezione alla volta ----------
-  // Ridisegnata come pannello leggero (revisione Kimi K3, 2026-08-20): otto promemoria brevi in tono da
-  // collega esperto, niente form ne' fasi con spunte — l'utente conosce gia' le mappe. I campi "di registro"
-  // sono migrati: responsabile del disegno nell'intestazione, validazione qui in due campi essenziali,
-  // data di rimisurazione nel Piano.
-  const GUIDE = [
-    { id: 'testata', t: 'Intestazione e scopo', body: 'Titolo, data e iniziali in alto a destra; scopo in una frase: dalla richiesta X alla consegna Y. Un processo solo: se cambia turno o unità, è un’altra mappa.', q: 'Cosa soddisfa esattamente questa mappa?', acts: [['title', 'Apri l’intestazione']] },
-    { id: 'richiesta', t: 'La richiesta', body: 'Il richiedente e <b>tutte</b> le vie reali — telefono, fax, e-mail, a voce, di persona. La giungla di frecce in alto non è un difetto estetico: è il primo spreco da attaccare.', q: 'Quante mani tocca la richiesta prima di arrivare a chi eroga?', tools: [['person', 'Persona'], ['request', 'Richiesta']] },
-    { id: 'flusso', t: 'Flusso e attese', body: 'Box nell’ordine reale, non come dovrebbe essere; nello stato attuale ciò che sta nei box è valore <i>adesso</i> — non giudicare ancora. Tra ogni coppia di box un delta: il tempo in cui la cosa sta ferma. Più di 4-5 box? Forse lo scopo è troppo largo.', q: 'Quale attività apre la porta del box e quale la chiude?', tools: [['box', 'Passo'], ['delta', 'Attesa']] },
-    { id: 'valida', t: 'Cammina e valida', body: 'Mappa da memoria = bozza. Cammina il processo dall’inizio alla fine e mostrala a chi fa il lavoro: accuratezza e adesione arrivano insieme.', q: 'Ti sembra giusto? Ho lasciato fuori qualcosa?', valida: true },
-    { id: 'dati', t: 'Dati', body: 'Hi / Lo / Avg per ogni box e ogni delta, un’unità sola. Il delta non si cronometra: si calcola per differenza (fine box 1 → inizio box 2). ~30 misure per credibilità, 8-10 per una vista rapida. Il massimo è dove si nascondono i workaround.', q: 'Perché a volte 5 minuti e a volte 19?' },
-    { id: 'analisi', t: 'Analisi', body: 'Una nuvola su ogni punto debole, con muda e regola violata — una riga, non un tema. Prima le nuvole a monte: correggere la richiesta rende più di quanto sembri. «A volte, dipende, forse» = processo non specificato = nuvola.', q: 'Così accade adesso — è abbastanza buono?', tools: [['storm', 'Nuvola']] },
-    { id: 'futuro', t: 'Stato futuro', body: 'Futuro ≠ ideale: dev’essere <b>raggiungibile</b> (persone, sponsor, data) <b>e</b> più vicino all’ideale. Prima mossa: meno vie di richiesta; poi eliminare o combinare box; tempi standard solo dai dati. Se non è visibilmente più semplice dell’attuale, torna a osservare. Niente monumenti: non automatizzare ciò che non funziona a mano.', q: 'Questo cambiamento ci avvicina all’ideale? Su quale punto?', acts: [['future', 'Apri / crea lo stato futuro']], cmp: true },
-    { id: 'piano', t: 'Piano e follow-up', body: 'Ogni riga: cosa, chi, entro quando, esito — senza chi e quando non accadrà. L’ostacolo grosso merita un A3, non una riga. Poi si rimisura: nuova mappa attuale e confronto fianco a fianco.', q: 'Chi fa cosa, entro quando?', acts: [['plan', 'Apri il piano']] }
+  // ---------- Guida pratica: primi passi, metodo e simboli in un solo pannello ----------
+  // Fusione di guida, «come si usa» e legenda (report Kimi K3, docs/kimi-guida-pratica-report.md).
+  // Il pannello elenca le voci; il tocco apre una scheda flottante autosufficiente che si chiude con ✕
+  // o toccando il vuoto — il pannello resta aperto. Ogni regola è scritta in un posto solo: la formula
+  // del delta in «Dati», C&C % in «Passo», VA %/FTQ in «Leggere il foglio».
+  const PRIMI = [
+    { id: 'prima', t: 'La prima mappa', body: 'Sul foglio vuoto tocca i segnaposto ① Chi chiede? e ② Primo passo: è il modo più rapido per iniziare. Altrimenti scegli lo strumento nella barra in basso e tocca il punto del foglio dove vuoi l’elemento. Le mappe si salvano da sole, non c’è un tasto salva. Errore tipico: progettare tutto prima di disegnare — parti dal richiedente e segui il processo.' },
+    { id: 'modifica', t: 'Modificare e collegare', body: 'Un tocco su un elemento apre le azioni rapide (+ Passo dopo, ← Richiesta…); un secondo tocco apre i dettagli. Per una freccia di flusso o di richiesta tieni premuto e trascina fino all’altro elemento. Un’estremità staccata è segnata in rosso tratteggiato: riagganciala, altrimenti resta fuori dalla timeline.' },
+    { id: 'matita', t: 'Matita, coach, annulla', body: 'Con la Matita scrivi e disegni a mano libera (l’Apple Pencil scrive da sé, le dita muovono gli elementi). ✦ legge il foglio e propone modifiche: è un secondo parere, non un correttore — valuta prima di accettare. ↶ annulla l’ultima azione, tutte le volte che serve.' },
+    { id: 'foglio', t: 'Leggere il foglio', body: 'Sotto i passi la timeline: verde in basso il tempo a valore, rosso in alto le attese; il riepilogo in basso a destra fa i conti (VA, NVA, VA %, First Time Quality). Il lucchetto dice che un elemento è bloccato a un altro e si muove con lui («Blocca a…» / «Sblocca» nelle azioni rapide). Il badge ↗ apre la mappa collegata (dettaglio, turno, futuro). «Provvisoria» accanto al titolo resta finché non cammini e validi il processo (vedi Cammina e valida).' }
   ];
-  UI.guideSec = null;
+  const METODO = [
+    { id: 'testata', t: 'Intestazione e scopo', body: 'Titolo, data e iniziali in alto a destra, come sul foglio A3 del libro. Lo scopo in una frase: dalla richiesta X alla consegna Y. Una mappa = un processo solo: se cambia turno o unità, fai un’altra mappa, non una variante.', q: 'Cosa soddisfa esattamente questa mappa?', acts: [['title', 'Apri l’intestazione']] },
+    { id: 'richiesta', t: 'La richiesta', body: 'Disegna il richiedente e tutte le vie reali con cui la richiesta arriva: telefono, fax, e-mail, a voce, di persona. La giungla di frecce in alto non è disordine da nascondere: è il primo spreco da attaccare, perché ogni via in più è una richiesta che può perdersi o essere fraintesa.', q: 'Quante mani tocca la richiesta prima di arrivare a chi eroga?', tools: [['person', 'Persona'], ['request', 'Richiesta']] },
+    { id: 'flusso', t: 'Flusso e attese', body: 'Disegna i passi nell’ordine in cui avvengono davvero, non come dovrebbero: nello stato attuale ciò che sta nei box è valore adesso, si giudica dopo. Tra due passi metti sempre un delta se la cosa sta ferma. Più di 4-5 passi? Forse lo scopo è troppo largo.', q: 'Quale attività apre la porta del passo e quale la chiude?', tools: [['box', 'Passo'], ['delta', 'Attesa']] },
+    { id: 'valida', t: 'Cammina e valida', body: 'Una mappa fatta alla scrivania è una bozza. Cammina il processo dall’inizio alla fine osservando, poi mostrala a chi fa il lavoro: accuratezza e adesione arrivano insieme. Le domande da fare sono due: «Ti sembra giusto? Ho lasciato fuori qualcosa?». Finché non l’hai fatto, la mappa resta provvisoria.', valida: true },
+    { id: 'dati', t: 'Dati', body: 'Per ogni passo e ogni attesa raccogli Hi / Lo / Avg, un’unità sola per tutta la mappa. L’attesa non si cronometra: si calcola per differenza, fine del passo precedente → inizio del successivo. Servono ~30 misure per dati credibili, 8-10 per una prima vista; il massimo è dove si nascondono interruzioni e workaround.', q: 'Perché a volte 5 minuti e a volte 19?' },
+    { id: 'analisi', t: 'Analisi', body: 'Una nuvola su ogni punto debole, con muda e regola violata: una riga, non un tema. Comincia dalle nuvole a monte: correggere la richiesta rende più di quanto sembri. Quando senti «a volte, dipende, forse» il processo non è specificato — è già una nuvola.', q: 'Così accade adesso: è abbastanza buono?', tools: [['storm', 'Nuvola']] },
+    { id: 'futuro', t: 'Stato futuro', body: 'Futuro non vuol dire ideale: dev’essere raggiungibile (persone, sponsor, data) e insieme più vicino all’ideale. Prima mossa quasi sempre: ridurre le vie della richiesta; poi eliminare o combinare passi; tempi standard solo dai dati raccolti. Se il futuro non è visibilmente più semplice dell’attuale, torna a osservare. E niente monumenti: non automatizzare ciò che non funziona a mano.', acts: [['future', 'Apri / crea lo stato futuro']], cmp: true },
+    { id: 'piano', t: 'Piano e follow-up', body: 'Ogni riga del piano: cosa, chi, entro quando, esito atteso; senza chi e quando non accadrà. L’ostacolo grosso merita un A3, non una riga di piano. A piano eseguito si rimisura: nuova mappa dello stato attuale e confronto fianco a fianco.', q: 'Chi fa cosa, entro quando?', acts: [['plan', 'Apri il piano']] }
+  ];
+  UI.guideFocusSec = null;
   UI.guideVisible = () => { const g = $('#guidepop'); return !!g && !g.classList.contains('hidden'); };
-  UI.toggleGuide = (show) => {
+  UI.toggleGuide = (show, section) => {
     const g = $('#guidepop'); const want = show != null ? !!show : g.classList.contains('hidden');
-    g.classList.toggle('hidden', !want); $('#btn-guide').setAttribute('aria-pressed', want);
-    if (want) UI.renderGuide();
+    if (!want) UI.closeGuideCard();
+    g.classList.toggle('hidden', !want);
+    if (want) { UI.guideFocusSec = section || null; UI.renderGuide(); }
   };
   UI.renderGuide = () => {
     if (!UI.guideVisible()) return;
     const map = V.map(); const g = $('#guidepop'); const L = V.lint(map);
-    const secBody = (s) => {
-      let b = `<div class="gp-body">${s.body}<div class="gp-q">${esc(s.q)}</div>`;
-      if (s.valida) {
-        b += `<label class="check" style="margin-top:8px"><input type="checkbox" id="gp-walked" ${map.validation.walked ? 'checked' : ''}> <span>Processo camminato (osservazione diretta)</span></label>`
-          + `<div class="field" style="margin-top:4px"><label>Validata da (chi fa il lavoro)</label><input id="gp-validated" value="${esc(map.validation.validatedBy || '')}" autocomplete="off"></div>`;
-      }
-      if (s.cmp) {
-        const f = V.futureOf(map); const cur = V.currentOf(map) || map;
-        if (f) { const fm = V.metrics(f), cm = V.metrics(cur); b += `<div class="cmp" style="margin-top:8px"><span class="h"></span><span class="h">Attuale</span><span class="h">Futuro</span><span class="h"></span>${cmpRow('Vie di richiesta', cm.requests, fm.requests)}${cmpRow('Process box', cm.boxes, fm.boxes)}${cmpRow('Tempo totale', cm.hasData ? cm.tot : null, fm.hasData ? fm.tot : null)}${cmpRow('NVA (attese)', cm.hasData ? cm.nva : null, fm.hasData ? fm.nva : null)}${cmpRow('VA %', cm.vaPct, fm.vaPct, false)}</div>`; }
-      }
-      const btns = (s.tools || []).map(t => `<button class="btn small" data-tool-go="${t[0]}">${t[1]}</button>`).concat((s.acts || []).map(a => `<button class="btn small" data-ga="${a[0]}">${a[1]}</button>`));
-      if (btns.length) b += `<div class="actions" style="margin-top:8px">${btns.join('')}</div>`;
-      return b + '</div>';
-    };
-    let h = `<div class="gp-head"><b>Guida</b><span class="hint">promemoria del metodo</span><span class="spacer"></span><button class="btn small ghost" id="gp-x" aria-label="Chiudi">✕</button></div>`;
-    h += GUIDE.map((s, i) => `<button class="gp-sec" data-gs="${s.id}" aria-expanded="${UI.guideSec === s.id}"><span class="gp-n">${i + 1}</span>${esc(s.t)}<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>` + (UI.guideSec === s.id ? secBody(s) : '')).join('');
+    const row = (sec, it, i) => `<button class="gp-item" data-card="${sec}:${it.id}">${sec === 'metodo' ? `<span class="gp-n">${i + 1}</span>` : '<span class="gp-dot"></span>'}${esc(it.t)}</button>`;
+    let h = `<div class="gp-head"><b>Guida pratica</b><span class="spacer"></span><button class="btn small ghost" id="gp-x" aria-label="Chiudi">✕</button></div>`;
+    h += `<div class="gp-sechead" data-sec="primi">Primi passi</div>` + PRIMI.map((it, i) => row('primi', it, i)).join('');
+    h += `<div class="gp-sechead" data-sec="metodo">Il metodo</div>` + METODO.map((it, i) => row('metodo', it, i)).join('');
+    h += `<div class="gp-sechead" data-sec="simboli">I simboli</div><div class="gp-grid">` + UI.SYMBOLS().map(s => `<button class="gp-chip" data-card="simboli:${s.id}"><span class="gp-glyph">${s.glyph}</span><span>${esc(s.name)}</span></button>`).join('') + `</div>`;
+    h += `<div class="actions" style="padding:8px 10px 0"><button class="btn small" id="gp-example">Carica l'esempio del libro</button></div>`;
     h += `<div class="gp-lint">${L.length ? L.slice(0, 10).map((x, i) => `<button class="chip ${x.level}" data-li="${i}">${x.level === 'bad' ? '✕' : '⚠'} ${esc(x.msg)}</button>`).join('') : '<span class="chip ok">✓ Nessun rilievo dai controlli. Chiedi al coach una revisione.</span>'}</div>`;
     h += `<label class="check gp-foot"><input type="checkbox" id="gp-sug" ${UI.guideOn ? 'checked' : ''}> <span>Suggerimenti discreti mentre disegni</span></label>`;
     g.innerHTML = h;
     $('#gp-x').onclick = () => UI.toggleGuide(false);
-    $$('[data-gs]', g).forEach(b => b.onclick = () => { UI.guideSec = UI.guideSec === b.dataset.gs ? null : b.dataset.gs; UI.renderGuide(); });
-    $$('[data-tool-go]', g).forEach(b => b.onclick = () => { I.setTool(b.dataset.toolGo); UI.toggleGuide(false); });
-    $$('[data-ga]', g).forEach(b => b.onclick = () => { const a = b.dataset.ga; UI.toggleGuide(false); if (a === 'title') V.pop.openTitle(); else if (a === 'plan') UI.showTab('plan'); else if (a === 'future') $('#tab-future').click(); });
+    $$('[data-card]', g).forEach(b => b.onclick = () => { const [sec, id] = b.dataset.card.split(':'); UI.openGuideCard(sec, id, b); });
+    const ex = $('#gp-example'); if (ex) ex.onclick = () => { if (UI.loadExample) UI.loadExample(); };
     $$('[data-li]', g).forEach(b => b.onclick = () => { const x = L[+b.dataset.li]; if (x.elId) { UI.toggleGuide(false); I.select([x.elId]); R.flash(x.elId); } });
     $('#gp-sug').onchange = (e) => { UI.guideOn = e.target.checked; localStorage.setItem('vsm.guideOn', UI.guideOn ? '1' : '0'); };
-    const wk = $('#gp-walked'); if (wk) wk.onchange = () => { const after = Object.assign(clone(V.map().validation), { walked: wk.checked, walkedDate: wk.checked ? today() : '' }); V.commit({ t: 'meta', after: { validation: after } }, 'validazione', { silent: true }); UI.renderGuide(); };
-    const vd = $('#gp-validated'); if (vd) vd.addEventListener('input', () => { const after = Object.assign(clone(V.map().validation), { validatedBy: vd.value, validatedDate: vd.value ? today() : '' }); V.commit({ t: 'meta', after: { validation: after } }, 'validazione', { silent: true }); });
+    if (UI.guideFocusSec) { const s = g.querySelector(`[data-sec="${UI.guideFocusSec}"]`); if (s) g.scrollTop = UI.guideFocusSec === 'primi' ? 0 : Math.max(0, s.offsetTop - 44); UI.guideFocusSec = null; }
+  };
+  // ----- scheda flottante di una voce -----
+  UI.guideCardOpen = () => !!$('#gpcard');
+  UI.closeGuideCard = () => { const c = $('#gpcard'); if (c) c.remove(); };
+  UI.openGuideCard = (sec, id, anchor) => {
+    UI.closeGuideCard();
+    const map = V.map();
+    const it = sec === 'simboli' ? UI.SYMBOLS().find(s => s.id === id) : (sec === 'primi' ? PRIMI : METODO).find(s => s.id === id);
+    if (!it) return;
+    let b = `<div class="gpc-body">${it.body}`;
+    if (it.q) b += `<div class="gp-q">${esc(it.q)}</div>`;
+    if (it.valida) {
+      b += `<label class="check" style="margin-top:8px"><input type="checkbox" id="gp-walked" ${map.validation.walked ? 'checked' : ''}> <span>Processo camminato (osservazione diretta)</span></label>`
+        + `<div class="field" style="margin-top:4px"><label>Validata da (chi fa il lavoro)</label><input id="gp-validated" value="${esc(map.validation.validatedBy || '')}" autocomplete="off"></div>`;
+    }
+    if (it.cmp) {
+      const f = V.futureOf(map); const cur = V.currentOf(map) || map;
+      if (f) { const fm = V.metrics(f), cm = V.metrics(cur); b += `<div class="cmp" style="margin-top:8px"><span class="h"></span><span class="h">Attuale</span><span class="h">Futuro</span><span class="h"></span>${cmpRow('Vie di richiesta', cm.requests, fm.requests)}${cmpRow('Process box', cm.boxes, fm.boxes)}${cmpRow('Tempo totale', cm.hasData ? cm.tot : null, fm.hasData ? fm.tot : null)}${cmpRow('NVA (attese)', cm.hasData ? cm.nva : null, fm.hasData ? fm.nva : null)}${cmpRow('VA %', cm.vaPct, fm.vaPct, false)}</div>`; }
+    }
+    if (it.vars) b += `<div class="lg-var">${it.vars}</div>`;
+    const btns = (it.tools || []).map(t => `<button class="btn small" data-tool-go="${t[0]}">${t[1]}</button>`)
+      .concat((it.acts || []).map(a => `<button class="btn small" data-ga="${a[0]}">${a[1]}</button>`)
+      .concat(sec === 'simboli' && it.tool ? [`<button class="btn small primary" data-tool-go="${it.tool}">Usa lo strumento</button>`] : []));
+    if (btns.length) b += `<div class="actions" style="margin-top:10px">${btns.join('')}</div>`;
+    b += '</div>';
+    const c = document.createElement('div'); c.id = 'gpcard';
+    c.innerHTML = `<div class="gpc-head">${sec === 'simboli' ? `<span class="gp-glyph">${it.glyph}</span>` : ''}<b>${esc(it.t || it.name)}</b><span class="spacer"></span><button class="btn small ghost" id="gpc-x" aria-label="Chiudi">✕</button></div>` + b;
+    document.body.appendChild(c);
+    // accanto al pannello, allineata alla voce toccata; su schermi stretti diventa un foglio centrale
+    const pr = $('#guidepop').getBoundingClientRect(); const ar = anchor.getBoundingClientRect();
+    if (window.innerWidth < 700 || pr.left < 300) c.classList.add('sheet');
+    else {
+      c.style.right = Math.round(window.innerWidth - pr.left + 8) + 'px';
+      const chH = c.offsetHeight;
+      c.style.top = Math.round(Math.max(58, Math.min(window.innerHeight - chH - 10, ar.top - 8))) + 'px';
+    }
+    $('#gpc-x').onclick = UI.closeGuideCard;
+    $$('[data-tool-go]', c).forEach(x => x.onclick = () => { UI.closeGuideCard(); UI.toggleGuide(false); I.setTool(x.dataset.toolGo); });
+    $$('[data-ga]', c).forEach(x => x.onclick = () => { const a = x.dataset.ga; UI.closeGuideCard(); UI.toggleGuide(false); if (a === 'title') V.pop.openTitle(); else if (a === 'plan') UI.showTab('plan'); else if (a === 'future') $('#tab-future').click(); });
+    const wk = $('#gp-walked', c); if (wk) wk.onchange = () => { const after = Object.assign(clone(V.map().validation), { walked: wk.checked, walkedDate: wk.checked ? today() : '' }); V.commit({ t: 'meta', after: { validation: after } }, 'validazione', { silent: true }); };
+    const vd = $('#gp-validated', c); if (vd) vd.addEventListener('input', () => { const after = Object.assign(clone(V.map().validation), { validatedBy: vd.value, validatedDate: vd.value ? today() : '' }); V.commit({ t: 'meta', after: { validation: after } }, 'validazione', { silent: true }); });
   };
   function cmpRow(label, a, b, lowerBetter = true) { const cls = (a == null || b == null) ? '' : (lowerBetter ? (b < a ? 'good' : b > a ? 'badv' : '') : (b > a ? 'good' : b < a ? 'badv' : '')); return `<span>${label}</span><span>${a == null ? '–' : fmt(a)}</span><span>${b == null ? '–' : fmt(b)}</span><span class="${cls}">${cls === 'good' ? '▼ meglio' : cls === 'badv' ? '▲ peggio' : '='}</span>`; }
 
@@ -401,8 +437,8 @@
   };
 
   // ---------- cassetto ----------
-  UI.showTab = (name) => { $('#drawer').classList.remove('closed'); ['coach', 'plan', 'legend'].forEach(t => { $('#tab-' + t).setAttribute('aria-selected', t === name); $('#pane-' + t).classList.toggle('hidden', t !== name); }); if (name === 'plan') UI.renderPlan(); if (name === 'legend') UI.renderLegend(); if (name === 'coach') setTimeout(() => { const c = $('#chat'); c.scrollTop = 1e9; }, 0); $('#btn-legend').setAttribute('aria-pressed', name === 'legend'); };
-  UI.closeDrawer = () => { $('#drawer').classList.add('closed'); $('#btn-legend').setAttribute('aria-pressed', 'false'); };
+  UI.showTab = (name) => { $('#drawer').classList.remove('closed'); ['coach', 'plan'].forEach(t => { $('#tab-' + t).setAttribute('aria-selected', t === name); $('#pane-' + t).classList.toggle('hidden', t !== name); }); if (name === 'plan') UI.renderPlan(); if (name === 'coach') setTimeout(() => { const c = $('#chat'); c.scrollTop = 1e9; }, 0); };
+  UI.closeDrawer = () => { $('#drawer').classList.add('closed'); };
 
   // ---------- interfaccia nascosta ("schermo pulito"): resta il foglio; si mostra e si nasconde solo col pulsante ----------
   UI.setChrome = (visible, opts = {}) => {
@@ -511,7 +547,7 @@
       case 'storm': btn('shrink', el.props.collapsed ? '▽ Espandi' : '⚠ Riduci a segnale', el.props.collapsed ? 'Torna nuvola con il testo visibile' : 'Diventa un triangolo di allerta: il foglio resta pulito, il testo si legge toccandolo'); btn('dup', 'Duplica'); break;
       case 'fluffy': case 'burst': case 'text': btn('dup', 'Duplica'); break;
       case 'icon': case 'face': btn('dup', 'Duplica'); break;
-      case 'legend': btn('legend', el.props.collapsed ? 'Apri' : 'Chiudi'); btn('legendfull', 'Legenda completa', 'Tutti i simboli con significato e varianti, nel cassetto'); break;
+      case 'legend': btn('legend', el.props.collapsed ? 'Apri' : 'Chiudi'); btn('legendfull', 'Tutti i simboli', 'Ogni simbolo con significato e varianti, nella Guida pratica'); break;
     }
     if (V.isConnector(el) && Array.isArray(el.props.via) && el.props.via.length) btn('straighten', '― Raddrizza', 'Toglie le pieghe fatte a mano: la freccia torna diretta');
     const locked = el.props && (el.props.lockTo || (el.type === 'delta' && el.props.attachedTo));
@@ -535,7 +571,7 @@
       case 'invert': V.commit({ t: 'update', id, after: { from: clone(el.to), to: clone(el.from) }, before: { from: clone(el.from), to: clone(el.to) } }, 'inverti'); I.select([id]); break;
       case 'legend': { const collapsed = !el.props.collapsed; V.commit([{ t: 'props', id, after: { collapsed } }, { t: 'update', id, after: { w: collapsed ? 74 : 170, h: collapsed ? 18 : 104 } }], 'legenda'); I.select([id]); break; }
       case 'edit': V.pop.open(id); break;
-      case 'legendfull': UI.showTab('legend'); break;
+      case 'legendfull': UI.toggleGuide(true, 'simboli'); break;
       case 'shrink': {
         const T = V.TYPES.storm; const collapsed = !el.props.collapsed;
         // la misura di prima si tiene da parte: chi allarga una nuvola non vuole ritrovarla piccola al ritorno
@@ -558,8 +594,4 @@
     }
   };
 
-  // ---------- benvenuto / aiuto ----------
-  UI.showHelp = (first) => {
-    const d = $('#dlg-help'); if (!d) return; d.dataset.first = first ? '1' : ''; d.showModal();
-  };
 })(window.VSM);

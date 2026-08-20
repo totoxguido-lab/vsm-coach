@@ -30,10 +30,8 @@
     // "Futuro" crea direttamente la copia se non esiste: niente conferme, si annulla eliminando la mappa
     $('#tab-future').onclick = () => { const m = V.map(); const f = V.futureOf(m); if (f && f !== m) UI.openMap(f.id); else if (m.kind === 'current') { const nf = V.createFuture(m); UI.openMap(nf.id); UI.toast('Stato futuro creato come copia: ora semplifica. Se non serve: menu ⋯ → Elimina.'); } else if (m.kind !== 'future') UI.toast('I sotto-fogli non hanno uno stato futuro: torna alla mappa madre.'); };
     $('#btn-undo').onclick = () => V.undo(); $('#btn-redo').onclick = () => V.redo();
-    $('#btn-guide').onclick = () => UI.toggleGuide();
     $('#drawer-close').onclick = UI.closeDrawer;
-    ['coach', 'plan', 'legend'].forEach(t => $('#tab-' + t).onclick = () => UI.showTab(t));
-    $('#btn-legend').onclick = () => { if ($('#drawer').classList.contains('closed') || $('#pane-legend').classList.contains('hidden')) UI.showTab('legend'); else UI.closeDrawer(); };
+    ['coach', 'plan'].forEach(t => $('#tab-' + t).onclick = () => UI.showTab(t));
     $('#btn-maps').onclick = () => { UI.renderMaps(); $('#dlg-maps').showModal(); }; $('#maps-close').onclick = () => $('#dlg-maps').close();
     const menuCheck = (id, on) => { const b = $(id); b.setAttribute('aria-pressed', on); b.textContent = (on ? '✓ ' : '○ ') + b.textContent.replace(/^[✓○] /, ''); };
     $('#btn-overlays').onclick = () => { const m = V.map(); V.commit({ t: 'meta', after: { overlays: m.overlays === false } }, 'riepilogo', { silent: true }); R.overlay(V.map(), V.map().overlays !== false); menuCheck('#btn-overlays', V.map().overlays !== false); };
@@ -57,25 +55,30 @@
     $('#zoom-in').onclick = () => { const r = $('#stage').getBoundingClientRect(); I.zoomAt(1.2, r.left + r.width / 2, r.top + r.height / 2); };
     $('#zoom-out').onclick = () => { const r = $('#stage').getBoundingClientRect(); I.zoomAt(1 / 1.2, r.left + r.width / 2, r.top + r.height / 2); };
     $('#zoom-fit').onclick = () => I.fit();
-    $('#btn-help').onclick = () => UI.showHelp(false);
     $('#ui-toggle').onclick = () => UI.toggleChrome();
     // La linguetta risponde al pointerup, non al click: su iPad il click sintetizzato dopo il tocco
     // puo' perdersi o raddoppiare vicino al bordo del foglio; cosi' il gesto e' deterministico.
     const ptog = $('#palette-toggle');
     ptog.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); });
     ptog.addEventListener('pointerup', (e) => { e.stopPropagation(); e.preventDefault(); UI.setPaletteHidden(!$('#app').classList.contains('palette-hidden')); });
-    $('#help-close').onclick = () => { $('#dlg-help').close(); localStorage.setItem('vsm.welcomed', '1'); };
-    $('#help-example').onclick = () => { $('#dlg-help').close(); localStorage.setItem('vsm.welcomed', '1'); menuAction('example'); };
     // menu: i sottogruppi (File, Opzioni, Coach) si aprono a fisarmonica, uno alla volta, e si richiudono a ogni apertura
     const menu = $('#menu');
     const closeSubs = () => { $$('#menu .submenu').forEach(s => s.classList.add('hidden')); $$('#menu .sub-head').forEach(h => h.setAttribute('aria-expanded', 'false')); };
     $$('#menu .sub-head').forEach(h => h.onclick = () => { const s = $('#sub-' + h.dataset.sub); const wasClosed = s.classList.contains('hidden'); closeSubs(); if (wasClosed) { s.classList.remove('hidden'); h.setAttribute('aria-expanded', 'true'); } });
     $('#btn-menu').onclick = (e) => { e.stopPropagation(); const opening = menu.classList.contains('hidden'); menu.classList.toggle('hidden'); if (opening) closeSubs(); };
-    document.addEventListener('pointerdown', (e) => { if (!menu.classList.contains('hidden') && !menu.contains(e.target) && e.target !== $('#btn-menu')) menu.classList.add('hidden'); if (!$('#more-tools').classList.contains('hidden') && !$('#more-tools').contains(e.target) && !e.target.closest('[data-tool="more"]')) $('#more-tools').classList.add('hidden'); if (UI.guideVisible() && !$('#guidepop').contains(e.target) && !e.target.closest('#btn-guide')) UI.toggleGuide(false); });
+    document.addEventListener('pointerdown', (e) => {
+      if (!menu.classList.contains('hidden') && !menu.contains(e.target) && e.target !== $('#btn-menu')) menu.classList.add('hidden');
+      if (!$('#more-tools').classList.contains('hidden') && !$('#more-tools').contains(e.target) && !e.target.closest('[data-tool="more"]')) $('#more-tools').classList.add('hidden');
+      // il tocco sul vuoto chiude PRIMA la scheda flottante della guida (il pannello resta); solo un
+      // secondo tocco fuori chiude anche il pannello
+      if (UI.guideCardOpen && UI.guideCardOpen() && !e.target.closest('#gpcard')) { UI.closeGuideCard(); if (!$('#guidepop').contains(e.target)) return; }
+      if (UI.guideVisible() && !$('#guidepop').contains(e.target) && !e.target.closest('#gpcard')) UI.toggleGuide(false);
+    });
     // il menu resta aperto (si chiude toccando fuori): cosi' si spuntano piu' opzioni di fila.
     // Fa eccezione cio' che apre un'altra superficie in alto a destra (guida, legenda, dialoghi) o chiude la mappa.
     const CLOSE_ON = ['legend', 'guide', 'maps', 'help', 'settings', 'coach', 'delete', 'exit'];
     $$('#menu [data-m]').forEach(b => b.onclick = () => { if (CLOSE_ON.includes(b.dataset.m)) menu.classList.add('hidden'); menuAction(b.dataset.m); });
+    UI.loadExample = () => { UI.toggleGuide(false); menuAction('example'); };
     $('#file-open').addEventListener('change', (e) => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => { try { const n = V.importMaps(JSON.parse(r.result)); I.restoreView(); UI.toast(n + ' mappe importate.'); } catch (err) { UI.toast('File non valido: ' + err.message); } }; r.readAsText(f); e.target.value = ''; });
   }
   function menuAction(a) {
@@ -90,10 +93,10 @@
       case 'save': download(`vsm-coach-${slug(map.title)}-${today()}.json`, JSON.stringify(V.doc, null, 1), 'application/json'); UI.toast('JSON scaricato (tutte le mappe).'); break;
       case 'svg': download(`${slug(map.title)}-${map.kind}.svg`, R.exportSVG(map), 'image/svg+xml'); break;
       case 'print': window.print(); break;
-      case 'legend': UI.showTab('legend'); break;
+      case 'legend': UI.toggleGuide(true, 'simboli'); break;
       case 'guide': UI.toggleGuide(true); break;
       case 'maps': UI.renderMaps(); $('#dlg-maps').showModal(); break;
-      case 'help': UI.showHelp(false); break;
+      case 'help': UI.toggleGuide(true, 'primi'); break;
       case 'coach': UI.showTab('coach'); break;
       case 'settings': C.openSettings(); break;
       case 'clear-ink': if (map.strokes.length && confirm('Cancellare tutti i tratti a matita di questa mappa?')) V.commit({ t: 'strokes_set', after: [] }, 'cancella inchiostro'); break;
@@ -132,7 +135,7 @@
     window.addEventListener('beforeprint', () => { printViewBackup = clone(I.view); I.fit({ paper: true }); });
     window.addEventListener('afterprint', () => { if (!printViewBackup) return; I.view = printViewBackup; printViewBackup = null; I.applyView(); const m = V.map(); if (m) { m.view = clone(I.view); V.save(); } });
     setTimeout(UI.evalSuggest, 2500);
-    if (!localStorage.getItem('vsm.welcomed')) setTimeout(() => UI.showHelp(true), 400);
+    if (!localStorage.getItem('vsm.welcomed')) setTimeout(() => { UI.toggleGuide(true, 'primi'); localStorage.setItem('vsm.welcomed', '1'); }, 400);
   }
   start();
 })(window.VSM);
