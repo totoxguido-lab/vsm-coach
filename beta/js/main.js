@@ -116,7 +116,14 @@
     try { if (localStorage.getItem('vsm.paletteHidden') === '1') UI.setPaletteHidden(true); } catch (e) { /* storage bloccato */ }
     fullRender(); I.restoreView();
     if (!V.map().elements.length && Object.keys(V.doc.maps).length === 1) { V.map().elements.push(V.newElement('legend', 30, 20)); V.save(); fullRender(); I.hint('Foglio nuovo: tocca il titolo in alto a destra, poi metti il richiedente e i process box. La Guida (in alto) ti accompagna se vuoi.', 6000); }
-    if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
+    if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+      // quando un service worker NUOVO prende il controllo (aggiornamento installato in sottofondo),
+      // la pagina si ricarica da sola: senza questo la versione nuova si vedeva solo al secondo avvio,
+      // e sull'iPad "chiudi davvero e riapri" non e' un gesto ovvio. Al primo install non si ricarica.
+      let hadSW = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadSW) location.reload(); hadSW = true; });
+    }
     let printViewBackup = null;
     window.addEventListener('beforeprint', () => { printViewBackup = clone(I.view); I.fit({ paper: true }); });
     window.addEventListener('afterprint', () => { if (!printViewBackup) return; I.view = printViewBackup; printViewBackup = null; I.applyView(); const m = V.map(); if (m) { m.view = clone(I.view); V.save(); } });
