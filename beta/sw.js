@@ -10,14 +10,17 @@ const FAMILY = 'vsm-coach-beta';
 // dispositivi continuavano a servire dalla cache la build precedente. publish_beta.py controlla che i
 // due timbri coincidano, cosi' non possono separarsi.
 importScripts('./js/version.js');
-const BUILD = '20260820-2012';
+const BUILD = '20260820-2014';
 const CACHE = FAMILY + '-v' + self.VSM_VERSION + '-' + BUILD;
 const FILES = ['./', './index.html', './app.css', './prompt.js', './js/version.js', './js/model.js', './js/render.js', './js/interact.js', './js/panels.js', './js/legend.js', './js/coach.js', './js/main.js', './manifest.webmanifest', './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
 // Install atomico, di proposito: se un file manca, l'install FALLISCE e restano in servizio il service
 // worker e la cache precedenti, completi e funzionanti. La variante "tollerante" (cache file per file)
 // era peggio del male: una cache parziale si installava "con successo" e l'activate cancellava quella
 // buona — un deploy sbagliato rompeva l'app offline in silenzio.
-self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting())); });
+// `cache: 'reload'` su ogni file: senza, l'installazione li chiede alla cache HTTP del browser, e
+// GitHub Pages li serve con max-age=600 — una pubblicazione fatta entro dieci minuti dalla precedente
+// finiva in una cache col nome nuovo e i file VECCHI dentro. Sembrava un aggiornamento riuscito.
+self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES.map((u) => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE && k.startsWith(FAMILY + '-v')).map((k) => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
