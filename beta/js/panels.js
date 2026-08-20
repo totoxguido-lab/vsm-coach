@@ -40,7 +40,7 @@
 
   UI.buildPalette = () => {
     const pal = $('#palette'); pal.innerHTML = '';
-    const SHORT = { select: 'Seleziona', pan: 'Mano', ink: 'Matita', eraser: 'Gomma', box: 'Passo', delta: 'Attesa', flow: 'Flusso', request: 'Richiesta', person: 'Persona', storm: 'Problema', more: 'Altro' };
+    const SHORT = { ink: 'Matita', eraser: 'Gomma', box: 'Passo', delta: 'Attesa', flow: 'Flusso', request: 'Richiesta', person: 'Persona', storm: 'Problema', more: 'Altro' };
     // "✓ Fine" compare solo quando uno strumento e' attivo: e' l'uscita, al posto del vecchio tasto Seleziona
     const done = document.createElement('button');
     done.className = 'tool done hidden'; done.id = 'tool-done'; done.title = 'Torna a selezionare (Esc)';
@@ -62,13 +62,14 @@
   };
   /** Trascinato un flusso o una richiesta nel vuoto: invece di far sparire il gesto, si propone qui
    *  l'elemento di arrivo. Sceglierne uno lo crea sul punto gia' collegato; toccare fuori annulla tutto. */
-  const PLACE_KINDS = { flow: ['box', 'inventory', 'inbox'], request: ['box', 'person'] };
-  const PLACE_LBL = { box: 'Passo', inventory: 'Scorta', inbox: 'In-box', person: 'Persona' };
+  // le voci vengono da I.CONN_TARGETS, la stessa lista della validazione: offrire "Persona" a una
+  // richiesta creava un collegamento che poi il ricollegamento rifiutava per sempre
+  const PLACE_LBL = { box: 'Passo', inventory: 'Scorta', inbox: 'In-box' };
   UI.closePlaceMenu = () => { const m = $('#placemenu'); if (!m) return false; m.remove(); document.removeEventListener('pointerdown', UI._pmAway, true); return true; };
   UI.proposePlace = (clientX, clientY, ctype, fromId, w) => {
     UI.closePlaceMenu();
     const stage = $('#stage'); const r = stage.getBoundingClientRect();
-    const kinds = PLACE_KINDS[ctype] || ['box'];
+    const kinds = I.CONN_TARGETS[ctype] || ['box'];
     const m = document.createElement('div'); m.id = 'placemenu'; m.className = 'placemenu';
     m.style.left = Math.min(Math.max(clientX - r.left, 78), r.width - 78) + 'px';
     m.style.top = Math.min(Math.max(clientY - r.top, 78), r.height - 78) + 'px';
@@ -86,11 +87,14 @@
     // altrimenti partirebbe subito un altro gesto.
     UI._pmAway = (ev) => {
       if (ev.target.closest && ev.target.closest('#placemenu')) return;
+      // il secondo dito di un pinch non chiude ne' blocca nulla: bloccarlo spezzava il conteggio
+      // dei puntatori e il pinch degenerava in un pan a scatti
+      if (ev.isPrimary === false) return;
       UI.closePlaceMenu();
       if (ev.target.closest && ev.target.closest('#canvas')) { ev.stopPropagation(); ev.preventDefault(); }
     };
     setTimeout(() => document.addEventListener('pointerdown', UI._pmAway, true), 0);
-    I.hint("Scegli che cosa mettere qui: nasce gia' collegato. Tocca fuori per annullare.", 4000);
+    I.hint('Scegli che cosa mettere qui: nasce gi\u00e0 collegato. Tocca fuori per annullare.', 4000);
   };
 
   UI.inkOptions = () => { const p = $('#pop'); p.innerHTML = `<div class="pop-head"><b>Matita</b><button class="btn small ghost" id="pop-x" aria-label="Chiudi">✕</button></div><div class="actions">${INK_COLORS.map(c => `<button class="btn small" data-c="${c[0]}" style="border-color:${c[0]};${I.ink.color === c[0] ? 'background:' + c[0] + ';color:#fff' : ''}">${c[1]}</button>`).join('')}</div><div class="actions">${[1.2, 1.8, 3].map(w => `<button class="btn small" data-w="${w}" ${I.ink.width === w ? 'style="border-color:var(--accent);color:var(--accent)"' : ''}>${w === 1.2 ? 'sottile' : w === 1.8 ? 'media' : 'spessa'}</button>`).join('')}</div>`; p.classList.remove('hidden'); const st = $('#stage').getBoundingClientRect(); p.style.left = Math.max(10, st.width / 2 - 100) + 'px'; p.style.top = (st.height - 200) + 'px'; $$('[data-c]', p).forEach(b => b.onclick = () => { I.ink.color = b.dataset.c; UI.inkOptions(); }); $$('[data-w]', p).forEach(b => b.onclick = () => { I.ink.width = +b.dataset.w; UI.inkOptions(); }); $('#pop-x').onclick = () => V.pop.close(); };
@@ -478,7 +482,7 @@
       case 'delta': { const f = map.elements.find(c => c.type === 'flow' && c.from.el === el.id); if (!f) return; const d = V.newElement('delta', 0, 0, {}); d.props.attachedTo = f.id; d.props.dx = 0; d.props.dy = 0; V.commit({ t: 'add', el: d }, 'attesa'); I.select([d.id], { keepPop: true }); V.pop.open(d.id); break; }
       case 'cloud': { const s = V.newElement('storm', el.x + el.w - 60, el.y - 62, {}); V.commit({ t: 'add', el: s }, 'nuvola'); I.select([s.id], { keepPop: true }); V.pop.open(s.id); break; }
       case 'connect': I.select([id], { keepPop: true }); I.startPickConnect(id, 'flow'); break;
-      case 'request': { const r = map.elements.find(e => e.type === 'person' && e.props.requestor); if (!r) return; const c = V.newConnector('request', { el: r.id }, { el: el.id }); c.props.offset = map.elements.filter(x => x.type === 'request' && x.from.el === r.id).length; V.commit({ t: 'add', el: c }, 'via di richiesta'); I.select([c.id], { keepPop: true }); V.pop.open(c.id); break; }
+      case 'request': { const r = map.elements.find(e => e.type === 'person' && e.props.requestor); if (!r) return; const c = V.newConnector('request', { el: r.id }, { el: el.id }); c.props.offset = I.reqOffset(map, r.id); V.commit({ t: 'add', el: c }, 'via di richiesta'); I.select([c.id], { keepPop: true }); V.pop.open(c.id); break; }
       case 'reqtool': I.select([id], { keepPop: true }); I.startPickConnect(id, 'request'); break;
       case 'attach': { const pos = R.elPos(el, map); let best = null, bd = 120; map.elements.filter(c => c.type === 'flow').forEach(c => { const Pc = R.connPath(c, map); const d = Math.hypot(Pc.mid.x - (pos.x + el.w / 2), Pc.mid.y - pos.y); if (d < bd) { bd = d; best = c; } }); if (!best) { UI.toast('Nessuna freccia di flusso vicina: avvicina il delta a una freccia.'); return; } V.commit({ t: 'props', id, after: { attachedTo: best.id, dx: 0, dy: 0 } }, 'aggancia'); I.select([id]); break; }
       case 'deltaOn': { const d = V.newElement('delta', 0, 0, {}); d.props.attachedTo = id; d.props.dx = 0; d.props.dy = 0; V.commit({ t: 'add', el: d }, 'attesa'); I.select([d.id], { keepPop: true }); V.pop.open(d.id); break; }

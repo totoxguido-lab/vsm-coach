@@ -374,4 +374,3 @@ dialog .d-foot{padding:10px 16px;border-top:1px solid var(--line);display:flex;g
 @keyframes pm-in{from{opacity:0;transform:scale(.7)}to{opacity:1;transform:scale(1)}}
 /* uscita dallo strumento attivo: prende il posto del vecchio tasto "Seleziona" */
 #palette .tool.done{color:var(--accent)}
-#palette .tool.done[hidden],#palette .tool.done.hidden{display:none}

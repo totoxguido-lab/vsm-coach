@@ -3,13 +3,13 @@
 // cancella solo le versioni vecchie della PROPRIA famiglia. Senza questo, aprire la beta avrebbe svuotato
 // la cache dell'app gia' installata sull'iPad — cioe' le avrebbe tolto il funzionamento senza rete.
 const FAMILY = 'vsm-coach-beta';
-const CACHE = FAMILY + '-v10';
+const CACHE = FAMILY + '-v11';
 const FILES = ['./', './index.html', './app.css', './prompt.js', './js/model.js', './js/render.js', './js/interact.js', './js/panels.js', './js/legend.js', './js/coach.js', './js/main.js', './manifest.webmanifest', './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
-// addAll e' tutto-o-niente: un solo file mancante lasciava l'app SENZA cache, quindi senza offline,
-// e in silenzio. Si mette in cache file per file: quel che c'e' si salva comunque.
-self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE)
-  .then((c) => Promise.all(FILES.map((f) => c.add(f).catch(() => null))))
-  .then(() => self.skipWaiting())); });
+// Install atomico, di proposito: se un file manca, l'install FALLISCE e restano in servizio il service
+// worker e la cache precedenti, completi e funzionanti. La variante "tollerante" (cache file per file)
+// era peggio del male: una cache parziale si installava "con successo" e l'activate cancellava quella
+// buona — un deploy sbagliato rompeva l'app offline in silenzio.
+self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE && k.startsWith(FAMILY + '-v')).map((k) => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
@@ -17,7 +17,14 @@ self.addEventListener('fetch', (e) => {
   // Prima la cache, poi la rete (aggiornamento in sottofondo): l'app parte subito e non dipende dalla rete.
   // Conseguenza voluta: dopo un aggiornamento il dispositivo mostra la versione nuova al secondo avvio.
   e.respondWith(caches.match(e.request).then((hit) => {
-    const fresh = fetch(e.request).then((r) => { if (r && r.ok) { const copy = r.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)); } return r; });
-    return hit || fresh.catch(() => hit);
+    // offline dichiarato + file in cache: inutile tentare 16 fetch destinate a fallire a ogni avvio
+    if (hit && self.navigator && self.navigator.onLine === false) return hit;
+    // il catch va agganciato SUBITO: con `hit || fresh.catch(...)` l'|| corto-circuitava e la fetch di
+    // sottofondo restava con la rejection non gestita (16+ errori a ogni avvio offline)
+    const fresh = fetch(e.request)
+      .then((r) => { if (r && r.ok) { const copy = r.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)); } return r; })
+      .catch(() => hit);
+    // niente respondWith(undefined): se cache e rete falliscono entrambe, un errore di rete esplicito
+    return hit ? Promise.resolve(hit) : fresh.then((r) => r || Response.error());
   }));
 });
