@@ -36,21 +36,21 @@
     $('#btn-legend').onclick = () => { if ($('#drawer').classList.contains('closed') || $('#pane-legend').classList.contains('hidden')) UI.showTab('legend'); else UI.closeDrawer(); };
     $('#btn-maps').onclick = () => { UI.renderMaps(); $('#dlg-maps').showModal(); }; $('#maps-close').onclick = () => $('#dlg-maps').close();
     const menuCheck = (id, on) => { const b = $(id); b.setAttribute('aria-pressed', on); b.textContent = (on ? '✓ ' : '○ ') + b.textContent.replace(/^[✓○] /, ''); };
-    $('#btn-overlays').onclick = () => { const m = V.map(); V.commit({ t: 'meta', after: { overlays: m.overlays === false } }, 'riepilogo', { silent: true }); R.overlay(V.map(), V.map().overlays !== false); menuCheck('#btn-overlays', V.map().overlays !== false); $('#menu').classList.add('hidden'); };
-    $('#btn-pen-mode').onclick = () => { I.penDraws = !I.penDraws; localStorage.setItem('vsm.penDraws', I.penDraws ? '1' : '0'); menuCheck('#btn-pen-mode', I.penDraws); $('#menu').classList.add('hidden'); UI.toast(I.penDraws ? 'Penna: sulla carta vuota scrive a matita.' : 'Penna: usa lo strumento scelto.'); };
-    $('#btn-tools-left').onclick = () => { UI.setToolsLeft(!$('#app').classList.contains('tools-left')); $('#menu').classList.add('hidden'); };
+    $('#btn-overlays').onclick = () => { const m = V.map(); V.commit({ t: 'meta', after: { overlays: m.overlays === false } }, 'riepilogo', { silent: true }); R.overlay(V.map(), V.map().overlays !== false); menuCheck('#btn-overlays', V.map().overlays !== false); };
+    $('#btn-pen-mode').onclick = () => { I.penDraws = !I.penDraws; localStorage.setItem('vsm.penDraws', I.penDraws ? '1' : '0'); menuCheck('#btn-pen-mode', I.penDraws); UI.toast(I.penDraws ? 'Penna: sulla carta vuota scrive a matita.' : 'Penna: usa lo strumento scelto.'); };
+    $('#btn-tools-left').onclick = () => { UI.setToolsLeft(!$('#app').classList.contains('tools-left')); };
     // aspetto dei collegamenti: si cicla fra le modalità, così si confronta a colpo d'occhio quale si legge meglio
     const linkModeLabel = () => { const m = V.linkModeOf(V.map()); $('#btn-link-mode').textContent = 'Frecce: ' + ({ dritta: 'dritte', curva: 'curve' }[m] || m); };
     $('#btn-link-mode').onclick = () => {
       const map = V.map(); const ids = V.LINK_MODES.map(x => x.id); const cur = V.linkModeOf(map);
       const next = V.LINK_MODES[(ids.indexOf(cur) + 1) % ids.length];
       V.commit({ t: 'meta', after: { links: { mode: next.id } }, before: { links: { mode: cur } } }, 'aspetto dei collegamenti');
-      linkModeLabel(); $('#menu').classList.add('hidden'); UI.toast('Collegamenti: ' + next.name + ' — ' + next.hint);
+      linkModeLabel(); UI.toast('Frecce: ' + next.name + ' — ' + next.hint);
     };
     UI.linkModeLabel = linkModeLabel;
     $('#btn-trace').onclick = () => {
       R.traceOn = !R.traceOn; localStorage.setItem('vsm.trace', R.traceOn ? '1' : '0');
-      menuCheck('#btn-trace', R.traceOn); R.selection(I.selection, V.map()); $('#menu').classList.add('hidden');
+      menuCheck('#btn-trace', R.traceOn); R.selection(I.selection, V.map());
       UI.toast(R.traceOn ? 'Selezionando un elemento si illumina dove va a finire.' : 'Evidenziazione del percorso spenta.');
     };
     UI.menuCheck = menuCheck;
@@ -59,6 +59,7 @@
     $('#zoom-fit').onclick = () => I.fit();
     $('#btn-help').onclick = () => UI.showHelp(false);
     $('#ui-toggle').onclick = () => UI.toggleChrome();
+    $('#palette-toggle').onclick = () => UI.setPaletteHidden(!$('#app').classList.contains('palette-hidden'));
     $('#help-close').onclick = () => { $('#dlg-help').close(); localStorage.setItem('vsm.welcomed', '1'); };
     $('#help-example').onclick = () => { $('#dlg-help').close(); localStorage.setItem('vsm.welcomed', '1'); menuAction('example'); };
     // menu: i sottogruppi (File, Opzioni, Coach) si aprono a fisarmonica, uno alla volta, e si richiudono a ogni apertura
@@ -67,7 +68,10 @@
     $$('#menu .sub-head').forEach(h => h.onclick = () => { const s = $('#sub-' + h.dataset.sub); const wasClosed = s.classList.contains('hidden'); closeSubs(); if (wasClosed) { s.classList.remove('hidden'); h.setAttribute('aria-expanded', 'true'); } });
     $('#btn-menu').onclick = (e) => { e.stopPropagation(); const opening = menu.classList.contains('hidden'); menu.classList.toggle('hidden'); if (opening) closeSubs(); };
     document.addEventListener('pointerdown', (e) => { if (!menu.classList.contains('hidden') && !menu.contains(e.target) && e.target !== $('#btn-menu')) menu.classList.add('hidden'); if (!$('#more-tools').classList.contains('hidden') && !$('#more-tools').contains(e.target) && !e.target.closest('[data-tool="more"]')) $('#more-tools').classList.add('hidden'); if (UI.guideVisible() && !$('#guidepop').contains(e.target) && !e.target.closest('#btn-guide')) UI.toggleGuide(false); });
-    $$('#menu [data-m]').forEach(b => b.onclick = () => { menu.classList.add('hidden'); menuAction(b.dataset.m); });
+    // il menu resta aperto (si chiude toccando fuori): cosi' si spuntano piu' opzioni di fila.
+    // Fa eccezione cio' che apre un'altra superficie in alto a destra (guida, legenda, dialoghi) o chiude la mappa.
+    const CLOSE_ON = ['legend', 'guide', 'maps', 'help', 'settings', 'coach', 'delete', 'exit'];
+    $$('#menu [data-m]').forEach(b => b.onclick = () => { if (CLOSE_ON.includes(b.dataset.m)) menu.classList.add('hidden'); menuAction(b.dataset.m); });
     $('#file-open').addEventListener('change', (e) => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => { try { const n = V.importMaps(JSON.parse(r.result)); I.restoreView(); UI.toast(n + ' mappe importate.'); } catch (err) { UI.toast('File non valido: ' + err.message); } }; r.readAsText(f); e.target.value = ''; });
   }
   function menuAction(a) {
@@ -109,6 +113,7 @@
     UI.buildPalette(); bindHeader(); UI.bindLevels(); UI.renderLevels(); C.init(); UI.menuCheck('#btn-pen-mode', I.penDraws); UI.menuCheck('#btn-overlays', V.map().overlays !== false); UI.menuCheck('#btn-trace', R.traceOn);
     { let chrome = '1', tools = '0'; try { chrome = localStorage.getItem('vsm.chrome') ?? '1'; tools = localStorage.getItem('vsm.toolsLeft') ?? '0'; } catch (e) { /* storage bloccato */ }
       UI.setToolsLeft(tools === '1'); if (chrome === '0') UI.setChrome(false, { hint: false }); }
+    try { if (localStorage.getItem('vsm.paletteHidden') === '1') UI.setPaletteHidden(true); } catch (e) { /* storage bloccato */ }
     fullRender(); I.restoreView();
     if (!V.map().elements.length && Object.keys(V.doc.maps).length === 1) { V.map().elements.push(V.newElement('legend', 30, 20)); V.save(); fullRender(); I.hint('Foglio nuovo: tocca il titolo in alto a destra, poi metti il richiedente e i process box. La Guida (in alto) ti accompagna se vuoi.', 6000); }
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});

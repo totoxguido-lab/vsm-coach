@@ -337,6 +337,14 @@ dialog .d-foot{padding:10px 16px;border-top:1px solid var(--line);display:flex;g
 #app.tools-left #more-tools{left:calc(76px + env(safe-area-inset-left));top:50%;bottom:auto;transform:translateY(-50%);max-height:calc(100% - 16px);overflow-y:auto}
 /* col foglio libero a sinistra, il pulsante dell'interfaccia si sposta per non finirci sopra */
 #app.tools-left #ui-toggle{left:auto;right:calc(12px + 56px)}
+/* linguetta a bordo schermo: ripiega ed evoca la barra degli strumenti */
+#palette-toggle{position:absolute;left:0;top:50%;transform:translateY(-50%);z-index:5;width:21px;height:58px;border:1px solid var(--line);border-left:0;border-radius:0 10px 10px 0;background:var(--panel);box-shadow:var(--shadow);color:var(--ink-2);display:grid;place-items:center;padding:0}
+#palette-toggle .chev{margin-left:0;transition:transform .15s}
+#app.palette-hidden #palette,#app.palette-hidden #more-tools{display:none}
+#app.palette-hidden #palette-toggle .chev{transform:rotate(180deg)}
+#app.clean #palette-toggle{display:none}
+/* con gli strumenti in colonna la linguetta si sposta al bordo destro della colonna, altrimenti la coprirebbe */
+#app.tools-left:not(.palette-hidden) #palette-toggle{left:calc(76px + env(safe-area-inset-left))}
 @media (max-height:560px){ /* telefono in orizzontale: la colonna non ci starebbe tutta (gli ultimi strumenti sparivano
   sotto lo scorrimento), quindi niente etichette e avvolgimento su due colonne: tutti gli strumenti restano raggiungibili */
   #app.tools-left #palette{flex-wrap:wrap;overflow-y:hidden}
