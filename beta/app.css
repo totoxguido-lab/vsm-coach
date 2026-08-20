@@ -149,9 +149,10 @@ svg .flash{animation:flash 1.2s ease-out 2}
 #more-tools .tool svg{width:24px;height:24px}
 #more-tools .tool:hover{border-color:var(--line)}
 #more-tools .tool[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
-#quick{position:absolute;z-index:7;display:flex;gap:4px;padding:4px;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);max-width:calc(100% - 20px);flex-wrap:wrap}
-#quick .btn{min-height:34px}
-#quick .qinfo{align-self:center;font-size:12px;color:var(--muted);padding:0 6px}
+/* azioni rapide: menu di icone rotonde ad arco attorno all'elemento selezionato (stile .pm-btn, come il
+   menu del rilascio nel vuoto). Il contenitore è un punto: i bottoni sono figli posizionati dal JS. */
+#quick{position:absolute;z-index:7;width:0;height:0}
+#quick .qinfo{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;font-size:11px;color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:3px 10px;box-shadow:var(--shadow)}
 .howto{padding-left:20px;margin:0}.howto li{margin-bottom:10px;font-size:13.5px}
 #suggest{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom));background:var(--ink);color:var(--desk);padding:8px 12px;border-radius:12px;font-size:13px;box-shadow:var(--shadow);display:flex;gap:10px;align-items:center;z-index:6;max-width:min(560px,90vw)}
 #suggest button{border:0;background:transparent;color:inherit;font-weight:600;text-decoration:underline;padding:0;min-height:30px}
@@ -321,9 +322,6 @@ dialog .d-foot{padding:10px 16px;border-top:1px solid var(--line);display:flex;g
   #map-title{max-width:none;min-width:0;flex:1}
   #crumbs{display:none}
   #menu .compact-only{display:block}
-  /* la barra delle azioni resta su una riga: si scorre invece di occupare mezzo foglio */
-  #quick{flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;max-width:calc(100% - 16px);scrollbar-width:none}
-  #quick::-webkit-scrollbar{display:none}
   #hint{max-width:80vw}
 }
 
@@ -367,7 +365,6 @@ dialog .d-foot{padding:10px 16px;border-top:1px solid var(--line);display:flex;g
   .btn{min-height:var(--tap)}
   .btn.icon{width:var(--tap)}
   .btn.small{min-height:38px;padding:0 11px}
-  #quick .btn{min-height:var(--tap)}
   #zoomctl .btn{width:var(--tap);height:var(--tap)}
   #ui-toggle{width:var(--tap);height:var(--tap)}
   #menu button{min-height:var(--tap)}
@@ -387,11 +384,15 @@ dialog .d-foot{padding:10px 16px;border-top:1px solid var(--line);display:flex;g
 /* compare dove il dito ha lasciato il collegamento nel vuoto; un tocco fuori annulla tutto */
 .placemenu{position:absolute;z-index:60;width:0;height:0}
 .placemenu .pm-dot{position:absolute;left:-7px;top:-7px;width:14px;height:14px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px rgba(31,78,121,.18)}
-.placemenu .pm-btn{position:absolute;width:54px;height:54px;margin:-27px 0 0 -27px;border-radius:50%;border:1px solid var(--line);
+/* .pm-btn è condiviso: lo usano il menu del vuoto (#placemenu) e le azioni rapide (#quick) */
+.pm-btn{position:absolute;width:54px;height:54px;margin:-27px 0 0 -27px;border-radius:50%;border:1px solid var(--line);
   background:var(--panel);color:var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
   box-shadow:0 6px 18px rgba(0,0,0,.18);font-size:9px;line-height:1;cursor:pointer;animation:pm-in .12s ease-out}
-.placemenu .pm-btn svg{width:20px;height:20px}
-.placemenu .pm-btn:hover,.placemenu .pm-btn:focus-visible{border-color:var(--accent);color:var(--accent);outline:none}
+.pm-btn svg{width:20px;height:20px}
+.pm-btn span{max-width:48px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pm-btn:hover,.pm-btn:focus-visible{border-color:var(--accent);color:var(--accent);outline:none}
+.pm-btn.danger{color:#c8321e}
+.pm-btn.danger:hover,.pm-btn.danger:focus-visible{border-color:#c8321e;color:#c8321e}
 @keyframes pm-in{from{opacity:0;transform:scale(.7)}to{opacity:1;transform:scale(1)}}
 /* uscita dallo strumento attivo: prende il posto del vecchio tasto "Seleziona" */
 #palette .tool.done{color:var(--accent)}

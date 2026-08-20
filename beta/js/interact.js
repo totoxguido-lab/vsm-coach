@@ -5,6 +5,8 @@
   const I = V.interact = { tool: 'select', selection: [], view: { x: -40, y: -40, k: 1 }, penDraws: true, fingerPans: true, ink: { color: '#2b2b2b', width: 1.8 } };
   let svg, stage;
   const ptrs = new Map(); let gesture = null;
+  // un dito (o la penna) e' a terra: il menu delle azioni rapide non deve comparire adesso ma al rilascio
+  I.gestureBusy = () => ptrs.size > 0;
   let nudgeSession = null, nudgeTimer = null;
   const TOOL_KINDS = { select: 'select', pan: 'pan', ink: 'ink', eraser: 'eraser', area: 'area', flow: 'connect', request: 'connect', whatis: 'whatis' };
   I.kindOf = (t) => TOOL_KINDS[t] || 'create';
@@ -355,7 +357,9 @@
         V.commit({ t: 'add', el }, 'aggiungi ' + T.name); I.setTool('select'); I.select([el.id], { keepPop: true }); V.pop.open(el.id); break;
       }
     }
-    if (V.ui && V.ui.onSelection && ['drag', 'resize', 'lasso', 'chan', 'reconnect', 'legend'].includes(g.type)) V.ui.onSelection(I.selection);
+    // 'noop' copre i tocchi delle modalita' pickConn/pickLock: la selezione cambia al pointerdown,
+    // ma il menu delle azioni (che si apre solo al rilascio) va richiamato da qui
+    if (V.ui && V.ui.onSelection && ['drag', 'resize', 'lasso', 'chan', 'reconnect', 'legend', 'noop'].includes(g.type)) V.ui.onSelection(I.selection);
   }
   function distToSeg(p, a, b) { const l2 = (a.x - b.x) ** 2 + (a.y - b.y) ** 2; if (!l2) return Math.hypot(p.x - a.x, p.y - a.y); let t = ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l2; t = Math.max(0, Math.min(1, t)); return Math.hypot(p.x - (a.x + t * (b.x - a.x)), p.y - (a.y + t * (b.y - a.y))); }
   function eraseAt(w, g) {

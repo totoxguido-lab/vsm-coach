@@ -525,39 +525,92 @@
   };
   UI.hideSuggest = () => { $('#suggest').classList.add('hidden'); $$('#palette .tool.suggest, #more-tools .tool.suggest').forEach(b => b.classList.remove('suggest')); SUG.current = null; };
   UI.hideSuggestIfTool = (t) => { if (SUG.current && SUG.current.tool === t) UI.hideSuggest(); };
-  // ---------- azioni rapide contestuali (attaccate all'elemento selezionato) ----------
+  // ---------- azioni rapide contestuali: menu di icone rotonde attorno all'elemento selezionato ----------
   const Q = { el: null };
+  // un'icona per azione (la lista delle azioni resta UI.actionList: la stessa fonte serve anche il pop-up)
+  const QICN = {
+    next: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h6M7 9l3 3-3 3"/><rect x="13" y="5" width="8" height="14" rx="1"/></svg>',
+    delta: IC.delta, deltaOn: IC.delta,
+    cloud: IC.storm,
+    connect: IC.flow,
+    request: IC.request, reqtool: IC.request,
+    attach: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 14.5l5-5"/><path d="M8.5 11.5l-2.2 2.2a3.2 3.2 0 104.5 4.5l2.2-2.2"/><path d="M15.5 12.5l2.2-2.2a3.2 3.2 0 10-4.5-4.5L11 8"/></svg>',
+    invert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h12M13 5l3 3-3 3M20 16H8M11 13l-3 3 3 3"/></svg>',
+    shrink: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l9 16H3z"/><path d="M12 11v4"/><circle cx="12" cy="17.6" r=".4" fill="currentColor"/></svg>',
+    expand: IC.storm,
+    dup: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="1.5"/><path d="M16 4.5H6A1.5 1.5 0 004.5 6v10" stroke-linecap="round"/></svg>',
+    legend: IC.legend,
+    legendfull: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg>',
+    straighten: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none"/><path d="M7 12h10"/></svg>',
+    lockto: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="6" y="11" width="12" height="9" rx="1.5"/><path d="M9 11V8a3 3 0 016 0v3"/></svg>',
+    unlock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="6" y="11" width="12" height="9" rx="1.5"/><path d="M9 11V8a3 3 0 015.6-1.5" stroke-linecap="round"/></svg>',
+    selkids: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3 2"/><rect x="8.5" y="8.5" width="7" height="7" rx="1"/></svg>',
+    sheetify: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>',
+    del: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M10 7V5h4v2"/><path d="M7 7l1 13h8l1-13"/><path d="M10.5 11v5M13.5 11v5"/></svg>'
+  };
+  QICN.lockall = QICN.lockto; QICN.unlockall = QICN.unlock; QICN.unlockkids = QICN.unlock; QICN.dupall = QICN.dup;
+  // etichette corte sotto l'icona (poche parole: la spiegazione intera resta nel title)
+  const QLBL = { next: 'Passo', delta: 'Attesa', deltaOn: 'Attesa', cloud: 'Problema', connect: 'Collega', request: 'Richiesta', reqtool: 'Richiesta', attach: 'Aggancia', invert: 'Inverti', shrink: 'Segnale', expand: 'Espandi', dup: 'Duplica', dupall: 'Duplica', legend: 'Apri', legendfull: 'Simboli', straighten: 'Raddrizza', lockto: 'Blocca', lockall: 'Blocca', unlock: 'Sblocca', unlockall: 'Sblocca', unlockkids: 'Libera', selkids: 'Gruppo', sheetify: 'Dettaglio', del: 'Elimina' };
+  const qBtn = (a, el) => {
+    // due azioni cambiano verso con lo stato dell'elemento: l'icona e l'etichetta seguono
+    let key = a.id;
+    if (a.id === 'shrink' && el && el.props.collapsed) key = 'expand';
+    if (a.id === 'legend' && el && !el.props.collapsed) return `<button class="pm-btn" data-qa="legend" title="${esc(a.title || a.label)}">${IC.legend}<span>Chiudi</span></button>`;
+    return `<button class="pm-btn${a.id === 'del' ? ' danger' : ''}" data-qa="${a.id}" title="${esc(a.title || a.label)}">${QICN[key] || ''}<span>${esc(QLBL[key] || a.label)}</span></button>`;
+  };
   UI.hideQuick = () => { const q = $('#quick'); if (q) q.classList.add('hidden'); };
   UI.onView = () => { if (Q.el && !$('#quick').classList.contains('hidden')) UI.positionQuick(); if (V.pop.current && V.pop.current !== '__title__') { const el = V.byId(V.pop.current); if (el) V.pop.place(el); } };
+  /** dispone i bottoni rotondi ad arco attorno all'ancora (sopra l'elemento): pochi = ventaglio in alto
+   *  come il menu del vuoto; tanti = l'arco si allarga fin quasi al cerchio pieno, col raggio che cresce
+   *  quel tanto che basta a non farli toccare. Ricalcolato a ogni pan/zoom (UI.onView). */
   UI.positionQuick = () => {
     const q = $('#quick'); const map = V.map(); const el = V.byId(Q.el, map); if (!el) { q.classList.add('hidden'); return; }
-    const st = $('#stage').getBoundingClientRect(); let ax, ay;
-    if (V.isConnector(el)) { const Pc = R.connPath(el, map); ax = Pc.mid.x; ay = Math.min(Pc.a.y, Pc.b.y, Pc.mid.y) - 22; } else { const p = R.elPos(el, map); ax = p.x + el.w / 2; ay = p.y; }
-    const s = I.toScreen(ax, ay); const w = q.offsetWidth || 260, h = q.offsetHeight || 40;
-    let left = s.x - w / 2, top = s.y - h - 12; if (top < 8) top = s.y + (el.h || 20) * I.view.k + 12; left = Math.max(UI.leftInset(), Math.min(st.width - w - 8, left)); top = Math.max(8, Math.min(st.height - h - 8, top));
-    q.style.left = left + 'px'; q.style.top = top + 'px';
+    const btns = $$('.pm-btn', q); const n = btns.length; if (!n) return;
+    const st = $('#stage').getBoundingClientRect(); let ax, ay, hpx;
+    if (V.isConnector(el)) { const Pc = R.connPath(el, map); ax = Pc.mid.x; ay = Math.min(Pc.a.y, Pc.b.y, Pc.mid.y) - 22; hpx = 44 * I.view.k; }
+    else { const p = R.elPos(el, map); ax = p.x + el.w / 2; ay = p.y; hpx = ((R.elSize ? R.elSize(el).h : el.h) || 20) * I.view.k; }
+    const s = I.toScreen(ax, ay);
+    const MAXARC = Math.PI * 5 / 3; // oltre i 300° i bottoni tornerebbero a pestarsi sull'ancora
+    let step = 0.84, R0 = 74; // ~48° a raggio 74: bottoni da 54 px che non si toccano
+    if (n > 1 && (n - 1) * step > MAXARC) { step = MAXARC / (n - 1); R0 = Math.max(74, Math.ceil(29 / Math.sin(step / 2))); }
+    const reach = R0 + 30;
+    const wraps = (n - 1) * step > Math.PI; // l'arco scende anche sotto l'ancora
+    let base = -Math.PI / 2, cx = s.x, cy = s.y - 10;
+    if (!wraps && cy - reach < 8) { base = Math.PI / 2; cy = s.y + hpx + 14; } // niente spazio sopra: si apre sotto
+    if (st.width > 2 * reach + UI.leftInset()) cx = Math.max(UI.leftInset() + reach, Math.min(st.width - reach, cx));
+    if (wraps) cy = Math.max(reach + 8, Math.min(st.height - reach - 8, cy));
+    else cy = base < 0 ? Math.max(reach + 8, cy) : Math.min(st.height - reach - 8, cy);
+    q.style.left = cx + 'px'; q.style.top = cy + 'px';
+    btns.forEach((b, i) => { const a = base + (i - (n - 1) / 2) * step; b.style.left = Math.round(Math.cos(a) * R0) + 'px'; b.style.top = Math.round(Math.sin(a) * R0) + 'px'; });
   };
   UI.onSelection = (ids) => {
     const q = $('#quick'); if (!q) return; if (!ids.length) { q.classList.add('hidden'); Q.el = null; return; }
-    // col pop-up dei dettagli aperto la barra rapida resta chiusa: sono le stesse azioni, e sovrapposte sono un caos.
-    // (alla chiusura del pop-up, P.close richiama questa funzione e la barra torna)
+    // col pop-up dei dettagli aperto il menu resta chiuso: sono le stesse azioni, e sovrapposte sono un caos.
+    // (alla chiusura del pop-up, P.close richiama questa funzione e il menu torna)
     if (V.pop && V.pop.current) { q.classList.add('hidden'); Q.el = ids[0]; return; }
+    // mai far comparire UI sotto il dito durante un gesto: il menu si apre al RILASCIO (up() richiama qui)
+    if (I.gestureBusy && I.gestureBusy()) { q.classList.add('hidden'); Q.el = ids[0]; return; }
     const map = V.map();
-    const A = []; const btn = (id, label, title) => A.push(`<button class="btn small" data-qa="${id}" title="${esc(title || label)}">${label}</button>`);
+    let html = '';
     if (ids.length > 1) { // selezione multipla: azioni di gruppo
       const els = ids.map(id => V.byId(id, map)).filter(Boolean); const lockable = els.filter(e => !V.isConnector(e) && R.LOCKABLE.includes(e.type)); const locked = els.filter(e => e.props && (e.props.lockTo || (e.type === 'delta' && e.props.attachedTo)));
-      Q.el = ids[0]; A.push(`<span class="qinfo">${ids.length} selezionati</span>`);
-      if (lockable.length) btn('lockall', '🔒 Blocca tutti a…', 'Blocca gli elementi selezionati a un passo, persona, corsia o freccia che tocchi'); if (locked.length) btn('unlockall', '🔓 Sblocca tutti'); if (els.filter(e => !V.isConnector(e) && e.type !== 'lane').length >= 2) btn('sheetify', '⧉ In un sotto-foglio', 'Sposta il settore in una nuova mappa collegata: al suo posto resta un passo con ↗'); btn('dupall', '⎘ Duplica tutti'); btn('del', 'Elimina');
-      q.innerHTML = A.join(''); q.classList.remove('hidden'); UI.positionQuick(); $$('[data-qa]', q).forEach(b => b.onclick = () => UI.quickAction(b.dataset.qa, ids[0]));
-      return;
+      Q.el = ids[0];
+      const acts = [];
+      if (lockable.length) acts.push({ id: 'lockall', label: 'Blocca tutti a…', title: 'Blocca gli elementi selezionati a un passo, persona, corsia o freccia che tocchi' });
+      if (locked.length) acts.push({ id: 'unlockall', label: 'Sblocca tutti', title: 'Sblocca tutti gli elementi selezionati' });
+      if (els.filter(e => !V.isConnector(e) && e.type !== 'lane').length >= 2) acts.push({ id: 'sheetify', label: 'In un sotto-foglio', title: 'Sposta il settore in una nuova mappa collegata: al suo posto resta un passo con ↗' });
+      acts.push({ id: 'dupall', label: 'Duplica tutti', title: 'Duplica tutti gli elementi selezionati' });
+      acts.push({ id: 'del', label: 'Elimina', title: 'Elimina gli elementi selezionati' });
+      html = `<span class="qinfo">${ids.length} selezionati</span>` + acts.map(a => qBtn(a, null)).join('');
+    } else {
+      const el = V.byId(ids[0], map); if (!el) { q.classList.add('hidden'); return; } Q.el = el.id;
+      const acts = UI.actionList(el, map);
+      // un menu con la sola "Elimina" non serve e invita al tocco sbagliato: per questi elementi basta il secondo tocco
+      if (acts.length <= 1) { q.classList.add('hidden'); return; }
+      html = acts.map(a => qBtn(a, el)).join('');
     }
-    const el = V.byId(ids[0], map); if (!el) { q.classList.add('hidden'); return; } Q.el = el.id;
-    const acts = UI.actionList(el, map);
-    // una barra con la sola "Elimina" non serve e invita al tocco sbagliato: per questi elementi basta il secondo tocco
-    if (acts.length <= 1) { q.classList.add('hidden'); return; }
-    acts.forEach(a => btn(a.id, a.label, a.title));
-    q.innerHTML = A.join(''); q.classList.remove('hidden'); UI.positionQuick();
-    $$('[data-qa]', q).forEach(b => b.onclick = () => UI.quickAction(b.dataset.qa, el.id));
+    q.innerHTML = html; q.classList.remove('hidden'); UI.positionQuick();
+    $$('[data-qa]', q).forEach(b => b.onclick = (ev) => { ev.stopPropagation(); UI.quickAction(b.dataset.qa, Q.el); });
   };
   /** azioni contestuali di un elemento: la stessa lista serve la barra rapida e il pop-up */
   UI.actionList = (el, map) => {
