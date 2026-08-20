@@ -188,7 +188,26 @@ window.VSM = window.VSM || {};
   const fitClouds = (m) => { const R2 = V.render; if (!m || !Array.isArray(m.elements) || !R2 || !R2.cloudFit) return m; m.elements.forEach(el => { if ((el.type === 'storm' || el.type === 'fluffy') && !el.props.collapsed && el.props.text) el.h = Math.max(el.h, R2.cloudFit(el.w, el.props.text)); }); return m; };
   V.addMap = (map) => { V.doc.maps[map.id] = fitClouds(map); return map; };
   V.switchMap = (id) => { if (!V.doc.maps[id]) return; V.doc.activeMapId = id; V.save(); emit({ switched: true }); };
-  V.deleteMap = (id) => { const m = V.doc.maps[id]; if (!m) return; if (m.validated) { V.ui && V.ui.toast && V.ui.toast('Ideale validato \u{1F512}: apri il lucchetto prima di eliminarlo.'); return; } delete V.doc.maps[id]; Object.values(V.doc.maps).forEach(o => { if (o.pairId === id) o.pairId = null; if (o.parentId === id) o.parentId = null; }); if (V.doc.activeMapId === id) { const first = Object.keys(V.doc.maps)[0]; V.doc.activeMapId = first || V.addMap(V.newMap({ title: '' })).id; } V.save(); emit({ switched: true }); };
+  V.deleteMap = (id) => {
+    const m = V.doc.maps[id]; if (!m) return;
+    if (m.validated) { V.ui && V.ui.toast && V.ui.toast('Ideale validato \u{1F512}: apri il lucchetto prima di eliminarlo.'); return; }
+    // un giro eliminato non deve rompere la catena (i giri successivi si riattaccano al precedente)
+    // ne' orfanare l'Ideale (il pairId passa a un altro giro della catena)
+    const heirs = Object.values(V.doc.maps).filter(o => o.verOf === id);
+    heirs.forEach(o => { o.verOf = (m.verOf && V.doc.maps[m.verOf]) ? m.verOf : null; });
+    if (m.kind === 'current' && m.pairId && V.doc.maps[m.pairId] && V.doc.maps[m.pairId].kind === 'future') {
+      const f = V.doc.maps[m.pairId];
+      const h = V.versionsOf(m).filter(x => x.id !== id).pop();
+      if (h) { h.pairId = f.id; f.pairId = h.id; }
+    }
+    delete V.doc.maps[id];
+    Object.values(V.doc.maps).forEach(o => { if (o.pairId === id) o.pairId = null; if (o.parentId === id) o.parentId = null; if (o.verOf === id) o.verOf = null; });
+    if (V.doc.activeMapId === id) {
+      const next = (m.verOf && V.doc.maps[m.verOf] && m.verOf) || (heirs[0] && heirs[0].id) || Object.keys(V.doc.maps)[0];
+      V.doc.activeMapId = next || V.addMap(V.newMap({ title: '' })).id;
+    }
+    V.save(); emit({ switched: true });
+  };
   V.currentOf = (map) => map.kind === 'current' ? map : (map.pairId ? V.doc.maps[map.pairId] : null);
   /** i giri dell'attuale: dalla mappa si risale alla radice (verOf) e si scende ai giri successivi, in ordine */
   V.versionsOf = (map) => {
@@ -296,7 +315,8 @@ window.VSM = window.VSM || {};
     if (Math.abs(dx) * el.h > Math.abs(dy) * el.w) return { x: dx > 0 ? el.x + el.w : el.x, y: c.y };
     return { x: c.x, y: dy > 0 ? el.y + el.h : el.y };
   };
-  V.endPoint = (end, map) => { if (end.el) { const e = V.byId(end.el, map); if (e) return V.center(e); } return { x: end.x || 0, y: end.y || 0 }; };
+  // il capo di una freccia sta dove l'elemento si VEDE: per un elemento bloccato e' R.elPos, non x/y grezzi
+  V.endPoint = (end, map) => { if (end.el) { const e = V.byId(end.el, map); if (e) { const R2 = V.render; const p = (R2 && R2.elPos) ? R2.elPos(e, map) : e; return { x: p.x + e.w / 2, y: p.y + e.h / 2 }; } } return { x: end.x || 0, y: end.y || 0 }; };
   /** ordine del flusso: catena dei box seguendo le frecce di flusso; fallback per x (stima). */
   V.flowOrder = (map) => {
     const boxes = map.elements.filter(e => e.type === 'box');

@@ -31,9 +31,11 @@
     // l'elenco dei giri (apri, rinomina col ✎, «+ nuovo giro»). L'Ideale e' uno solo per catena.
     const escT = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const versList = $('#vers-list');
+    const TRASH = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M10 7V5h4v2"/><path d="M7 7l1 13h8l1-13"/><path d="M10.5 11v5M13.5 11v5"/></svg>';
     const renderVers = () => {
       const cur = V.map(); const chain = V.versionsOf(cur);
-      versList.innerHTML = chain.map(v => `<div class="vrow"><button data-v="${v.id}" aria-current="${v.id === cur.id}">${escT(v.verName || 'attuale')}</button><button class="vrn" data-rn="${v.id}" title="Rinomina questo giro" aria-label="Rinomina">✎</button></div>`).join('')
+      // il cestino c'e' solo se i giri sono almeno due: l'ultimo attuale non si elimina da qui
+      versList.innerHTML = chain.map(v => `<div class="vrow"><button data-v="${v.id}" aria-current="${v.id === cur.id}">${escT(v.verName || 'attuale')}</button><button class="vrn" data-rn="${v.id}" title="Rinomina questo giro" aria-label="Rinomina">✎</button>${chain.length > 1 ? `<button class="vrn vdel" data-del="${v.id}" title="Elimina questo giro" aria-label="Elimina il giro">${TRASH}</button>` : ''}</div>`).join('')
         + `<button class="vnew" data-vnew="1">+ nuovo giro (copia di questo)</button>`;
       $$('[data-v]', versList).forEach(b => b.onclick = () => { versList.classList.add('hidden'); if (b.dataset.v !== V.map().id) UI.openMap(b.dataset.v); });
       $$('[data-rn]', versList).forEach(b => b.onclick = () => {
@@ -43,6 +45,13 @@
         const done = () => { const nv = inp.value.trim(); if (nv) { v.verName = nv; V.save(); } renderVers(); UI.renderHeader(); };
         inp.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') inp.blur(); if (ev.key === 'Escape') { inp.value = v.verName || ''; inp.blur(); } });
         inp.addEventListener('blur', done);
+      });
+      // doppio controllo: il cestino non elimina, trasforma la riga nella domanda con Elimina/Annulla
+      $$('[data-del]', versList).forEach(b => b.onclick = () => {
+        const v = V.doc.maps[b.dataset.del]; if (!v) return; const row = b.closest('.vrow');
+        row.innerHTML = `<span class="vdel-q">Eliminare «${escT(v.verName || 'giro')}»?</span><button class="btn small danger" data-delyes="${v.id}">Elimina</button><button class="btn small" data-delno="1">Annulla</button>`;
+        row.querySelector('[data-delno]').onclick = renderVers;
+        row.querySelector('[data-delyes]').onclick = () => { V.deleteMap(v.id); UI.toast(`Giro «${v.verName || ''}» eliminato.`); renderVers(); };
       });
       $('[data-vnew]', versList).onclick = () => { versList.classList.add('hidden'); const base = V.map().kind === 'current' ? V.map() : V.currentOf(V.map()); if (!base) return; const nv = V.createVersion(base); UI.openMap(nv.id); UI.toast('Nuovo giro dell’attuale creato come copia: aggiorna quello che è cambiato.'); };
     };

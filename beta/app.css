@@ -59,8 +59,11 @@ header .brand svg{width:22px;height:22px}
 #vers-list .vrow>button:first-child{flex:1;text-align:left;border:0;background:transparent;color:var(--ink);padding:8px 10px;border-radius:8px;font-size:13px;min-height:var(--tap);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #vers-list .vrow>button:first-child:hover{background:rgba(31,78,121,.08)}
 #vers-list .vrow>button[aria-current="true"]{background:rgba(31,78,121,.12);font-weight:700}
-#vers-list .vrow .vrn{border:0;background:transparent;color:var(--muted);min-height:var(--tap);min-width:36px;border-radius:8px;cursor:pointer}
+#vers-list .vrow .vrn{border:0;background:transparent;color:var(--muted);min-height:var(--tap);min-width:36px;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center}
 #vers-list .vrow .vrn:hover{color:var(--accent);background:rgba(31,78,121,.08)}
+#vers-list .vrow .vdel:hover{color:#c8321e;background:rgba(200,50,30,.08)}
+#vers-list .vdel-q{flex:1;font-size:12.5px;color:var(--ink);padding:0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#vers-list .vrow .btn.danger{border-color:#c8321e;color:#c8321e}
 #vers-list .vnew{border:1px dashed var(--line);background:transparent;color:var(--accent);padding:8px 10px;border-radius:8px;font-size:13px;min-height:var(--tap);cursor:pointer;text-align:left}
 #vers-list input{border:1px solid var(--accent);border-radius:8px;padding:8px 10px;font-size:13px;width:100%}
 /* intestazione della mappa in barra: titolo piccolo + data/reparto, tocco = pop-up coi dati e la modifica.

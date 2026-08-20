@@ -335,8 +335,14 @@
   // ---------- connettori ----------
   /** estremi di una via di richiesta: dal fianco del richiedente al bordo alto del bersaglio.
       Calcolati a parte perché servono anche per assegnare le corsie, prima di sapere che forma avrà il tratto. */
-  const reqEnds = (c, map) => {
-    const from = c.from.el ? V.byId(c.from.el, map) : null, to = c.to.el ? V.byId(c.to.el, map) : null;
+  /** L'elemento come lo si VEDE: un elemento bloccato sta a R.elPos, non ai suoi x/y grezzi. Centro e
+   *  ancore delle frecce (e la timeline) devono usare questa proiezione: senza, su un box bloccato che
+   *  segue il genitore le frecce restavano attaccate alla posizione vecchia. */
+  const seenEl = (el, map) => { if (!el || !el.props || !(el.props.lockTo || (el.type === 'delta' && el.props.attachedTo))) return el; const p = R.elPos(el, map); return (p.x === el.x && p.y === el.y) ? el : Object.assign({}, el, p); };
+  R.seenEl = seenEl;
+  const reqEnds = (c, map, proj = true) => {
+    const from0 = c.from.el ? V.byId(c.from.el, map) : null, to0 = c.to.el ? V.byId(c.to.el, map) : null;
+    const from = proj ? seenEl(from0, map) : from0, to = proj ? seenEl(to0, map) : to0;
     // Punti d'arrivo distinti sul bordo alto del passo. L'indice è calcolato fra le vie che arrivano *lì*:
     // props.offset conta le vie dello stesso richiedente, quindi due richiedenti diversi che chiamano lo
     // stesso passo finivano entrambi sullo stesso punto, con i due percorsi sovrapposti.
@@ -526,12 +532,19 @@
     for (let i = 1; i < pts.length; i++) { const d = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y); if (i - 1 < seg) before += d; if (i - 1 === seg) acc = d; tot += d; }
     return tot ? (before + acc * f) / tot : 0.5;
   };
+  // guardia di rientro: elPos di un elemento bloccato a un connettore richiama connPath — nel caso
+  // patologico (capo bloccato al suo stesso connettore, o ciclo fra due frecce) il giro interno usa
+  // le posizioni grezze invece di ricorrere all'infinito
+  const _cpGuard = new Set();
   R.connPath = (c, map) => {
+    const reent = _cpGuard.has(c.id); if (!reent) _cpGuard.add(c.id);
+    try {
     const mode = V.linkModeOf(map);
-    const from = c.from.el ? V.byId(c.from.el, map) : null, to = c.to.el ? V.byId(c.to.el, map) : null;
+    const from0 = c.from.el ? V.byId(c.from.el, map) : null, to0 = c.to.el ? V.byId(c.to.el, map) : null;
+    const from = reent ? from0 : seenEl(from0, map), to = reent ? to0 : seenEl(to0, map);
     const pf = from ? V.center(from) : { x: c.from.x, y: c.from.y }, pt = to ? V.center(to) : { x: c.to.x, y: c.to.y };
     if (c.type === 'request') {
-      const { a, b, off } = reqEnds(c, map);
+      const { a, b, off } = reqEnds(c, map, !reent);
       let P, tDef;
       if (mode === 'squadrata') {
         const RT = R.reqRoutes(map), r = RT && RT.routes[c.id];
@@ -559,6 +572,7 @@
     const P = mkPoly([a, ...via, b]);
     const t = c.props.t == null ? 0.5 : c.props.t;
     return Object.assign(P, { mid: P.at(t), tDef: 0.5 });
+    } finally { if (!reent) _cpGuard.delete(c.id); }
   };
   /** t più vicino a un punto lungo il connettore (campionamento) */
   R.nearestT = (c, map, pt) => { const P = R.connPath(c, map); let best = 0.5, bd = Infinity; for (let i = 0; i <= 60; i++) { const t = i / 60; const q = P.bez(t); const d = Math.hypot(q.x - pt.x, q.y - pt.y); if (d < bd) { bd = d; best = t; } } return Math.min(0.92, Math.max(0.08, best)); };
@@ -661,7 +675,8 @@
   R.overlay = (map, show) => {
     if (!show) { L.overlay.innerHTML = R.placeholders(map); return; }
     const M = V.metrics(map); const { w, h } = V.paperOf(map); let g = R.placeholders(map);
-    const fo = V.flowOrder(map); const order = fo.order;
+    // anche la timeline usa le posizioni VISTE: un box bloccato che segue il genitore porta con se' il suo gradino
+    const fo = V.flowOrder(map); const order = fo.order.map(b => Object.assign({}, b, R.elPos(b, map)));
     let loY = null, contentRight = null;
     if (order.length && M.hasData) {
       const bottom = Math.max(...order.map(b => b.y + b.h)) + 84; const hiY = Math.min(bottom, h - 140); loY = hiY + 24;
