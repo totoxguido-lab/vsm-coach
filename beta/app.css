@@ -118,6 +118,8 @@ svg .chan-handle{cursor:grab}
 svg .chan-handle:hover .chan{stroke:var(--sel);stroke-width:1.6}
 svg .handle.end{cursor:crosshair}
 svg .placeholder:hover rect{fill:rgba(31,78,121,.09)}
+/* lo strato del riepilogo è inerte (vedi R.init): i riquadri d'invito sono l'eccezione, si toccano */
+svg .placeholder{pointer-events:auto}
 /* bersagli evidenziati quando lo strumento li richiede */
 svg.t-delta .conn[data-type="flow"] .conn-hit{stroke:rgba(200,50,30,.16)}
 svg.t-delta .conn[data-type="flow"] .pencil{stroke:#c8321e}
@@ -332,6 +334,10 @@ dialog .d-foot{padding:10px 16px;border-top:1px solid var(--line);display:flex;g
   #map-head{max-width:40vw}
   header .hide-m{display:none}
 }
+
+/* la riga della versione: si legge quando serve, non ruba attenzione al resto del menu */
+#menu .ver-row{display:flex;flex-direction:column;align-items:flex-start;gap:1px;font-size:11px;color:var(--muted);padding-top:6px;padding-bottom:6px}
+#menu .ver-row .hint{font-size:10px;opacity:.75;margin:0}
 
 /* ---------- telefono (stretto o basso): header su una riga sola ---------- */
 #menu .compact-only{display:none}

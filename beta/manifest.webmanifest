@@ -1,6 +1,6 @@
 {
-  "name": "VSM Coach",
-  "short_name": "VSM Coach",
+  "name": "VSM Coach beta",
+  "short_name": "VSM beta",
   "description": "Mappe del flusso di valore in sanità, con coach (metodo Jimmerson)",
   "start_url": "./index.html",
   "scope": "./",

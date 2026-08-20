@@ -81,31 +81,50 @@
       default: return 'Operazione sconosciuta: ' + o.op;
     }
   }
+  /** props che descrivono l'impianto del foglio (catena, chiodo, agganci, collegamento a un sotto-foglio):
+   *  si toccano solo con le mani, dalle azioni rapide, dove l'app calcola anche gli scostamenti */
+  const STRUTTURA = ['lockTo', 'lockT', 'dx', 'dy', 'pinned', 'attachedTo', 'link', 'override'];
   C.applyOps = (ops) => {
     let map = V.map(); const startMapId = map.id; let futureMap = null; let n = 0; const opsForMap = new Map();
+    const rifiutate = [];
     const push = (m, op) => { if (!opsForMap.has(m.id)) opsForMap.set(m.id, []); opsForMap.get(m.id).push(op); };
     const target = (o) => (o.map === 'future' ? (futureMap || V.futureOf(map) || map) : (o.map === 'current' ? (V.currentOf(map) || map) : map));
     ops.forEach(o => {
       try {
         switch (o.op) {
-          case 'create_future_map': { futureMap = V.createFuture(V.currentOf(map) || map); n++; break; }
-          case 'add_element': { const m = target(o); if (!V.TYPES[o.type] || V.isConnector({ type: o.type })) break; let x = o.x, y = o.y; if (o.near) { const ne = V.byId(o.near, m); if (ne) { const p = R.elPos(ne, m); x = p.x + (o.type === 'storm' || o.type === 'fluffy' ? ne.w - 60 : ne.w + 40); y = p.y + (o.type === 'storm' || o.type === 'fluffy' ? -60 : 0); } } if (x == null || y == null) { const P = V.paperOf(m); const boxes = m.elements.filter(e => e.type === 'box'); x = boxes.length ? Math.max(...boxes.map(b => b.x + b.w)) + 60 : 120; y = 300; if (o.type === 'person') { x = P.w - 108; y = 100; } if (o.type === 'storm') { y = 220; } x = Math.max(20, Math.min(x, P.w - 160)); y = Math.max(20, Math.min(y, P.h - 120)); } const el = V.newElement(o.type, Math.round(x), Math.round(y), o.props || {}); if (o.id && !V.byId(String(o.id), m)) el.id = String(o.id); push(m, { t: 'add', el }); n++; break; }
-          case 'update_element': { const m = target(o); const el = V.byId(o.id, m); if (!el) break; const props = clone(o.props || {}); if (props.activities && !Array.isArray(props.activities)) props.activities = String(props.activities).split('\n'); push(m, { t: 'props', id: el.id, after: props }); if (o.x != null || o.y != null) push(m, { t: 'update', id: el.id, after: { x: o.x ?? el.x, y: o.y ?? el.y } }); n++; break; }
+          case 'create_future_map': { const cur = V.currentOf(map) || map; const gia = V.idealOf(cur); futureMap = V.createFuture(cur); if (!gia) n++; break; }
+          case 'add_element': { const m = target(o); if (!V.TYPES[o.type] || V.isConnector({ type: o.type })) break; let x = o.x, y = o.y; if (o.near) { const ne = V.byId(o.near, m); if (ne) { const p = R.elPos(ne, m); x = p.x + (o.type === 'storm' || o.type === 'fluffy' ? ne.w - 60 : ne.w + 40); y = p.y + (o.type === 'storm' || o.type === 'fluffy' ? -60 : 0); } } if (x == null || y == null) { const P = V.paperOf(m); const boxes = m.elements.filter(e => e.type === 'box'); x = boxes.length ? Math.max(...boxes.map(b => b.x + b.w)) + 60 : 120; y = 300; if (o.type === 'person') { x = P.w - 108; y = 100; } if (o.type === 'storm') { y = 220; } x = Math.max(20, Math.min(x, P.w - 160)); y = Math.max(20, Math.min(y, P.h - 120)); } const el = V.newElement(o.type, Math.round(x), Math.round(y), o.props || {}); STRUTTURA.forEach(k => { if (el.props && k in el.props && k !== 'attachedTo') delete el.props[k]; }); if (o.id && V.idOk(String(o.id)) && !V.byId(String(o.id), m)) el.id = String(o.id); push(m, { t: 'add', el }); n++; break; }
+          // il coach descrive il contenuto, non l'impianto del foglio: catena, chiodo, agganci e badge
+          // restano all'utente. Una patch che scriveva lockTo senza scostamento faceva saltare
+          // l'elemento addosso al genitore, e poteva chiudere un anello fra due elementi legati.
+          case 'update_element': { const m = target(o); const el = V.byId(o.id, m); if (!el) break; const props = clone(o.props || {}); STRUTTURA.forEach(k => { if (k in props) { delete props[k]; if (!rifiutate.includes('legami e blocchi')) rifiutate.push('legami e blocchi'); } }); if (props.activities && !Array.isArray(props.activities)) props.activities = String(props.activities).split('\n'); if (!Object.keys(props).length && o.x == null && o.y == null) break; if (Object.keys(props).length) push(m, { t: 'props', id: el.id, after: props }); if (o.x != null || o.y != null) push(m, { t: 'update', id: el.id, after: { x: o.x ?? el.x, y: o.y ?? el.y } }); n++; break; }
           case 'remove_element': { const m = target(o); const el = V.byId(o.id, m); if (!el) break; const conns = m.elements.filter(c => V.isConnector(c) && (c.from.el === el.id || c.to.el === el.id)); const removedIds = new Set([el.id, ...conns.map(c => c.id)]); [el, ...conns].forEach(r => R.children(r.id, m).forEach(k => { if (!removedIds.has(k.id)) I.unlockOps(k, m).forEach(op => push(m, op)); })); push(m, { t: 'remove', el: clone(el) }); conns.forEach(c => push(m, { t: 'remove', el: clone(c) })); n++; break; }
-          case 'connect': { const m = target(o); if (!['flow', 'request'].includes(o.type)) break; const f = V.byId(o.from, m), t = V.byId(o.to, m); if (!f || !t) break; const c = V.newConnector(o.type, { el: f.id }, { el: t.id }, o.props || {}); if (o.type === 'request') c.props.offset = m.elements.filter(x => x.type === 'request' && x.from.el === f.id).length; if (o.id && !V.byId(String(o.id), m)) c.id = String(o.id); push(m, { t: 'add', el: c }); n++; break; }
+          // il coach rispetta le stesse regole del foglio: la via di richiesta parte da una persona e
+          // arriva a un passo, la freccia di flusso lega due passi. Senza questo controllo una patch
+          // poteva agganciare una freccia a un'altra freccia, e il percorso finiva in coordinate vuote.
+          case 'connect': { const m = target(o); if (!['flow', 'request'].includes(o.type)) break; const f = V.byId(o.from, m), t = V.byId(o.to, m); if (!f || !t || f === t || V.isConnector(f) || V.isConnector(t)) break; const src = I.CONN_SOURCES[o.type], dst = I.CONN_TARGETS[o.type]; if ((src && !src.includes(f.type)) || (dst && !dst.includes(t.type))) { rifiutate.push(`${o.type === 'request' ? 'via di richiesta' : 'freccia di flusso'} da ${f.type} a ${t.type}`); break; } const c = V.newConnector(o.type, { el: f.id }, { el: t.id }, o.props || {}); if (o.type === 'request') c.props.offset = m.elements.filter(x => x.type === 'request' && x.from.el === f.id).length; if (o.id && V.idOk(String(o.id)) && !V.byId(String(o.id), m)) c.id = String(o.id); push(m, { t: 'add', el: c }); n++; break; }
           case 'add_delta_on': { const m = target(o); const c = V.byId(o.flow, m); if (!c || c.type !== 'flow') break; const d = V.newElement('delta', 0, 0, o.props || {}); d.props.attachedTo = c.id; d.props.dx = 0; d.props.dy = 0; push(m, { t: 'add', el: d }); n++; break; }
           case 'set_meta': { const m = target(o); const after = {}; ['title', 'scope', 'authors', 'unitName', 'ideal', 'unit', 'samples', 'date'].forEach(k => { if (o[k] != null) after[k] = String(o[k]); }); if (Object.keys(after).length) { push(m, { t: 'meta', after }); n++; } break; }
           case 'set_analysis': { const m = target(o); push(m, { t: 'meta', after: { analysis: Object.assign(clone(m.analysis), { goodEnough: String(o.goodEnough || '') }) } }); n++; break; }
           case 'add_plan_row': { const m = target(o); const plan = clone((opsForMap.get(m.id) || []).filter(x => x.t === 'plan_set').pop()?.after || m.plan); plan.push({ id: uid(), what: o.what || '', who: o.who || '', when: o.when || '', outcome: o.outcome || '', a3: !!o.a3 }); push(m, { t: 'plan_set', after: plan }); n++; break; }
-          case 'suggest_tool': UI.showSuggest(o.tool, o.reason || 'Il coach suggerisce questo strumento.', null); n++; break;
-          case 'focus_element': { const el = V.byId(o.id); if (el) { I.select([el.id]); R.flash(el.id); n++; } break; }
+          // suggerire uno strumento o illuminare un elemento non cambia il foglio: non si contano fra le modifiche
+          case 'suggest_tool': UI.showSuggest(o.tool, o.reason || 'Il coach suggerisce questo strumento.', null); break;
+          case 'focus_element': { const el = V.byId(o.id); if (el) { I.select([el.id]); R.flash(el.id); } break; }
         }
       } catch (e) { console.warn('op fallita', o, e); }
     });
     // un solo commit per mappa (una voce di undo "patch coach")
-    opsForMap.forEach((ops, mapId) => { const m = V.doc.maps[mapId]; if (m && ops.length) V.commit(ops, 'patch coach', { map: m }); });
+    let ok = 0, ko = 0;
+    opsForMap.forEach((lista, mapId) => { const m = V.doc.maps[mapId]; if (!m || !lista.length) return; if (V.commit(lista, 'patch coach', { map: m })) ok++; else ko++; });
     if (futureMap && V.map().id === startMapId && ops.some(o => o.map === 'future')) UI.openMap(futureMap.id);
-    UI.toast(`${n} modifiche applicate.`);
+    // il messaggio dice cio' che e' andato a segno davvero: a lucchetto chiuso il commit rifiuta tutto,
+    // e prima si leggeva "N modifiche applicate" mentre il foglio non era cambiato di una virgola
+    const detto = [];
+    if (ko && !ok) detto.push('Nessuna modifica applicata: quel foglio ha il lucchetto chiuso \u{1F512}.');
+    else if (ko) detto.push('Modifiche applicate solo in parte: un foglio ha il lucchetto chiuso \u{1F512}.');
+    else detto.push(`${n} ${n === 1 ? 'modifica applicata' : 'modifiche applicate'}.`);
+    if (rifiutate.length) detto.push('Fuori regola, non applicate: ' + rifiutate.join('; ') + '.');
+    UI.toast(detto.join(' '));
   };
 
   // ---------- chiamata API ----------

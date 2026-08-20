@@ -26,7 +26,7 @@
     return { stroke, dash, width, custom: !!(ov.stroke || ov.dash || ov.width), marker: markerId(stroke) };
   };
   /** attributi SVG del tratto (usati dal foglio e dalla legenda, così il campione è davvero lo stesso segno) */
-  R.connAttrs = (c) => { const k = R.connLook(c); return `stroke="${k.stroke}"${k.dash ? ` stroke-dasharray="${k.dash}"` : ''}${k.width ? ` stroke-width="${k.width}"` : ''} marker-end="url(#${k.marker})"`; };
+  R.connAttrs = (c) => { const k = R.connLook(c); return `stroke="${esc(k.stroke)}"${k.dash ? ` stroke-dasharray="${k.dash}"` : ''}${k.width ? ` stroke-width="${k.width}"` : ''} marker-end="url(#${k.marker})"`; };
 
   R.init = (svgEl) => {
     svg = svgEl; svg.innerHTML = '';
@@ -38,6 +38,10 @@
     svg.appendChild(defs);
     ['paper', 'lanes', 'ink', 'conn', 'el', 'hand', 'overlay', 'ui'].forEach(k => { const g = document.createElementNS(NS, 'g'); g.id = 'L-' + k; svg.appendChild(g); L[k] = g; });
     L.ink.setAttribute('pointer-events', 'none');
+    // Il riepilogo e la timeline sono un calcolo disegnato sopra il foglio, non roba da toccare: il
+    // rettangolo pieno della card rubava il tocco a quello che ci stava sotto (note, nuvole) e faceva
+    // partire il trascinamento della vista. I riquadri tratteggiati d'invito restano toccabili.
+    L.overlay.setAttribute('pointer-events', 'none');
   };
   R.layers = () => L;
 
@@ -340,6 +344,9 @@
    *  segue il genitore le frecce restavano attaccate alla posizione vecchia. */
   const seenEl = (el, map) => { if (!el || !el.props || !(el.props.lockTo || (el.type === 'delta' && el.props.attachedTo))) return el; const p = R.elPos(el, map); return (p.x === el.x && p.y === el.y) ? el : Object.assign({}, el, p); };
   R.seenEl = seenEl;
+  /** da dove esce una via di richiesta: il fianco del richiedente. Serve anche al filo che si vede
+   *  mentre si trascina, cosi' il tratto provvisorio e la freccia vera partono dallo stesso punto. */
+  R.reqStart = (from) => from ? { x: from.x, y: from.y + (from.type === 'person' ? 26 : from.h / 2) } : { x: 0, y: 0 };
   const reqEnds = (c, map, proj = true) => {
     const from0 = c.from.el ? V.byId(c.from.el, map) : null, to0 = c.to.el ? V.byId(c.to.el, map) : null;
     const from = proj ? seenEl(from0, map) : from0, to = proj ? seenEl(to0, map) : to0;
@@ -347,191 +354,27 @@
     // props.offset conta le vie dello stesso richiedente, quindi due richiedenti diversi che chiamano lo
     // stesso passo finivano entrambi sullo stesso punto, con i due percorsi sovrapposti.
     const same = c.to.el ? map.elements.filter(e => e.type === 'request' && e.to.el === c.to.el).sort((A, B) => (A.props.offset || 0) - (B.props.offset || 0)) : [];
-    const off = Math.max(0, same.indexOf(c)) * 46;
-    const a = from ? { x: from.x, y: from.y + (from.type === 'person' ? 26 : from.h / 2) } : { x: c.from.x, y: c.from.y };
-    const b = to ? { x: to.x + Math.max(10, to.w / 2 - off), y: to.y } : { x: c.to.x, y: c.to.y };
+    const i = Math.max(0, same.indexOf(c)), n = Math.max(1, same.length);
+    // Gli arrivi si distribuiscono sul bordo alto del passo invece di scalare di 46 px fissi: con quel
+    // passo, su un box da 150, il terzo e il quarto punto finivano tutti e due sul minimo di 10 px e le
+    // vie si sovrapponevano. Ora la larghezza disponibile si divide fra quante sono, e i punti restano
+    // dentro il box qualunque sia il loro numero.
+    const passo = to ? Math.min(46, Math.max(12, (to.w - 20) / n)) : 46;
+    const off = i * passo;
+    const b = to ? { x: to.x + Math.max(10, Math.min(to.w - 10, to.w / 2 - ((n - 1) * passo) / 2 + off)), y: to.y } : { x: c.to.x, y: c.to.y };
+    // Anche le partenze si sfalsano lungo il fianco del richiedente: partendo tutte dallo stesso punto,
+    // vicino all'omino le vie si leggevano come un tratto solo e i tocchi se le contendevano.
+    const sameFrom = c.from.el ? map.elements.filter(e => e.type === 'request' && e.from.el === c.from.el).sort((A, B) => (A.props.offset || 0) - (B.props.offset || 0)) : [];
+    const j = Math.max(0, sameFrom.indexOf(c));
+    const a = from ? { x: from.x, y: from.y + (from.type === 'person' ? 26 : from.h / 2) + (from.type === 'person' ? Math.min(j, 4) * 9 : 0) } : { x: c.from.x, y: c.from.y };
     return { a, b, off };
   };
-  /** Corsie delle vie di richiesta (modalità squadrata).
-      La via che arriva più a destra scende per prima: le si dà la corsia più bassa e il tratto d'uscita più corto.
-      Così nessuna discesa verticale attraversa la corsia di un'altra via — è da lì che nascono quasi tutti gli incroci. */
-  R.reqLanes = (map) => {
-    const reqs = map.elements.filter(e => e.type === 'request');
-    if (!reqs.length) return { lane: {}, n: 0, y: () => 0, step: 0 };
-    const info = reqs.map((c, i) => ({ id: c.id, i, c, e: reqEnds(c, map) }));
-    const ord = info.slice().sort((A, B) => B.e.b.x - A.e.b.x || A.i - B.i);
-    ord.forEach((r, k) => { r.k = k; });
-    // Partenze sfalsate lungo il fianco del richiedente: uscendo tutte dallo stesso punto, i primi tratti
-    // restano sovrapposti e tre vie si leggono come una riga sola. Chi va più lontano parte più in alto,
-    // così il suo tratto orizzontale non incontra le discese delle vie che si fermano prima.
-    const aStart = {}, byFrom = {};
-    info.forEach(r => { const key = r.c.from.el || ('#' + r.id); (byFrom[key] = byFrom[key] || []).push(r); });
-    Object.values(byFrom).forEach(list => {
-      if (list.length === 1) { aStart[list[0].id] = list[0].e.a; return; }
-      const el = V.byId(list[0].c.from.el, map);
-      const span = Math.max(24, Math.min(56, ((el && el.h) || 78) - 24));
-      list.slice().sort((A, B) => B.k - A.k).forEach((r, i) => { aStart[r.id] = { x: r.e.a.x, y: r.e.a.y - span / 2 + span * i / (list.length - 1) }; });
-    });
-    // Tutte le corsie stanno nella fascia fra il richiedente più basso e il passo più alto: se una corsia
-    // finisse sopra un punto di partenza, quella via dovrebbe risalire e taglierebbe le corsie sottostanti.
-    const yLow = Math.min(...info.map(r => r.e.b.y)) - 46;           // la corsia più bassa lascia sopra il passo lo spazio della sua etichetta e della nota
-    const yTop = Math.max(...info.map(r => aStart[r.id].y)) + 18;    // e la più alta resta sotto le partenze
-    const step = Math.max(14, Math.min(52, (yLow - yTop) / Math.max(1, ord.length - 1))); // ~46 px quando c'è spazio: sotto i 44 le etichette si toccano
-    const y = (k) => yLow - k * step;
-    // Dove ogni via scende verso la propria corsia. Scendendo attraversa le corsie più alte, cioè quelle
-    // già collocate: il punto di discesa va tenuto fuori dal tratto orizzontale di quelle, altrimenti nasce
-    // un incrocio. Con un solo richiedente basta accorciare l'uscita corsia dopo corsia; con richiedenti a
-    // x diverse (uno più a sinistra dell'altro) serve spostare la discesa oltre le corsie che coprono quel punto.
-    const lane = {}, xDrop = {}, busy = [];
-    for (let k = ord.length - 1; k >= 0; k--) {
-      const r = ord[k], a = aStart[r.id], b = r.e.b;
-      const dir = b.x <= a.x ? -1 : 1;
-      let x = a.x + dir * (26 + k * 16);
-      for (let guard = 0; guard < 4; guard++) {
-        const bad = busy.filter(s => x >= s.x1 - 3 && x <= s.x2 + 3);
-        if (!bad.length) break;
-        const right = Math.max(...bad.map(s => s.x2)) + 18, left = Math.min(...bad.map(s => s.x1)) - 18;
-        x = Math.abs(right - a.x) <= Math.abs(left - a.x) ? right : left; // il minimo scostamento dal richiedente
-      }
-      lane[r.id] = k; xDrop[r.id] = x;
-      busy.push({ x1: Math.min(x, b.x), x2: Math.max(x, b.x) });
-    }
-    return { lane, xDrop, aStart, n: ord.length, step, y, ord };
-  };
-  /** riquadri da non attraversare: gli elementi del foglio, tolti gli estremi del collegamento stesso,
-      i delta che stanno sulla freccia per costruzione, le corsie di reparto (sono sfondi) e la legenda. */
-  // (gli elementi appesi a un connettore sono esclusi tutti, non solo quelli di questo: la loro posizione
-  //  dipende dal percorso di un'altra freccia, e chiederla qui farebbe girare in tondo il calcolo)
-  R.obstacles = (map, c) => map.elements.filter(e => !V.isConnector(e) && e.type !== 'lane' && e.type !== 'legend'
-    && e.id !== (c.from && c.from.el) && e.id !== (c.to && c.to.el)
-    && !(e.type === 'delta' && e.props.attachedTo) && !(e.props.lockTo && V.isConnector(V.byId(e.props.lockTo, map) || { type: 'x' })))
-    .map(e => { const p = R.elPos(e, map), s = R.elSize(e); return { x1: p.x, y1: p.y, x2: p.x + s.w, y2: p.y + s.h }; });
-  const overlaps = (r, o, m = 0) => r.x2 > o.x1 - m && r.x1 < o.x2 + m && r.y2 > o.y1 - m && r.y1 < o.y2 + m;
-  /** un segmento (orizzontale o verticale) che incontra ostacoli li scavalca dal lato più vicino,
-      restando squadrato: è il modo in cui si aggira un ingombro senza rinunciare alla leggibilità del gomito. */
-  const avoidSeg = (p, q, obs, m) => {
-    const horiz = Math.abs(p.y - q.y) < 0.5, vert = Math.abs(p.x - q.x) < 0.5;
-    if (!horiz && !vert) return [q];
-    const lo = horiz ? Math.min(p.x, q.x) : Math.min(p.y, q.y), hi = horiz ? Math.max(p.x, q.x) : Math.max(p.y, q.y);
-    const seg = horiz ? { x1: lo, x2: hi, y1: p.y, y2: p.y } : { x1: p.x, x2: p.x, y1: lo, y2: hi };
-    let hits = obs.filter(o => overlaps(seg, o, m));
-    if (!hits.length) return [q];
-    // Fondi gli ostacoli vicini lungo la marcia in una deviazione sola: scavalcarli uno per uno, tornando
-    // ogni volta sulla riga, disegna un serpente — illeggibile anche se non tocca niente.
-    const GAP = 70;
-    hits = hits.map(o => ({ a1: (horiz ? o.x1 : o.y1) - m, a2: (horiz ? o.x2 : o.y2) + m, b1: (horiz ? o.y1 : o.x1) - m, b2: (horiz ? o.y2 : o.x2) + m }))
-      .sort((A, B) => A.a1 - B.a1)
-      .reduce((acc, o) => { const last = acc[acc.length - 1]; if (last && o.a1 <= last.a2 + GAP) { last.a2 = Math.max(last.a2, o.a2); last.b1 = Math.min(last.b1, o.b1); last.b2 = Math.max(last.b2, o.b2); } else acc.push(Object.assign({}, o)); return acc; }, []);
-    const dir = horiz ? Math.sign(q.x - p.x) : Math.sign(q.y - p.y);
-    if (dir < 0) hits.reverse();
-    const base = horiz ? p.y : p.x, end = horiz ? q.x : q.y;
-    const pnt = (along, across) => horiz ? { x: along, y: across } : { x: across, y: along };
-    const clamp = (v) => Math.max(Math.min(lo, hi), Math.min(Math.max(lo, hi), v));
-    const ahead = (v, w) => dir > 0 ? v > w : v < w;   // "più avanti nella marcia": il percorso non torna mai indietro
-    const out = [];
-    let cur = horiz ? p.x : p.y;
-    hits.forEach(g => {
-      const side = Math.abs(g.b1 - base) <= Math.abs(g.b2 - base) ? g.b1 : g.b2;   // si scavalca dal lato più vicino
-      const e1 = clamp(dir > 0 ? g.a1 : g.a2), e2 = clamp(dir > 0 ? g.a2 : g.a1);
-      if (!ahead(e2, cur)) return;                                                  // gruppo già superato
-      const enter = ahead(e1, cur) ? e1 : cur;                                      // già dentro: si esce di lato subito
-      if (ahead(enter, cur)) out.push(pnt(enter, base));
-      out.push(pnt(enter, side), pnt(e2, side));
-      if (ahead(end, e2)) out.push(pnt(e2, base));                                  // se l'ostacolo arriva in fondo, si entra di lato
-      cur = e2;
-    });
-    out.push(q);
-    return out;
-  };
-  /** applica l'aggiramento a tutta la spezzata */
-  const routeAvoid = (nodes, obs, m = 10) => {
-    if (!obs.length) return nodes;
-    const out = [nodes[0]];
-    for (let i = 1; i < nodes.length; i++) avoidSeg(out[out.length - 1], nodes[i], obs, m).forEach(p => out.push(p));
-    return out;
-  };
-  /** spazio che serve alla scritta di una via (canale, nota, mani) attorno al punto scelto */
-  const labelBox = (q) => ({ x1: q.x - 78, y1: q.y - 20, x2: q.x + 78, y2: q.y + 40 });
-  /** punto dove scrivere canale e nota: il primo, andando verso l'arrivo, il cui spazio di scrittura è libero */
-  const labelT = (P, obs) => {
-    const cands = [0.78, 0.72, 0.84, 0.66, 0.9, 0.6, 0.54, 0.48, 0.42, 0.36, 0.3, 0.24];
-    let best = 0.78, bestCost = Infinity;
-    for (const t of cands) {
-      const r = labelBox(P.at(t));
-      let cost = 0;
-      obs.forEach(o => { const ix = Math.min(r.x2, o.x2) - Math.max(r.x1, o.x1), iy = Math.min(r.y2, o.y2) - Math.max(r.y1, o.y1); if (ix > 0 && iy > 0) cost += ix * iy; });
-      if (!cost) return t;                       // primo posto del tutto libero, andando verso l'arrivo
-      if (cost < bestCost) { bestCost = cost; best = t; }
-    }
-    return best;                                 // foglio affollato: si sceglie il male minore, non un punto fisso
-  };
-
-  /** Instrada tutte le vie di richiesta di una mappa in un colpo solo (modalità squadrata).
-      Insieme e non una per volta, perché le scelte si condizionano: le corsie, i punti di discesa e perfino
-      il posto dove sta scritto il canale vanno decisi guardando anche le altre vie, altrimenti due scritte
-      finiscono una sull'altra. Il risultato è messo in cache: connPath viene chiamato molte volte per disegno. */
-  let routeCache = { sig: '', val: null }, routing = false;
-  const routeSig = (map) => map.id + '|' + V.linkModeOf(map) + '|' + map.elements.map(e => [e.id, e.type, Math.round(e.x), Math.round(e.y), e.w, e.h,
-    e.props.lockTo || '', Math.round(e.props.dx || 0), Math.round(e.props.dy || 0), e.props.attachedTo || '', e.props.offset || 0, e.props.t == null ? '' : e.props.t,
-    e.from ? (e.from.el || Math.round(e.from.x) + '_' + Math.round(e.from.y)) : '', e.to ? (e.to.el || Math.round(e.to.x) + '_' + Math.round(e.to.y)) : '',
-    (e.props.text || '').length, e.props.size || ''].join(',')).join(';');
-  R.reqRoutes = (map) => {
-    if (routing) return null;                 // richiamata mentre calcola (un elemento appeso a una freccia): si usa il ripiego
-    const sig = routeSig(map);
-    if (routeCache.sig === sig) return routeCache.val;
-    routing = true;
-    let val = null;
-    try { val = computeRoutes(map); } finally { routing = false; }
-    routeCache = { sig, val };
-    return val;
-  };
-  function computeRoutes(map) {
-    const L = R.reqLanes(map);
-    const routes = {}, taken = [];
-    (L.ord || []).forEach((r) => {
-      const c = r.c, k = r.k, b = r.e.b;
-      const s = L.aStart[c.id] || r.e.a, xExit = L.xDrop[c.id] == null ? s.x - 26 : L.xDrop[c.id];
-      const obs = R.obstacles(map, c);
-      // Prima di scavalcare, si prova a spostare la corsia in una fascia libera (entro mezzo passo, così
-      // l'ordine delle corsie non cambia e non nascono incroci): una riga sola si legge molto meglio di un
-      // tratto che scavalca tre nuvole di fila.
-      // il margine di aggiramento cresce con la corsia: due vie che scavalcano la stessa nuvola dallo stesso
-      // lato, con lo stesso margine, tornerebbero a correre appaiate proprio sopra l'ostacolo
-      const mAvoid = 10 + k * 6;
-      const x1 = Math.min(xExit, b.x), x2 = Math.max(xExit, b.x);
-      const busyAt = (yy) => obs.some(o => overlaps({ x1, x2, y1: yy, y2: yy }, o, mAvoid));
-      // verso l'alto ci si sposta al massimo di mezzo passo (oltre si scavalcherebbe la corsia vicina);
-      // verso il basso la corsia più bassa può scendere di più, perché sotto di lei non c'è nessuno
-      const y0 = Math.min(L.y(k), b.y - 14), limSu = Math.max(12, L.step / 2), limGiu = k === 0 ? 80 : limSu;
-      const cands = [0]; for (let d = 4; d <= Math.max(limSu, limGiu); d += 4) { if (d <= limGiu) cands.push(d); if (d <= limSu) cands.push(-d); }
-      const yFree = cands.map(d => Math.min(b.y - 14, Math.max(46, y0 + d))).find(yy => !busyAt(yy));
-      const yl = yFree == null ? y0 : yFree;
-      const nodes = [s, { x: xExit, y: s.y }, { x: xExit, y: yl }, { x: b.x, y: yl }, b];
-      // nuvola (o nota) appoggiata proprio sopra il passo di arrivo: la discesa la attraverserebbe e non
-      // basta scavalcarla, perché il gomito cadrebbe dentro. Si scende di fianco e si entra nel passo di lato.
-      const mb = mAvoid + 2 + k * 5, block = obs.filter(o => b.x > o.x1 - mb && b.x < o.x2 + mb && b.y > o.y1 - mb && yl < o.y2 + mb);
-      if (block.length) {
-        const xL = Math.min(...block.map(o => o.x1)) - mb, xR = Math.max(...block.map(o => o.x2)) + mb;
-        const xd = Math.abs(xL - b.x) <= Math.abs(xR - b.x) ? xL : xR;
-        const ye = Math.min(Math.max(...block.map(o => o.y2)) + mAvoid + 2, b.y - 8); // stesso margine dell'aggiramento, se no si rientra dentro la fascia che si stava evitando
-        nodes.splice(3, 1, { x: xd, y: yl }, { x: xd, y: ye }, { x: b.x, y: ye });
-      }
-      const P = mkPoly(routeAvoid(nodes, obs, mAvoid));
-      // la scritta schiva gli elementi, i due estremi della via e le scritte delle vie già collocate
-      const ends = [c.from.el, c.to.el].map(id => V.byId(id, map)).filter(Boolean)
-        .map(e => { const p = R.elPos(e, map), z = R.elSize(e); return { x1: p.x, y1: p.y, x2: p.x + z.w, y2: p.y + z.h }; });
-      const tDef = labelT(P, obs.concat(ends, taken));
-      taken.push(labelBox(P.at(tDef)));
-      routes[c.id] = { nodes: P.pts, tDef };
-    });
-    return { routes, lane: L.lane, y: L.y, step: L.step, n: L.n };
-  }
-  /** frazione di lunghezza che cade a `f` del segmento `seg` di una spezzata (per mettere l'etichetta in corsia) */
-  const tOnSeg = (pts, seg, f) => {
-    let acc = 0, tot = 0, before = 0;
-    for (let i = 1; i < pts.length; i++) { const d = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y); if (i - 1 < seg) before += d; if (i - 1 === seg) acc = d; tot += d; }
-    return tot ? (before + acc * f) / tot : 0.5;
-  };
+  // L'instradamento automatico delle vie di richiesta (modalità «squadrata»: corsie, aggiramento
+  // degli ostacoli, etichette in corsia) è stato tolto insieme alla modalità, che non è più fra
+  // quelle scegliibili — le frecce vanno dritte al bersaglio e il percorso si piega a mano.
+  // Erano ~180 righe che nessuna strada del codice poteva più raggiungere: chi leggeva il file si
+  // trovava davanti soluzioni pronte (lo sfalsamento delle partenze) che non giravano mai.
+  // La versione con le corsie sta nella storia di git, al commit che precede questa nota.
   // guardia di rientro: elPos di un elemento bloccato a un connettore richiama connPath — nel caso
   // patologico (capo bloccato al suo stesso connettore, o ciclo fra due frecce) il giro interno usa
   // le posizioni grezze invece di ricorrere all'infinito
@@ -546,11 +389,7 @@
     if (c.type === 'request') {
       const { a, b, off } = reqEnds(c, map, !reent);
       let P, tDef;
-      if (mode === 'squadrata') {
-        const RT = R.reqRoutes(map), r = RT && RT.routes[c.id];
-        P = mkPoly(r ? r.nodes : [a, { x: a.x - 26, y: a.y }, { x: a.x - 26, y: b.y - 30 }, { x: b.x, y: b.y - 30 }, b]);
-        tDef = r ? r.tDef : 0.7;
-      } else if (mode === 'dritta') {
+      if (mode === 'dritta') {
         // percorso piegato a mano: la linea passa per i punti che l'utente ha trascinato
         const via = Array.isArray(c.props.via) ? c.props.via : [];
         P = mkPoly([a, ...via, b]);
@@ -569,7 +408,18 @@
     const via = Array.isArray(c.props.via) ? c.props.via : [];
     // le ancore guardano il primo/ultimo punto di via, cosi' la freccia esce dal lato giusto del box
     const a = from ? V.anchor(from, via[0] || pt) : pf, b = to ? V.anchor(to, via[via.length - 1] || pf) : pt;
-    const P = mkPoly([a, ...via, b]);
+    // «Frecce: curve» vale anche per le frecce di flusso: il menu lo prometteva ma si curvavano solo le
+    // vie di richiesta. Una piega fatta a mano (props.via) comanda comunque: chi ha piegato una linea
+    // vuole quel percorso, non una curva calcolata.
+    let P;
+    if (mode === 'curva' && !via.length) {
+      const dx = (b.x - a.x), dy = (b.y - a.y);
+      const orizz = Math.abs(dx) >= Math.abs(dy);
+      const k = Math.max(28, Math.min(140, Math.hypot(dx, dy) * 0.34));
+      const p1 = orizz ? { x: a.x + Math.sign(dx || 1) * k, y: a.y } : { x: a.x, y: a.y + Math.sign(dy || 1) * k };
+      const p2 = orizz ? { x: b.x - Math.sign(dx || 1) * k, y: b.y } : { x: b.x, y: b.y - Math.sign(dy || 1) * k };
+      P = mkCurve(a, p1, p2, b);
+    } else P = mkPoly([a, ...via, b]);
     const t = c.props.t == null ? 0.5 : c.props.t;
     return Object.assign(P, { mid: P.at(t), tDef: 0.5 });
     } finally { if (!reent) _cpGuard.delete(c.id); }
@@ -594,7 +444,7 @@
     return s;
   }
   /** icona del canale (livello sopra gli elementi), trascinabile lungo la curva (props.t) */
-  const chanHandleSVG = (c, map) => { const P = R.connPath(c, map), k = R.connLook(c); return `<g class="chan-handle" data-chan-handle="${c.id}"><circle class="chan" cx="${P.mid.x}" cy="${P.mid.y}" r="13" stroke="${k.stroke}"/>${R.chanIcon(c.props.channel, P.mid.x, P.mid.y, 0.7, k.stroke)}</g>`; };
+  const chanHandleSVG = (c, map) => { const P = R.connPath(c, map), k = R.connLook(c); return `<g class="chan-handle" data-chan-handle="${esc(c.id)}"><circle class="chan" cx="${P.mid.x}" cy="${P.mid.y}" r="13" stroke="${k.stroke}"/>${R.chanIcon(c.props.channel, P.mid.x, P.mid.y, 0.7, k.stroke)}</g>`; };
   R.handles = (map) => { L.hand.innerHTML = map.elements.filter(c => c.type === 'request').map(c => chanHandleSVG(c, map)).join(''); };
   /** posizione effettiva di un delta agganciato a un connettore */
   R.deltaPos = (d, map) => {
@@ -636,27 +486,40 @@
     const zOrder = { lane: 0, legend: 1, text: 2, box: 3, inventory: 3, inbox: 3, distance: 3, person: 3, delta: 4, icon: 4, face: 4, storm: 5, fluffy: 5, burst: 5 };
     const els = map.elements.filter(e => !V.isConnector(e)).slice().sort((a, b) => (zOrder[a.type] || 3) - (zOrder[b.type] || 3) || (a.z || 0) - (b.z || 0));
     let lanes = '', body = '';
-    els.forEach(el => { const pos = R.elPos(el, map); const g = `<g class="el el-${el.type}" data-id="${el.id}" data-type="${el.type}" transform="translate(${pos.x} ${pos.y})">${hitRect(el)}${drawEl(el)}</g>`; if (el.type === 'lane') lanes += g; else body += g; });
+    els.forEach(el => { const pos = R.elPos(el, map); const g = `<g class="el el-${el.type}" data-id="${esc(el.id)}" data-type="${el.type}" transform="translate(${pos.x} ${pos.y})">${hitRect(el)}${drawEl(el)}</g>`; if (el.type === 'lane') lanes += g; else body += g; });
     L.lanes.innerHTML = lanes; L.el.innerHTML = body;
-    L.conn.innerHTML = map.elements.filter(V.isConnector).map(c => `<g class="conn" data-id="${c.id}" data-type="${c.type}">${drawConn(c, map)}</g>`).join('');
+    L.conn.innerHTML = map.elements.filter(V.isConnector).map(c => `<g class="conn" data-id="${esc(c.id)}" data-type="${c.type}">${drawConn(c, map)}</g>`).join('');
     R.handles(map);
   };
   const updHandle = (c, map) => { if (c.type !== 'request') return; const g = L.hand.querySelector(`[data-chan-handle="${c.id}"]`); if (g) g.outerHTML = chanHandleSVG(c, map); else L.hand.insertAdjacentHTML('beforeend', chanHandleSVG(c, map)); };
-  /** aggiorna solo un elemento (e i connettori/delta legati) — usato durante il trascinamento */
-  R.updateEl = (id, map, isChild = false) => {
+  /** aggiorna solo un elemento (e i connettori/delta legati) — usato durante il trascinamento.
+   *  `seen` tiene il conto di chi e' gia' stato ridisegnato in questa passata: due elementi legati
+   *  l'uno all'altro (un anello che un file importato o una patch possono introdurre) facevano
+   *  richiamare il disegno all'infinito, e il trascinamento moriva con lo stack pieno. */
+  R.updateEl = (id, map, isChild = false, seen, opts) => {
     const el = V.byId(id, map); if (!el) return;
-    if (V.isConnector(el)) { const g = L.conn.querySelector(`[data-id="${id}"]`); if (g) g.innerHTML = drawConn(el, map); updHandle(el, map); if (!isChild) R.children(el.id, map).forEach(d => R.updateEl(d.id, map, true)); return; }
+    seen = seen || new Set();
+    if (seen.has(id)) return;
+    seen.add(id);
+    if (V.isConnector(el)) { const g = L.conn.querySelector(`[data-id="${id}"]`); if (g) g.innerHTML = drawConn(el, map); updHandle(el, map); if (!isChild) R.children(el.id, map).forEach(d => R.updateEl(d.id, map, true, seen, opts)); return; }
     const g = (el.type === 'lane' ? L.lanes : L.el).querySelector(`[data-id="${id}"]`); const pos = R.elPos(el, map);
-    if (g) { g.setAttribute('transform', `translate(${pos.x} ${pos.y})`); g.innerHTML = hitRect(el) + drawEl(el); }
-    // connettori toccati (e i loro figli agganciati/bloccati)
-    map.elements.filter(c => V.isConnector(c) && (c.from.el === id || c.to.el === id)).forEach(c => { const cg = L.conn.querySelector(`[data-id="${c.id}"]`); if (cg) cg.innerHTML = drawConn(c, map); updHandle(c, map); R.children(c.id, map).forEach(d => R.updateEl(d.id, map, true)); });
+    if (g) {
+      g.setAttribute('transform', `translate(${pos.x} ${pos.y})`);
+      // Mentre si trascina, dentro il gruppo non cambia niente: il disegno e' relativo alla sua origine
+      // e basta spostare il gruppo. Ricostruirlo a ogni movimento del dito — per l'elemento e per ogni
+      // figlio legato — era il lavoro che faceva scattare il trascinamento su iPad.
+      if (!(opts && opts.soloPosizione)) g.innerHTML = hitRect(el) + drawEl(el);
+    }
+    // connettori toccati (e i loro figli agganciati/bloccati): questi si ridisegnano comunque, il loro
+    // percorso dipende da dove stanno adesso i capi
+    map.elements.filter(c => V.isConnector(c) && (c.from.el === id || c.to.el === id)).forEach(c => { if (seen.has(c.id)) return; seen.add(c.id); const cg = L.conn.querySelector(`[data-id="${c.id}"]`); if (cg) cg.innerHTML = drawConn(c, map); updHandle(c, map); R.children(c.id, map).forEach(d => R.updateEl(d.id, map, true, seen, opts)); });
     // figli bloccati a questo elemento
-    R.children(id, map).forEach(ch => R.updateEl(ch.id, map, true));
+    R.children(id, map).forEach(ch => R.updateEl(ch.id, map, true, seen, opts));
   };
 
   // ---------- inchiostro ----------
   R.strokePath = (s) => { const pts = s.points; if (!pts.length) return ''; if (pts.length < 3) return `M${pts[0][0]} ${pts[0][1]} L${(pts[pts.length - 1][0])} ${(pts[pts.length - 1][1])}`; let d = `M${pts[0][0]} ${pts[0][1]}`; for (let i = 1; i < pts.length - 1; i++) { const mx = (pts[i][0] + pts[i + 1][0]) / 2, my = (pts[i][1] + pts[i + 1][1]) / 2; d += ` Q${pts[i][0]} ${pts[i][1]} ${mx.toFixed(1)} ${my.toFixed(1)}`; } const l = pts[pts.length - 1]; d += ` L${l[0]} ${l[1]}`; return d; };
-  R.strokes = (map) => { L.ink.innerHTML = map.strokes.map(s => `<path class="stroke" data-sid="${s.id}" d="${R.strokePath(s)}" stroke="${s.color}" stroke-width="${s.width}"/>`).join(''); };
+  R.strokes = (map) => { L.ink.innerHTML = map.strokes.map(s => `<path class="stroke" data-sid="${esc(s.id)}" d="${R.strokePath(s)}" stroke="${esc(s.color)}" stroke-width="${esc(s.width)}"/>`).join(''); };
   R.addStrokeEl = (s) => { const p = document.createElementNS(NS, 'path'); p.setAttribute('class', 'stroke'); p.dataset.sid = s.id; p.setAttribute('stroke', s.color); p.setAttribute('stroke-width', s.width); p.setAttribute('d', R.strokePath(s)); L.ink.appendChild(p); return p; };
 
   // ---------- overlay calcolato: timeline + riepilogo ----------
@@ -665,9 +528,18 @@
     if (hasBox && hasPerson) return '';
     let g = '';
     const ph = (x, y, w, h, label, kind, sub) => `<g class="placeholder" data-place="${kind}" data-px="${x}" data-py="${y}" style="cursor:pointer"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6" fill="rgba(31,78,121,.04)" stroke="#1f4e79" stroke-dasharray="6 5" stroke-width="1.2"/><text class="hand" x="${x + w / 2}" y="${y + h / 2 - 4}" text-anchor="middle" font-size="12" fill="#1f4e79">${esc(label)}</text><text class="hand" x="${x + w / 2}" y="${y + h / 2 + 12}" text-anchor="middle" font-size="9.5" fill="#1f4e79" opacity=".8">${esc(sub)}</text></g>`;
-    // il richiedente va nella fascia alta a destra del foglio, qualunque sia la misura del foglio
+    // Il richiedente va nella fascia alta a destra: ma "a destra del foglio" su una carta larga 2376
+    // finiva fuori dall'inquadratura appena il disegno cominciava a sinistra, e l'invito ① non lo
+    // vedeva piu' nessuno. Si sta a destra di quello che c'e' gia' disegnato, non del foglio.
     const P = V.paperOf(map);
-    if (!hasPerson) g += ph(P.w - 188, 96, 150, 100, '① Chi chiede?', 'person', 'tocca: mette il richiedente');
+    if (!hasPerson) {
+      const visibili = map.elements.filter(e => !V.isConnector(e) && e.type !== 'lane');
+      const destra = visibili.length ? Math.max(...visibili.map(e => { const p = R.elPos(e, map); return p.x + e.w; })) : null;
+      const alto = visibili.length ? Math.min(...visibili.map(e => R.elPos(e, map).y)) : null;
+      const px = destra != null ? Math.min(P.w - 188, destra + 90) : P.w - 188;
+      const py = alto != null ? Math.max(20, Math.min(alto - 150, P.h - 140)) : 96;
+      g += ph(px, py, 150, 100, '① Chi chiede?', 'person', 'tocca: mette il richiedente');
+    }
     if (!hasBox) g += ph(110, 300, 150, 170, '② Primo passo', 'box', 'tocca: crea un process box');
     if (!hasBox) g += `<text class="hand" x="300" y="360" font-size="11" fill="#1f4e79" opacity=".8">poi: Freccia di flusso ➜ passo successivo, Delta per le attese, Matita per scrivere a mano</text>`;
     return g;
@@ -679,25 +551,56 @@
     const fo = V.flowOrder(map); const order = fo.order.map(b => Object.assign({}, b, R.elPos(b, map)));
     let loY = null, contentRight = null;
     if (order.length && M.hasData) {
-      const bottom = Math.max(...order.map(b => b.y + b.h)) + 84; const hiY = Math.min(bottom, h - 140); loY = hiY + 24;
+      // con più percorsi alternativi servono più corsie: la timeline parte più in alto per starci dentro
+      const spazioCorsie = Math.max(0, (fo.lanes || 1) - 1) * 46;
+      const bottom = Math.max(...order.map(b => b.y + b.h)) + 84; const hiY = Math.min(bottom, h - 140 - spazioCorsie); loY = hiY + 24;
       contentRight = Math.max(...order.map(b => b.x + b.w));
       let path = '', labels = '';
-      order.forEach((b, i) => {
-        path += `<path class="va" d="M${b.x} ${hiY} V${loY} H${b.x + b.w} V${hiY}"/>`;
-        labels += `<text class="hand" x="${b.x + b.w / 2}" y="${loY + 13}" text-anchor="middle" font-size="10" fill="#3f7d5a">${fmt(num(b.props.avg))}</text>`;
-        if (i < order.length - 1) {
-          const nb = order[i + 1]; const conn = fo.flows.find(f => f.from.el === b.id && f.to.el === nb.id);
-          const ds = map.elements.filter(d => d.type === 'delta' && conn && d.props.attachedTo === conn.id);
-          const val = ds.length ? ds.map(d => num(d.props.avg)).filter(v => v != null).reduce((a, c) => a + c, 0) : null;
+      // ogni percorso alternativo ha la sua corsia, una sotto l'altra: prima i rami paralleli finivano
+      // disegnati nello stesso posto e i numeri si leggevano uno sopra l'altro
+      const LANE = 46;
+      const laneY = (id) => hiY + ((fo.lane && fo.lane.get(id)) || 0) * LANE;
+      order.forEach((b) => {
+        const y = laneY(b.id), y2 = y + (loY - hiY);
+        path += `<path class="va" d="M${b.x} ${y} V${y2} H${b.x + b.w} V${y}"/>`;
+        labels += `<text class="hand" x="${b.x + b.w / 2}" y="${y2 + 13}" text-anchor="middle" font-size="10" fill="#3f7d5a">${fmt(num(b.props.avg))}</text>`;
+      });
+      // Il tratto rosso si disegna per FRECCIA, non fra due gradini vicini nell'elenco: dove il processo
+      // si biforca, i due rami finivano uno accanto all'altro e fra loro compariva un'attesa inventata.
+      // E ora c'e' anche quando il passo dopo sta sotto o a sinistra: prima spariva dal disegno mentre
+      // il riepilogo continuava a contarla, e i due numeri non tornavano.
+      const seg = new Map(order.map(b => [b.id, b]));
+      fo.segments.forEach(s => {
+        const b = seg.get(s.from.id), nb = seg.get(s.to.id); if (!b || !nb) return;
+        const ds = map.elements.filter(d => d.type === 'delta' && d.props.attachedTo === s.conn.id);
+        const val = ds.length ? ds.map(d => num(d.props.avg)).filter(v => v != null).reduce((a, c) => a + c, 0) : null;
+        const x1 = b.x + b.w, x2 = nb.x, y = hiY + (s.lane || 0) * LANE;
+        if (x2 > x1) {
+          path += `<path class="nva" d="M${x1} ${y} H${x2}"/>`;
+          // se il ramo scende in una corsia sua, un gradino la collega alla corsia di partenza
+          const yFrom = laneY(b.id); if (yFrom !== y) path += `<path class="nva" d="M${x1} ${yFrom} V${y}"/>`;
           // etichetta dell'attesa solo se il tratto è abbastanza largo: in un varco stretto finirebbe sopra i gradini verdi accanto
-          const x1 = b.x + b.w, x2 = nb.x; if (x2 > x1) { path += `<path class="nva" d="M${x1} ${hiY} H${x2}"/>`; if (x2 - x1 >= 34) labels += `<text class="hand delta-txt" x="${(x1 + x2) / 2}" y="${hiY - 5}" text-anchor="middle" font-size="10">${val == null ? (ds.length ? '?' : '') : fmt(val)}</text>`; }
+          if (x2 - x1 >= 34) labels += `<text class="hand delta-txt" x="${(x1 + x2) / 2}" y="${y - 5}" text-anchor="middle" font-size="10">${val == null ? (ds.length ? '?' : '') : fmt(val)}</text>`;
+        } else if (val != null || ds.length) {
+          // i due passi non sono in fila: l'attesa si segna come cappio sopra il gradino di partenza,
+          // cosi' il tempo resta visibile invece di sparire
+          const cx = b.x + b.w;
+          path += `<path class="nva" d="M${cx - 12} ${y} q 12 -14 24 0"/>`;
+          labels += `<text class="hand delta-txt" x="${cx}" y="${y - 16}" text-anchor="middle" font-size="10">${val == null ? '?' : fmt(val)}</text>`;
         }
       });
       g += path + labels;
-      g += `<text class="hand muted" x="${order[0].x}" y="${hiY - 20}" font-size="10">tempo a valore (verde, sotto) · attese (rosso, sopra) — ${esc(map.unit)}${fo.estimated ? ' · ordine stimato (collega i box con le frecce)' : ''}</text>`;
+      const note = fo.estimated ? ` · ${fo.loose.length} ${fo.loose.length === 1 ? 'passo fuori catena' : 'passi fuori catena'} (collegali con le frecce)` : (fo.flows.length ? '' : ' · ordine stimato (collega i box con le frecce)');
+      g += `<text class="hand muted" x="${order[0].x}" y="${hiY - 20}" font-size="10">tempo a valore (verde, sotto) · attese (rosso, sopra) — ${esc(map.unit)}${note}</text>`;
     }
     // il riepilogo segue il contenuto (sotto la timeline, allineato a destra dei box): su un foglio grande,
     // ancorarlo all'angolo della carta lo lascerebbe lontano dalla mappa
+    // il riquadro dichiara quello che NON ha contato: prima un delta lasciato sul foglio entrava nel
+    // totale senza comparire sulla timeline, e i due artefatti dicevano numeri diversi senza spiegare perche'
+    const fuoriParti = [];
+    if (M.looseBoxes) fuoriParti.push(`${M.looseBoxes} ${M.looseBoxes === 1 ? 'passo' : 'passi'} fuori catena`);
+    if (M.looseDeltas) fuoriParti.push(`${M.looseDeltas} ${M.looseDeltas === 1 ? 'attesa non agganciata' : 'attese non agganciate'}`);
+    const fuori = fuoriParti.length ? esc('non contati: ' + fuoriParti.join(' · ')) : '';
     const sw = 270, sh = M.ftq != null ? 106 : 92;
     let sx = w - sw - 30, sy = h - sh - 30;
     if (loY != null) {
@@ -710,9 +613,17 @@
       <text class="hand" x="${sx + 12}" y="${sy + 20}" font-size="12" font-weight="700">Riepilogo (${esc(map.unit)})${map.samples ? ` · ${esc(map.samples)} misure` : ''}</text>
       <text class="hand" x="${sx + 12}" y="${sy + 40}" font-size="11">Totale VA: <tspan font-weight="700">${fmt(M.va)}</tspan>   Totale NVA: <tspan font-weight="700" fill="#c8321e">${fmt(M.nva)}</tspan></text>
       <text class="hand" x="${sx + 12}" y="${sy + 58}" font-size="11">VA %: <tspan font-weight="700">${fmt(M.vaPct)} %</tspan>   NVA %: <tspan font-weight="700" fill="#c8321e">${fmt(M.nvaPct)} %</tspan></text>
-      ${M.ftq != null ? `<text class="hand" x="${sx + 12}" y="${sy + 76}" font-size="11">First Time Quality: <tspan font-weight="700">${fmt(M.ftq)} %</tspan></text>` : ''}
-      <text class="hand muted" x="${sx + 12}" y="${sy + (M.ftq != null ? 94 : 78)}" font-size="10">${M.hasData ? 'value quotient = VA / (VA + NVA)' : 'aggiungi Hi/Lo/Avg ai box e ai delta'}</text></g>`;
+      ${M.ftq != null ? `<text class="hand" x="${sx + 12}" y="${sy + 76}" font-size="11">First Time Quality: <tspan font-weight="700">${fmt(M.ftq)} %</tspan>${M.ftqPartial ? '<tspan class="muted" font-size="10"> · parziale</tspan>' : ''}</text>` : ''}
+      <text class="hand muted" x="${sx + 12}" y="${sy + (M.ftq != null ? 94 : 78)}" font-size="10">${fuori || (M.hasData ? 'value quotient = VA / (VA + NVA)' : 'aggiungi Hi/Lo/Avg ai box e ai delta')}</text></g>`;
     L.overlay.innerHTML = g;
+  };
+
+  /** ridisegno del riepilogo al prossimo fotogramma: durante un trascinamento arrivano decine di
+   *  movimenti al secondo, e rifare l'overlay a ognuno sarebbe lavoro buttato */
+  let overlayFrame = null;
+  R.overlaySoon = (map) => {
+    if (overlayFrame) return;
+    overlayFrame = requestAnimationFrame(() => { overlayFrame = null; const m = map || V.map(); if (m) R.overlay(m, m.overlays !== false); });
   };
 
   // ---------- selezione / ui temporanea ----------

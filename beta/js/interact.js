@@ -8,6 +8,21 @@
   // un dito (o la penna) e' a terra: il menu delle azioni rapide non deve comparire adesso ma al rilascio
   I.gestureBusy = () => ptrs.size > 0;
   let nudgeSession = null, nudgeTimer = null;
+  /** Chiude la raffica di frecce da tastiera registrandone UNA voce da annullare. Va chiamata anche
+   *  prima di un altro gesto o di un annulla: la voce ancora aperta avrebbe messo insieme lo spostamento
+   *  da tastiera e quello che e' successo dopo, e l'annulla saltava troppo indietro. */
+  function flushNudge() {
+    clearTimeout(nudgeTimer); nudgeTimer = null;
+    const s = nudgeSession; nudgeSession = null; if (!s) return;
+    const map = s.map; if (!map || !V.doc.maps[map.id]) return;
+    const ops = s.ids.split(',').map(id => {
+      const el = V.byId(id, map); if (!el) return null; const b = s.before.get(id);
+      return s.attached(el) ? { t: 'props', id, after: { dx: el.props.dx, dy: el.props.dy }, before: { dx: b.dx, dy: b.dy } }
+        : { t: 'update', id, after: { x: el.x, y: el.y }, before: { x: b.x, y: b.y } };
+    }).filter(Boolean).filter(op => JSON.stringify(op.after) !== JSON.stringify(op.before));
+    if (ops.length) V.commit(ops, 'sposta (tastiera)', { map });
+  }
+  I.flushNudge = flushNudge;
   const TOOL_KINDS = { select: 'select', pan: 'pan', ink: 'ink', eraser: 'eraser', area: 'area', flow: 'connect', request: 'connect', whatis: 'whatis' };
   I.kindOf = (t) => TOOL_KINDS[t] || 'create';
 
@@ -103,19 +118,23 @@
   // ---------- pointer FSM ----------
   function down(e) {
     if (e.button !== undefined && e.button > 0 && e.pointerType === 'mouse') { if (e.button === 1) { startPan(e); return; } return; }
+    // Palmo appoggiato mentre si scrive con la penna: il dito non deve rubare il gesto alla punta.
+    // Prima il tocco faceva ripulire l'elenco dei puntatori, il tratto in corso restava orfano nel
+    // disegno (mai committato) e i movimenti successivi della penna finivano a spostare la vista.
+    if (e.pointerType === 'touch' && gesture && gesture.type === 'ink' && gesture.pen) return;
+    flushNudge(); // una raffica di frecce da tastiera si chiude qui: non deve inglobare il gesto che comincia
     // se la cattura del puntatore fallisce (succede con eventi sintetici e su qualche browser) il gesto
     // deve comunque partire: prima un'eccezione qui buttava via l'intero tocco
     try { svg.setPointerCapture(e.pointerId); } catch (err) { /* si prosegue senza cattura */ }
     // rete di sicurezza: il PRIMO dito di un tocco nuovo (isPrimary) certifica che non c'e' nessun altro
     // dito a terra. Un puntatore rimasto appeso (pointerup perso su un popup comparso sotto il dito)
     // faceva contare 2 puntatori a ogni tocco singolo: il pan diventava per sempre un pinch.
-    if (e.isPrimary && e.pointerType !== 'mouse' && ptrs.size) { ptrs.clear(); if (gesture && (gesture.type === 'pinch' || gesture.type === 'pan')) gesture = null; }
+    // Un gesto rimasto appeso va ANNULLATO, non solo dimenticato: prima drag/resize/via avevano gia'
+    // mosso la geometria e restavano cosi', senza nemmeno una voce da annullare.
+    if (e.isPrimary && e.pointerType !== 'mouse' && ptrs.size) { ptrs.clear(); if (gesture) { const g = gesture; gesture = null; abortGesture(g); } }
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (ptrs.size === 2) { // pinch: annulla il gesto in corso (rollback delle mutazioni non committate)
-      if (gesture && gesture.type === 'ink' && gesture.pathEl) gesture.pathEl.remove();
-      if (gesture && (gesture.type === 'drag' || gesture.type === 'resize' || gesture.type === 'chan' || gesture.type === 'via')) rollback(gesture);
-      if (gesture && gesture.type === 'erase') gesture.removed.forEach(s => { const elx = svg.querySelector(`[data-sid="${s.id}"]`); if (elx) elx.style.opacity = ''; });
-      R.ghost('');
+    if (ptrs.size === 2) { // due dita: si passa allo zoom, e il gesto in corso si annulla per intero
+      const g = gesture; gesture = null; abortGesture(g);
       const p = pinchInfo(); gesture = { type: 'pinch', d0: p.d, k0: I.view.k, c0: I.toWorld(p.cx, p.cy) }; return;
     }
     if (ptrs.size > 2) return;
@@ -164,7 +183,7 @@
     }
     if (t === 'pan' || (e.pointerType === 'touch' && I.fingerPans && (t === 'select' && !hit) )) { startPan(e); return; }
     if (t === 'area') { gesture = { type: 'lasso', start: w, startClient: { x: e.clientX, y: e.clientY }, shift: e.shiftKey, fromTool: true }; return; }
-    if (t === 'ink') { const s = { id: uid(), color: I.ink.color, width: I.ink.width, points: [[+w.x.toFixed(1), +w.y.toFixed(1)]] }; gesture = { type: 'ink', s, pathEl: R.addStrokeEl(s), last: w }; return; }
+    if (t === 'ink') { const s = { id: uid(), color: I.ink.color, width: I.ink.width, points: [[+w.x.toFixed(1), +w.y.toFixed(1)]] }; gesture = { type: 'ink', s, pathEl: R.addStrokeEl(s), last: w, pen: e.pointerType === 'pen' }; return; }
     if (t === 'eraser') { gesture = { type: 'erase', removed: [] }; eraseAt(w, gesture); return; }
     if (kind === 'connect') {
       const src = hit && V.byId(hit.id, map);
@@ -195,6 +214,22 @@
       return;
     }
     gesture = { type: 'lasso', start: w, startClient: { x: e.clientX, y: e.clientY }, shift: e.shiftKey };
+  }
+  /** Annulla un gesto senza confermare niente: quel che era stato mosso torna dov'era, quel che stava
+   *  per nascere non nasce. Serve a due situazioni che prima finivano dritte in up(), cioe' venivano
+   *  CONFERMATE: il pointercancel del sistema (gesto del browser, notifica, app mandata in sottofondo,
+   *  palmo) e il puntatore rimasto appeso. Un collegamento interrotto a meta' diventava una freccia
+   *  vera, un elemento a meta' nasceva davvero, una piega si fissava. */
+  function abortGesture(g) {
+    if (!g) return;
+    if (g.type === 'ink' && g.pathEl) g.pathEl.remove();
+    if (g.type === 'erase') g.removed.forEach(s => { const elx = svg.querySelector(`[data-sid="${s.id}"]`); if (elx) elx.style.opacity = ''; });
+    if (['drag', 'resize', 'chan', 'via'].includes(g.type)) rollback(g);
+    if (g.type === 'pan' || g.type === 'pinch') saveView(); // la vista gia' spostata resta dov'e', ma va registrata
+    svg.style.cursor = '';
+    R.ghost('');
+    // il fantasma e gli anelli di selezione dividono lo stesso strato: cancellando l'uno spariva l'altro
+    R.selection(I.selection, V.map());
   }
   function rollback(g) {
     const map = V.map();
@@ -237,15 +272,23 @@
         const dx = w.x - gesture.start.x, dy = w.y - gesture.start.y;
         if (!gesture.moved && Math.hypot(e.clientX - gesture.startClient.x, e.clientY - gesture.startClient.y) < 5) return;
         gesture.moved = true; V.ui.hideQuick && V.ui.hideQuick(); V.pop.close();
-        gesture.before.forEach(b => { if (b.skip) return; const el = V.byId(b.id, map); if (!el) return; if (b.attached) { el.props.dx = b.dx + dx; el.props.dy = b.dy + dy; } else { el.x = b.x + dx; el.y = b.y + dy; } R.updateEl(el.id, map); });
+        gesture.before.forEach(b => { if (b.skip) return; const el = V.byId(b.id, map); if (!el) return; if (b.attached) { el.props.dx = b.dx + dx; el.props.dy = b.dy + dy; } else { el.x = b.x + dx; el.y = b.y + dy; } R.updateEl(el.id, map, false, null, { soloPosizione: true }); });
         R.selection(I.selection, map);
+        // i gradini della timeline seguono il passo mentre lo si sposta, invece di restare indietro
+        // fino al rilascio: e' il numero che si sta guardando proprio mentre si sistema il foglio
+        R.overlaySoon(map);
         break;
       }
       case 'chan': { if (!gesture.moved && Math.hypot(e.clientX - gesture.startClient.x, e.clientY - gesture.startClient.y) < 4) return; gesture.moved = true; const c = V.byId(gesture.id, map); c.props.t = R.nearestT(c, map, w); R.updateEl(c.id, map); R.selection(I.selection, map); break; }
       case 'reconnect': { gesture.moved = true; const c = V.byId(gesture.id, map); const other = gesture.end === 'from' ? c.to : c.from; const o = V.endPoint(other, map); const over = hitAt(e); const okOver = over && !V.isConnector(V.byId(over.id, map)) && over.id !== (other.el || null) ? over.id : null; gesture.over = okOver; R.ghost(`<path class="ghost" d="M${o.x} ${o.y} L${w.x} ${w.y}"/>${okOver ? (() => { const el = V.byId(okOver, map); const p = R.elPos(el, map); return `<rect class="sel-ring" x="${p.x - 4}" y="${p.y - 4}" width="${el.w + 8}" height="${el.h + 8}"/>`; })() : ''}`); break; }
       case 'resize': { const el = V.byId(gesture.id, map); const min = el.type === 'text' ? 40 : 30; el.w = Math.max(min, gesture.w0 + (w.x - gesture.start.x)); el.h = Math.max(20, gesture.h0 + (w.y - gesture.start.y)); R.updateEl(el.id, map); R.selection(I.selection, map); break; }
       case 'lasso': { const x = Math.min(w.x, gesture.start.x), y = Math.min(w.y, gesture.start.y), ww = Math.abs(w.x - gesture.start.x), hh = Math.abs(w.y - gesture.start.y); gesture.rect = { x, y, w: ww, h: hh }; R.ghost(`<rect class="lasso" x="${x}" y="${y}" width="${ww}" height="${hh}"/>`); break; }
-      case 'connect': { gesture.moved = true; const from = R.seenEl(V.byId(gesture.from, map), map); const a = V.anchor(from, w); const over = hitAt(e); const okDirect = over && over.id !== gesture.from && !V.isConnector(V.byId(over.id, map)) && I.CONN_TARGETS[gesture.ctype].includes((V.byId(over.id, map) || {}).type); gesture.over = (okDirect ? over.id : null) || (nearEl(w, map, 28, [gesture.from], I.CONN_TARGETS[gesture.ctype]) || {}).id || null; R.ghost(`<path class="ghost" d="M${a.x} ${a.y} L${w.x} ${w.y}"/>${gesture.over ? (() => { const oe = V.byId(gesture.over, map); const op = R.elPos(oe, map); return `<rect class="sel-ring ok" x="${op.x - 4}" y="${op.y - 4}" width="${oe.w + 8}" height="${oe.h + 8}"/>`; })() : ''}`); break; }
+      case 'connect': { gesture.moved = true; const from = R.seenEl(V.byId(gesture.from, map), map);
+        // il filo parte da dove partira' la freccia vera: per la via di richiesta e' il fianco del
+        // richiedente (R.reqStart), non il bordo del riquadro verso il dito. Prima al rilascio la
+        // linea saltava di una ventina di pixel e sembrava un aggancio fallito.
+        const a = (gesture.ctype === 'request' && R.reqStart) ? R.reqStart(from) : V.anchor(from, w);
+        const over = hitAt(e); const okDirect = over && over.id !== gesture.from && !V.isConnector(V.byId(over.id, map)) && I.CONN_TARGETS[gesture.ctype].includes((V.byId(over.id, map) || {}).type); gesture.over = (okDirect ? over.id : null) || (nearEl(w, map, 28, [gesture.from], I.CONN_TARGETS[gesture.ctype]) || {}).id || null; R.ghost(`<path class="ghost" d="M${a.x} ${a.y} L${w.x} ${w.y}"/>${gesture.over ? (() => { const oe = V.byId(gesture.over, map); const op = R.elPos(oe, map); return `<rect class="sel-ring ok" x="${op.x - 4}" y="${op.y - 4}" width="${oe.w + 8}" height="${oe.h + 8}"/>`; })() : ''}`); break; }
       case 'create': { if (['box', 'lane', 'storm', 'fluffy', 'burst', 'text'].includes(gesture.ctype) && Math.hypot(e.clientX - gesture.startClient.x, e.clientY - gesture.startClient.y) > 8) { gesture.rect = { x: Math.min(w.x, gesture.start.x), y: Math.min(w.y, gesture.start.y), w: Math.abs(w.x - gesture.start.x), h: Math.abs(w.y - gesture.start.y) }; R.ghost(`<rect class="ghost" x="${gesture.rect.x}" y="${gesture.rect.y}" width="${gesture.rect.w}" height="${gesture.rect.h}"/>`); } break; }
     }
   }
@@ -332,6 +375,7 @@
           // rilasciato nel vuoto: invece di far sparire tutto, si propone di mettere li' l'elemento di arrivo
           if (g.moved && V.ui && V.ui.proposePlace) V.ui.proposePlace(e.clientX, e.clientY, g.ctype, g.from, w);
           else if (g.moved) I.hint('Rilascia sopra l\'elemento di arrivo.');
+          R.selection(I.selection, map); // il fantasma ha appena ripulito lo strato: gli anelli tornano
           break;
         }
         I.connectTo(g.from, toId, g.ctype); break;
@@ -404,7 +448,18 @@
     V.commit(ops, done.length > 1 ? 'lega gruppo' : 'lega'); I.select(done);
     I.hint(done.length > 1 ? `${done.length} elementi legati a "${parName(par)}": spostando "${parName(par)}" si muovono con lui.` : `Legato \u26d3: spostando "${parName(par)}" si muove anche lui (da solo resta trascinabile). «Slega» nelle azioni rapide.`, 4500); return true;
   };
-  const isAncestor = (id, el, map, depth = 0) => { if (!el || depth > 6) return false; const p = el.props && (el.props.lockTo || (el.type === 'delta' && el.props.attachedTo)); if (!p) return false; if (p === id) return true; return isAncestor(id, V.byId(p, map), map, depth + 1); };
+  /** risale la catena dei legami: serve a non chiudere un anello (A legato a B e B legato ad A).
+   *  Si sale fino in cima segnando i passaggi: fermarsi al sesto anello lasciava passare una catena
+   *  piu' lunga, e l'anello che ne usciva mandava in tilt il disegno durante il trascinamento. */
+  const isAncestor = (id, el, map, seen) => {
+    seen = seen || new Set();
+    if (!el || seen.has(el.id)) return false;
+    seen.add(el.id);
+    const p = el.props && (el.props.lockTo || (el.type === 'delta' && el.props.attachedTo));
+    if (!p) return false;
+    if (p === id) return true;
+    return isAncestor(id, V.byId(p, map), map, seen);
+  };
   I.unlockOps = (el, map) => { const pos = R.elPos(el, map); const after = { lockTo: null, lockT: null, dx: 0, dy: 0 }; if (el.type === 'delta') after.attachedTo = null; return [{ t: 'update', id: el.id, after: { x: pos.x, y: pos.y } }, { t: 'props', id: el.id, after }]; };
   I.unlock = (id) => I.unlockMany([id]);
   I.unlockMany = (ids) => { const map = V.map(); const ops = []; const done = []; ids.forEach(id => { const el = V.byId(id, map); if (!el || !(el.props.lockTo || (el.type === 'delta' && el.props.attachedTo))) return; ops.push(...I.unlockOps(el, map)); done.push(id); }); if (!done.length) return; V.commit(ops, done.length > 1 ? 'slega gruppo' : 'slega'); I.select(done); I.hint(done.length > 1 ? `${done.length} elementi slegati: restano dove sono e non seguono più nessuno.` : 'Slegato: resta dov’è e non segue più il suo genitore.', 3500); };
@@ -415,7 +470,13 @@
   /** Crea il collegamento fra due elementi. Sta qui da solo perche' ci si arriva in tre modi:
    *  trascinando, toccando il bersaglio dopo "Collega", e scegliendo un elemento nuovo dal menu a comparsa. */
   /** ogni via che parte dallo stesso richiedente prende una corsia diversa (anche verso box diversi) */
-  const reqOffset = (map, fromId) => map.elements.filter(x => x.type === 'request' && x.from.el === fromId).length;
+  // il numero d'ordine di una via nuova viene DOPO l'ultimo assegnato, non dal conteggio: eliminandone
+  // una e rifacendola, il conteggio ridava un numero gia' in uso e l'ordine delle vie verso lo stesso
+  // passo dipendeva da com'erano finite nell'elenco
+  const reqOffset = (map, fromId) => {
+    const usati = map.elements.filter(x => x.type === 'request' && x.from.el === fromId).map(x => x.props.offset || 0);
+    return usati.length ? Math.max(...usati) + 1 : 0;
+  };
   I.reqOffset = reqOffset;
   I.connectTo = (fromId, toId, ctype) => {
     const map = V.map();
@@ -527,8 +588,12 @@
     map.elements.forEach(c => { if (V.isConnector(c) && !ids.has(c.id) && (ids.has(c.from.el) || ids.has(c.to.el))) { ops.push({ t: 'remove', el: clone(c) }); ids.add(c.id); } });
     // figli agganciati/bloccati a elementi rimossi → liberati mantenendo la posizione
     map.elements.forEach(d => { const par = d.props && (d.props.lockTo || (d.type === 'delta' && d.props.attachedTo)); if (par && ids.has(par) && !ids.has(d.id)) ops.push(...I.unlockOps(d, map)); });
-    V.pop.close(); I.selection = [];
-    V.commit(ops, 'elimina');
+    // la selezione si azzera solo se l'eliminazione e' passata davvero: a lucchetto chiuso il modello
+    // rifiuta, e svuotarla prima lasciava a schermo l'anello di un elemento che il codice non
+    // considerava piu' selezionato
+    V.pop.close();
+    if (!V.commit(ops, 'elimina')) return;
+    I.selection = [];
   };
   /** duplica uno o più elementi; se un figlio bloccato/agganciato e il suo genitore sono entrambi nel gruppo, il legame viene ricreato tra le copie */
   I.duplicateMany = (ids) => {
@@ -552,7 +617,13 @@
   I.init = (svgEl, stageEl) => {
     svg = svgEl; stage = stageEl;
     svg.addEventListener('pointerdown', down); svg.addEventListener('pointermove', move); svg.addEventListener('pointerup', up);
-    svg.addEventListener('pointercancel', (e) => { if (gesture && gesture.type === 'ink' && gesture.pathEl) { gesture.pathEl.remove(); gesture = null; ptrs.delete(e.pointerId); return; } if (gesture && ['drag', 'resize', 'chan'].includes(gesture.type)) { rollback(gesture); gesture = null; ptrs.delete(e.pointerId); R.ghost(''); return; } up(e); });
+    // pointercancel non e' un rilascio: qualunque sia il gesto, si annulla. Prima solo matita,
+    // trascinamento, ridimensionamento e icona del canale tornavano indietro; tutti gli altri
+    // (collegamento, ricollegamento, piega, creazione, gomma, lazo) passavano da up() e committavano.
+    svg.addEventListener('pointercancel', (e) => { ptrs.delete(e.pointerId); const g = gesture; gesture = null; abortGesture(g); });
+    // se il puntatore esce dalla cattura senza un rilascio (succede quando il sistema se lo riprende)
+    // vale la stessa regola: meglio un gesto perso che un gesto confermato a meta'
+    svg.addEventListener('lostpointercapture', (e) => { if (!gesture || !ptrs.has(e.pointerId)) return; if (gesture.type === 'pan' || gesture.type === 'pinch') return; ptrs.delete(e.pointerId); const g = gesture; gesture = null; abortGesture(g); });
     svg.addEventListener('wheel', (e) => { e.preventDefault(); const p = stagePt(e); if (e.ctrlKey || e.metaKey) I.zoomAt(e.deltaY < 0 ? 1.1 : 0.9, e.clientX, e.clientY); else { I.view.x += e.deltaX / I.view.k; I.view.y += e.deltaY / I.view.k; applyView(); saveView(); } }, { passive: false });
     svg.addEventListener('contextmenu', (e) => e.preventDefault());
     new ResizeObserver(() => applyView()).observe(stage);
@@ -560,8 +631,8 @@
       const tag = (e.target.tagName || '').toLowerCase();
       if (['input', 'textarea', 'select'].includes(tag) || e.target.isContentEditable) { if (e.key === 'Escape') { e.target.blur(); if (e.target.closest('#pop')) V.pop.close(); } return; }
       const mod = e.metaKey || e.ctrlKey;
-      if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) V.redo(); else V.undo(); return; }
-      if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); V.redo(); return; }
+      if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); flushNudge(); if (e.shiftKey) V.redo(); else V.undo(); return; }
+      if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); flushNudge(); V.redo(); return; }
       if (e.key === 'Delete' || e.key === 'Backspace') { if (I.selection.length) { e.preventDefault(); I.deleteSelection(); } return; }
       if (e.key === 'Escape') { if (I.pickConn) { I.cancelPickConnect(); return; } if (V.ui && V.ui.closePlaceMenu && V.ui.closePlaceMenu()) return; if (I.pickLock) { I.cancelPickLock(); return; } if (V.pop.current) { V.pop.close(); return; } if (I.tool !== 'select') { I.setTool('select'); return; } I.select([]); return; }
       if (mod && e.key.toLowerCase() === 'a') { e.preventDefault(); I.select(V.map().elements.filter(x => !V.isConnector(x) && x.type !== 'lane').map(x => x.id)); return; }
@@ -573,14 +644,14 @@
         if (!movable.length) return;
         const attached = (x) => x.props.lockTo || (x.type === 'delta' && x.props.attachedTo);
         const ids = movable.map(x => x.id).join(',');
-        if (!nudgeSession || nudgeSession.ids !== ids) { clearTimeout(nudgeTimer); nudgeSession = { ids, before: new Map(movable.map(x => [x.id, attached(x) ? { dx: x.props.dx || 0, dy: x.props.dy || 0 } : { x: x.x, y: x.y }])) }; }
+        // una raffica di frecce diventa UNA voce da annullare, chiusa dopo la pausa. La sessione porta
+        // con se' la mappa su cui e' cominciata: cambiando foglio entro la pausa, la voce finiva sul
+        // foglio sbagliato. E se il lucchetto rifiuta, non si apre nessuna sessione (prima ogni tasto
+        // premuto mostrava un avviso mentre la geometria non si muoveva).
+        if (!nudgeSession || nudgeSession.ids !== ids || nudgeSession.map !== map) { flushNudge(); nudgeSession = { ids, map, attached, before: new Map(movable.map(x => [x.id, attached(x) ? { dx: x.props.dx || 0, dy: x.props.dy || 0 } : { x: x.x, y: x.y }])) }; }
         const ops = movable.map(x => attached(x) ? { t: 'props', id: x.id, after: { dx: (x.props.dx || 0) + dx, dy: (x.props.dy || 0) + dy } } : { t: 'update', id: x.id, after: { x: x.x + dx, y: x.y + dy } });
-        V.commit(ops, 'sposta (tastiera)', { silent: true });
-        clearTimeout(nudgeTimer); nudgeTimer = setTimeout(() => {
-          const session = nudgeSession; nudgeSession = null; if (!session) return;
-          const ops2 = session.ids.split(',').map(id => { const el = V.byId(id, map); if (!el) return null; const b = session.before.get(id); return attached(el) ? { t: 'props', id, after: { dx: el.props.dx, dy: el.props.dy }, before: { dx: b.dx, dy: b.dy } } : { t: 'update', id, after: { x: el.x, y: el.y }, before: { x: b.x, y: b.y } }; }).filter(Boolean);
-          if (ops2.length) V.commit(ops2, 'sposta (tastiera)');
-        }, 600);
+        if (!V.commit(ops, 'sposta (tastiera)', { silent: true, map })) { nudgeSession = null; return; }
+        clearTimeout(nudgeTimer); nudgeTimer = setTimeout(flushNudge, 600);
         return;
       }
       if (e.key === 'Enter' && I.selection.length === 1) { e.preventDefault(); V.pop.open(I.selection[0]); return; }

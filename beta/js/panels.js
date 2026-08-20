@@ -584,14 +584,22 @@
     if (V.isConnector(el)) { const Pc = R.connPath(el, map); ax = Pc.mid.x; ay = Math.min(Pc.a.y, Pc.b.y, Pc.mid.y) - 22; hpx = 44 * I.view.k; }
     else { const p = R.elPos(el, map); ax = p.x + el.w / 2; ay = p.y; hpx = ((R.elSize ? R.elSize(el).h : el.h) || 20) * I.view.k; }
     const s = I.toScreen(ax, ay);
-    const MAXARC = Math.PI * 5 / 3; // oltre i 300° i bottoni tornerebbero a pestarsi sull'ancora
+    // L'arco resta sopra la testa dell'elemento: quando le azioni sono tante si allarga il RAGGIO,
+    // non l'apertura. Con 300° i bottoni scendevano ai fianchi e - su un passo alto 78 - due di essi
+    // finivano in mezzo al disegno, col dito che copriva proprio quello su cui si stava lavorando.
+    const MAXARC = Math.PI * 1.1; // poco oltre il mezzo giro: gli estremi restano all'altezza dell'ancora
+    const RMAX = 150;
     let step = 0.84, R0 = 74; // ~48° a raggio 74: bottoni da 54 px che non si toccano
-    if (n > 1 && (n - 1) * step > MAXARC) { step = MAXARC / (n - 1); R0 = Math.max(74, Math.ceil(29 / Math.sin(step / 2))); }
+    if (n > 1 && (n - 1) * step > MAXARC) {
+      step = MAXARC / (n - 1);
+      R0 = Math.min(RMAX, Math.max(74, Math.ceil(29 / Math.sin(step / 2))));
+    }
     const reach = R0 + 30;
     const wraps = (n - 1) * step > Math.PI; // l'arco scende anche sotto l'ancora
     let base = -Math.PI / 2, cx = s.x, cy = s.y - 10;
     if (!wraps && cy - reach < 8) { base = Math.PI / 2; cy = s.y + hpx + 14; } // niente spazio sopra: si apre sotto
     if (st.width > 2 * reach + UI.leftInset()) cx = Math.max(UI.leftInset() + reach, Math.min(st.width - reach, cx));
+    else cx = Math.max(UI.leftInset() + 8, Math.min(st.width - 8, cx)); // schermo stretto: almeno non si taglia
     if (wraps) cy = Math.max(reach + 8, Math.min(st.height - reach - 8, cy));
     else cy = base < 0 ? Math.max(reach + 8, cy) : Math.min(st.height - reach - 8, cy);
     q.style.left = cx + 'px'; q.style.top = cy + 'px';

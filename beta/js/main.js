@@ -11,8 +11,15 @@
     // rendering incrementale quando possibile
     const map = V.map(); const ops = info.ops || [];
     const onlyProps = ops.length && ops.every(o => o.t === 'props' || o.t === 'update');
-    if (onlyProps && !info.undo && !info.redo) { ops.forEach(o => R.updateEl(o.id, map)); R.overlay(map, map.overlays !== false); R.selection(I.selection, map); UI.renderHeader(); if (V.pop.current && V.pop.current !== '__title__' && ops.some(o => o.id === V.pop.current)) { if (ops.every(o => o.t === 'update')) V.pop.place(V.byId(V.pop.current, map)); V.pop.refresh && V.pop.refresh(V.pop.current); } }
+    // spostare o ricollegare una via di richiesta cambia il punto d'arrivo anche delle sue sorelle
+    // (si dividono il bordo alto del passo): vanno ridisegnate tutte, o restano sovrapposte fino al
+    // prossimo disegno completo
+    const toccaVie = ops.some(o => { const el = o.id && V.byId(o.id, map); return el && el.type === 'request'; });
+    if (onlyProps && !info.undo && !info.redo) { ops.forEach(o => R.updateEl(o.id, map)); if (toccaVie) map.elements.filter(e => e.type === 'request').forEach(r => R.updateEl(r.id, map)); R.overlay(map, map.overlays !== false); R.selection(I.selection, map); UI.renderHeader(); if (V.pop.current && V.pop.current !== '__title__' && ops.some(o => o.id === V.pop.current)) { if (ops.every(o => o.t === 'update')) V.pop.place(V.byId(V.pop.current, map)); V.pop.refresh && V.pop.refresh(V.pop.current); } }
     else if (ops.length && ops.every(o => o.t === 'stroke_add' || o.t === 'stroke_remove') && !info.undo && !info.redo) { R.strokes(map); UI.renderHeader(); }
+    // cambiare il tratto dei collegamenti tocca ogni freccia del foglio: il ramo leggero dei meta
+    // ridisegnava solo carta e riepilogo, e la modalità nuova si vedeva solo alla prossima modifica
+    else if (ops.length && ops.every(o => o.t === 'meta') && ops.some(o => o.after && o.after.links) && !info.undo && !info.redo) { R.paper(map); R.elements(map); R.overlay(map, map.overlays !== false); R.selection(I.selection, map); UI.renderHeader(); }
     else if (ops.length && ops.every(o => o.t === 'meta') && !info.undo && !info.redo) { R.paper(map); R.overlay(map, map.overlays !== false); UI.renderHeader(); /* la guida non si ridisegna sui meta: chi scrive nei suoi campi non deve perdere il cursore */ }
     else fullRender();
     if ((info.undo || info.redo) && V.pop.current && V.pop.current !== '__title__' && !V.byId(V.pop.current, map)) V.pop.close();
@@ -21,6 +28,18 @@
     clearTimeout(sugTimer); sugTimer = setTimeout(UI.evalSuggest, 1800);
   });
 
+  /** Elimina una mappa leggendo l'esito che il modello restituisce, invece di dare per scontato che sia
+   *  andata: a lucchetto chiuso non si elimina niente, e se se ne andrebbe l'ultimo Attuale di un Ideale
+   *  la conferma nomina entrambi i fogli (prima l'Ideale restava senza nessuno stato attuale a cui tornare). */
+  function deleteMapAsked(map) {
+    let r = V.deleteMap(map.id);
+    if (!r.ok && r.reason === 'pair') {
+      const t = r.idealTitle ? `«${r.idealTitle}»` : 'senza titolo';
+      if (!confirm(`Questo è l'ultimo giro dell'Attuale: da solo non si può eliminare, perché l'Ideale ${t} resterebbe senza uno stato attuale a cui tornare.\n\nEliminare Attuale e Ideale insieme? Non si può annullare.`)) return r;
+      r = V.deleteMap(map.id, { withPair: true }); r.withPair = r.ok;
+    }
+    return r;
+  }
   function download(name, content, type) { const blob = new Blob([content], { type }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000); }
   const slug = (s) => (s || 'vsm').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 40) || 'vsm';
 
@@ -51,11 +70,21 @@
         const v = V.doc.maps[b.dataset.del]; if (!v) return; const row = b.closest('.vrow');
         row.innerHTML = `<span class="vdel-q">Eliminare «${escT(v.verName || 'giro')}»?</span><button class="btn small danger" data-delyes="${v.id}">Elimina</button><button class="btn small" data-delno="1">Annulla</button>`;
         row.querySelector('[data-delno]').onclick = renderVers;
-        row.querySelector('[data-delyes]').onclick = () => { V.deleteMap(v.id); UI.toast(`Giro «${v.verName || ''}» eliminato.`); renderVers(); };
+        // il messaggio segue l'esito: se il modello ha rifiutato, dirlo, non annunciare un'eliminazione
+        // che non e' avvenuta
+        row.querySelector('[data-delyes]').onclick = () => { const r = deleteMapAsked(v); if (r.ok) UI.toast(r.withPair ? 'Attuale e Ideale eliminati.' : `Giro «${v.verName || ''}» eliminato.`); renderVers(); };
       });
       $('[data-vnew]', versList).onclick = () => { versList.classList.add('hidden'); const base = V.map().kind === 'current' ? V.map() : V.currentOf(V.map()); if (!base) return; const nv = V.createVersion(base); UI.openMap(nv.id); UI.toast('Nuovo giro dell’attuale creato come copia: aggiorna quello che è cambiato.'); };
     };
     document.addEventListener('pointerdown', (ev) => { if (versList.classList.contains('hidden')) return; if (ev.target.closest && (ev.target.closest('#vers-list') || ev.target.closest('#tab-current'))) return; versList.classList.add('hidden'); }, true);
+    // l'elenco dei giri si apre anche dal menu ⋯ (su telefono la testata non c'e')
+    UI.openVersions = () => {
+      const m = V.map();
+      const base = m.kind === 'current' ? m : V.currentOf(m);
+      if (!base) { UI.toast('Questa mappa non ha uno stato attuale collegato.'); return; }
+      if (base !== m) { UI.openMap(base.id); }
+      renderVers(); versList.classList.remove('hidden');
+    };
     $('#tab-current').onclick = () => {
       const m = V.map();
       if (m.kind === 'current') { renderVers(); versList.classList.toggle('hidden'); return; }
@@ -123,7 +152,7 @@
     });
     // il menu resta aperto (si chiude toccando fuori): cosi' si spuntano piu' opzioni di fila.
     // Fa eccezione cio' che apre un'altra superficie in alto a destra (guida, legenda, dialoghi) o chiude la mappa.
-    const CLOSE_ON = ['legend', 'guide', 'maps', 'help', 'settings', 'coach', 'delete', 'exit'];
+    const CLOSE_ON = ['legend', 'guide', 'maps', 'help', 'settings', 'coach', 'delete', 'exit', 'giri', 'lock', 'info'];
     $$('#menu [data-m]').forEach(b => b.onclick = () => { if (CLOSE_ON.includes(b.dataset.m)) menu.classList.add('hidden'); menuAction(b.dataset.m); });
     UI.loadExample = () => { UI.toggleGuide(false); menuAction('example'); };
     $('#file-open').addEventListener('change', (e) => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => { try { const n = V.importMaps(JSON.parse(r.result)); I.restoreView(); UI.toast(n + ' mappe importate.'); } catch (err) { UI.toast('File non valido: ' + err.message); } }; r.readAsText(f); e.target.value = ''; });
@@ -133,11 +162,40 @@
     switch (a) {
       case 'new': { UI.closeDrawer(); const m = V.addMap(V.newMap({ title: '', authors: map.authors, unit: map.unit })); UI.openMap(m.id); I.fit(); UI.toast('Nuovo foglio. Tocca il titolo in barra, in alto a sinistra, per intestarlo.'); break; }
       // solo su schermi piccoli, dove il selettore Attuale/Futuro in testata non c'è
+      // su schermi piccoli il selettore in testata non c'e': i giri e il lucchetto dell'Ideale
+      // (che e' un passaggio del metodo, non un dettaglio) si raggiungono da qui
+      case 'giri': { UI.openVersions ? UI.openVersions() : UI.toast('I giri si vedono dalla testata.'); break; }
+      case 'lock': {
+        const f = map.kind === 'future' ? map : V.idealOf(map);
+        if (!f) { UI.toast('Questa catena non ha ancora un Ideale: crealo con «Attuale ⇄ Ideale».'); break; }
+        if (f !== map) UI.openMap(f.id);
+        V.setValidated(f, !f.validated);
+        UI.toast(f.validated ? 'Ideale validato \u{1F512}: per modificarlo riapri il lucchetto.' : 'Lucchetto aperto \u{1F513}: l’Ideale si può modificare.');
+        break;
+      }
+      case 'info': {
+        const m2 = V.map(); const M = V.metrics(m2);
+        const at = V.lastSaved(); const salvato = at ? new Date(at).toLocaleString('it-CH') : '—';
+        // niente contenuti della mappa: solo come e' fatta e da dove viene la build
+        const info = [
+          'VSM Coach ' + V.versionLabel(),
+          'indirizzo: ' + location.origin + location.pathname,
+          'installata: ' + (window.matchMedia('(display-mode: standalone)').matches ? 'sì (schermata Home)' : 'no (scheda del browser)'),
+          'browser: ' + navigator.userAgent,
+          'mappa attiva: ' + V.kindLabel(m2) + (m2.validated ? ' 🔒' : '') + ' · ' + M.boxes + ' box, ' + M.deltas + ' delta, ' + M.requests + ' vie, ' + m2.strokes.length + ' tratti',
+          'mappe in libreria: ' + Object.keys(V.doc.maps).length,
+          'ultimo salvataggio: ' + salvato
+        ].join('\n');
+        const copia = () => { try { navigator.clipboard.writeText(info); UI.toast('Dati per la diagnosi copiati.'); } catch (e) { alert(info); } };
+        copia();
+        break;
+      }
       case 'af': { if (map.kind === 'future') { const chain = V.versionsOf(map); if (chain.length) UI.openMap(chain[chain.length - 1].id); } else { const f = V.idealOf(map); if (f && f !== map) UI.openMap(f.id); else if (map.kind === 'current') { const nf = V.createFuture(map); UI.openMap(nf.id); UI.toast('Ideale creato come copia: disegna dove volete arrivare.'); } else UI.toast('I sotto-fogli non hanno un Ideale.'); } break; }
       case 'detail': { const d = V.createDetail(map, ''); UI.openMap(d.id); I.fit(); UI.toast('Mappa di dettaglio: collegala da un box (pop-up → Collega a un\'altra mappa).'); break; }
       case 'example': { const m = V.addMap(V.example()); UI.openMap(m.id); I.fit(); UI.toast('Esempio caricato (numeri dalla Fig. 5.1 del libro).'); break; }
       case 'open': $('#file-open').click(); break;
-      case 'save': download(`vsm-coach-${slug(map.title)}-${today()}.json`, JSON.stringify(V.doc, null, 1), 'application/json'); UI.toast('JSON scaricato (tutte le mappe).'); break;
+      // il file porta con sé la versione che l'ha scritto: aprendo un JSON di mesi fa si sa con che build è nato
+      case 'save': download(`vsm-coach-${slug(map.title)}-${today()}.json`, JSON.stringify(Object.assign({ appVersion: V.VERSION }, V.doc), null, 1), 'application/json'); UI.toast('JSON scaricato (tutte le mappe).'); break;
       case 'svg': download(`${slug(map.title)}-${map.kind}.svg`, R.exportSVG(map), 'image/svg+xml'); break;
       case 'print': window.print(); break;
       case 'legend': UI.toggleGuide(true, 'simboli'); break;
@@ -147,7 +205,7 @@
       case 'coach': UI.showTab('coach'); break;
       case 'settings': C.openSettings(); break;
       case 'clear-ink': if (map.strokes.length && confirm('Cancellare tutti i tratti a matita di questa mappa?')) V.commit({ t: 'strokes_set', after: [] }, 'cancella inchiostro'); break;
-      case 'delete': if (confirm(`Eliminare la mappa "${map.title || 'senza titolo'}"? Non si può annullare.`)) { V.deleteMap(map.id); I.restoreView(); UI.toast('Mappa eliminata.'); } break;
+      case 'delete': if (confirm(`Eliminare la mappa "${map.title || 'senza titolo'}"? Non si può annullare.`)) { const r = deleteMapAsked(map); if (r.ok) { I.restoreView(); V.saveNow(); UI.toast(r.withPair ? 'Attuale e Ideale eliminati.' : 'Mappa eliminata.'); } } break;
       case 'exit': { // nell'app Android chiude davvero; nel browser/PWA la scheda non si puo' chiudere da codice
         const cap = window.Capacitor;
         if (cap && cap.Plugins && cap.Plugins.App && cap.Plugins.App.exitApp) { cap.Plugins.App.exitApp(); break; }
@@ -164,19 +222,29 @@
     I.penDraws = localStorage.getItem('vsm.penDraws') !== '0';
     UI.guideOn = localStorage.getItem('vsm.guideOn') !== '0';
     try { R.traceOn = localStorage.getItem('vsm.trace') !== '0'; } catch (e) { /* storage bloccato */ }
+    { const vl = $('#ver-label'); if (vl) vl.textContent = 'VSM Coach ' + V.VERSION + (location.pathname.includes('/beta/') ? ' beta' : '') + ' · ' + V.BUILD; }
     UI.buildPalette(); bindHeader(); UI.bindLevels(); UI.renderLevels(); C.init(); UI.menuCheck('#btn-pen-mode', I.penDraws); UI.menuCheck('#btn-overlays', V.map().overlays !== false); UI.menuCheck('#btn-trace', R.traceOn);
     { let chrome = '1', tools = '0'; try { chrome = localStorage.getItem('vsm.chrome') ?? '1'; tools = localStorage.getItem('vsm.toolsLeft') ?? '0'; } catch (e) { /* storage bloccato */ }
       UI.setToolsLeft(tools === '1'); if (chrome === '0') UI.setChrome(false, { hint: false }); }
     try { if (localStorage.getItem('vsm.paletteHidden') === '1') UI.setPaletteHidden(true, { quiet: true }); } catch (e) { /* storage bloccato */ }
     fullRender(); I.restoreView();
     if (!V.map().elements.length && Object.keys(V.doc.maps).length === 1) I.hint('Foglio nuovo: tocca il titolo in alto a destra, poi metti il richiedente e i process box. La Guida pratica (menu ⋯) ti accompagna se vuoi.', 6000);
+    // Il foglio si scrive con un attimo di ritardo (V.save): ogni volta che l'app puo' sparire da sotto
+    // i piedi — scheda chiusa, app mandata in sottofondo, iPadOS che libera memoria — si riversa subito
+    // quello che e' in sospeso. Senza, l'ultima raffica di modifiche si perdeva senza un segnale.
+    const flush = () => { V.saveNow(); };
+    window.addEventListener('pagehide', flush);
+    window.addEventListener('beforeunload', flush);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
       navigator.serviceWorker.register('sw.js').catch(() => {});
       // quando un service worker NUOVO prende il controllo (aggiornamento installato in sottofondo),
       // la pagina si ricarica da sola: senza questo la versione nuova si vedeva solo al secondo avvio,
       // e sull'iPad "chiudi davvero e riapri" non e' un gesto ovvio. Al primo install non si ricarica.
+      // Il ricaricamento aspetta che il salvataggio sia finito: era il modo piu' facile per perdere
+      // l'ultima modifica proprio mentre si andava a verificare la versione nuova.
       let hadSW = !!navigator.serviceWorker.controller;
-      navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadSW) location.reload(); hadSW = true; });
+      navigator.serviceWorker.addEventListener('controllerchange', () => { if (!hadSW) { hadSW = true; return; } hadSW = true; V.saveNow().then(() => location.reload(), () => location.reload()); });
     }
     let printViewBackup = null;
     window.addEventListener('beforeprint', () => { printViewBackup = clone(I.view); I.fit({ paper: true }); });

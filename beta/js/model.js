@@ -98,6 +98,76 @@ window.VSM = window.VSM || {};
   V.CONNECTOR_TYPES = ['flow', 'request'];
   V.isConnector = (el) => V.CONNECTOR_TYPES.includes(el.type);
 
+  // ---------- igiene di cio' che arriva da fuori (JSON aperto, patch del coach) ----------
+  /** Un id non nasce solo da uid(): arriva anche dal JSON che si apre e dalle patch del coach, e finisce
+   *  dritto dentro attributi SVG (data-id="…") e dentro i selettori con cui il disegno si ritrova
+   *  (querySelector('[data-id="…"]')). Un id con virgolette o parentesi angolari romperebbe l'uno e
+   *  l'altro. Qui si tiene un solo alfabeto, quello di uid(): chi non lo rispetta viene rinominato e i
+   *  riferimenti interni (capi delle frecce, agganci, catene) seguono il nome nuovo. */
+  const ID_RE = /^[A-Za-z0-9_-]{1,32}$/;
+  V.idOk = (s) => typeof s === 'string' && ID_RE.test(s);
+  const okWidth = (w, fallback) => { const n = num(w); return (n != null && n > 0 && n <= 12) ? n : fallback; };
+  /** Le tinte del foglio sono dichiarate (canali + eccezioni ammesse) e la legenda deve poterle spiegare:
+   *  un colore inventato da un file non entra nel disegno. */
+  const okInk = (c) => V.INK_COLORS.some(x => x.id && x.id === c) || Object.values(V.CHANNEL_LOOK).some(l => l.color === c);
+  /** rimette in riga id, riferimenti e tinte di una mappa che arriva da fuori */
+  V.sanitizeMap = (m) => {
+    if (!m || typeof m !== 'object') return m;
+    if (!Array.isArray(m.elements)) m.elements = [];
+    if (!Array.isArray(m.strokes)) m.strokes = [];
+    m.elements = m.elements.filter(el => el && typeof el === 'object' && V.TYPES[el.type]);
+    const remap = new Map(), live = new Set();
+    m.elements.forEach(el => {
+      const old = el.id;
+      let id = (V.idOk(old) && !live.has(old)) ? old : uid();
+      while (live.has(id)) id = uid();
+      live.add(id); if (id !== old) { if (typeof old === 'string') remap.set(old, id); el.id = id; }
+    });
+    const ref = (v) => remap.has(v) ? remap.get(v) : v;
+    m.elements.forEach(el => {
+      const p = el.props = (el.props && typeof el.props === 'object') ? el.props : {};
+      if (V.isConnector(el)) {
+        ['from', 'to'].forEach(k => {
+          const end = (el[k] && typeof el[k] === 'object') ? el[k] : {};
+          if (end.el != null) { const t = ref(end.el); if (live.has(t)) end.el = t; else { delete end.el; end.x = +end.x || 0; end.y = +end.y || 0; } }
+          el[k] = end;
+        });
+      }
+      // un aggancio che punta nel vuoto lascia l'elemento dov'e' disegnato, invece di mandarlo all'origine
+      ['attachedTo', 'lockTo'].forEach(k => { if (p[k] != null) { const t = ref(p[k]); if (live.has(t) && t !== el.id) p[k] = t; else delete p[k]; } });
+      if (p.link != null && !V.idOk(p.link)) delete p.link;
+      if (p.override && typeof p.override === 'object') {
+        const o = {};
+        if (okInk(p.override.stroke)) o.stroke = p.override.stroke;
+        if (V.INK_DASHES.some(d => d.id && d.id === p.override.dash)) o.dash = p.override.dash;
+        const w = okWidth(p.override.width, null); if (w != null) o.width = w;
+        if (Object.keys(o).length) p.override = o; else delete p.override;
+      }
+    });
+    // anelli di legami: due elementi legati l'uno all'altro si disegnerebbero a vicenda senza fine.
+    // L'ultimo legame che chiude l'anello viene sciolto, l'elemento resta dov'e' disegnato.
+    const parentOf = (el) => el.props.lockTo || (el.type === 'delta' ? el.props.attachedTo : null);
+    m.elements.forEach(el => {
+      const visti = new Set([el.id]); let cur = el;
+      for (;;) {
+        const p = parentOf(cur); if (!p) break;
+        if (visti.has(p)) { delete cur.props.lockTo; if (cur.type === 'delta') delete cur.props.attachedTo; break; }
+        visti.add(p); const next = m.elements.find(x => x.id === p); if (!next) break; cur = next;
+      }
+    });
+    const sLive = new Set();
+    m.strokes = m.strokes.filter(s => s && typeof s === 'object' && Array.isArray(s.points)).map(s => {
+      let id = (V.idOk(s.id) && !sLive.has(s.id)) ? s.id : uid();
+      while (sLive.has(id)) id = uid();
+      sLive.add(id); s.id = id;
+      s.color = okInk(s.color) ? s.color : '#2b2b2b';
+      s.width = okWidth(s.width, 1.8);
+      s.points = s.points.filter(pt => Array.isArray(pt) && pt.length >= 2).map(pt => [+pt[0] || 0, +pt[1] || 0]);
+      return s;
+    });
+    return m;
+  };
+
   V.newElement = (type, x, y, props = {}) => {
     const T = V.TYPES[type];
     return { id: uid(), type, x, y, w: T.w, h: T.h, z: 0, props: Object.assign(clone(T.props), props) };
@@ -157,12 +227,14 @@ window.VSM = window.VSM || {};
       case 'plan_set': return { t: 'plan_set', after: op.before, before: op.after };
     }
   }
-  /** commit(ops, label): applica le operazioni al modello, registra l'inversa, salva, notifica. */
+  /** commit(ops, label): applica le operazioni al modello, registra l'inversa, salva, notifica.
+   *  Ritorna true se le operazioni sono passate, false se il lucchetto le ha rifiutate: chi chiama non
+   *  deve annunciare (ne' dare per scontato) una modifica prima di aver letto l'esito. */
   V.commit = (ops, label = '', opts = {}) => {
-    const map = opts.map || V.map(); if (!map) return;
+    const map = opts.map || V.map(); if (!map) return false;
     // Ideale validato = lucchetto chiuso: nessuna modifica passa. Un solo posto di guardia per tutte
     // le vie di modifica (gesti, pop-up, azioni rapide, coach). Il lucchetto stesso non passa da qui.
-    if (map.validated) { V.ui && V.ui.toast && V.ui.toast('Ideale validato \u{1F512}: apri il lucchetto in alto per modificarlo.'); return; }
+    if (map.validated) { V.ui && V.ui.toast && V.ui.toast('Ideale validato \u{1F512}: apri il lucchetto in alto per modificarlo.'); return false; }
     ops = Array.isArray(ops) ? ops : [ops];
     // fill "before" for update/props ops
     ops.forEach(op => {
@@ -176,6 +248,7 @@ window.VSM = window.VSM || {};
     if (!opts.silent) { undoStack.push({ mapId: map.id, ops: ops.map(op => invert(op)).reverse(), redo: ops, label }); if (undoStack.length > 200) undoStack.shift(); redoStack.length = 0; }
     V.save();
     emit({ ops, label, mapId: map.id });
+    return true;
   };
   // anche annulla/ripeti rispettano il lucchetto: la voce resta in cima, si riprova dopo lo sblocco
   const lockedEntry = (e) => { const m = V.doc.maps[e.mapId]; if (m && m.validated) { V.ui && V.ui.toast && V.ui.toast('Ideale validato \u{1F512}: apri il lucchetto per annullare o ripetere lì.'); return true; } return false; };
@@ -188,25 +261,39 @@ window.VSM = window.VSM || {};
   const fitClouds = (m) => { const R2 = V.render; if (!m || !Array.isArray(m.elements) || !R2 || !R2.cloudFit) return m; m.elements.forEach(el => { if ((el.type === 'storm' || el.type === 'fluffy') && !el.props.collapsed && el.props.text) el.h = Math.max(el.h, R2.cloudFit(el.w, el.props.text)); }); return m; };
   V.addMap = (map) => { V.doc.maps[map.id] = fitClouds(map); return map; };
   V.switchMap = (id) => { if (!V.doc.maps[id]) return; V.doc.activeMapId = id; V.save(); emit({ switched: true }); };
-  V.deleteMap = (id) => {
-    const m = V.doc.maps[id]; if (!m) return;
-    if (m.validated) { V.ui && V.ui.toast && V.ui.toast('Ideale validato \u{1F512}: apri il lucchetto prima di eliminarlo.'); return; }
+  /** Elimina una mappa e ritorna l'esito: { ok, reason }. Chi chiama non deve annunciare l'eliminazione
+   *  prima di averlo letto — a lucchetto chiuso, o quando andrebbe perso l'ultimo Attuale di un Ideale,
+   *  qui non si elimina niente. Con { withPair: true } si eliminano Attuale e Ideale insieme. */
+  V.deleteMap = (id, opts = {}) => {
+    const m = V.doc.maps[id]; if (!m) return { ok: false, reason: 'assente' };
+    if (m.validated) { V.ui && V.ui.toast && V.ui.toast('Ideale validato \u{1F512}: apri il lucchetto prima di eliminarlo.'); return { ok: false, reason: 'validata' }; }
+    const chain = V.versionsOf(m);
+    const rest = chain.filter(x => x.id !== id);
+    const ideal = m.kind === 'current' ? V.idealOf(m) : null;
+    // eliminare l'ultimo giro dell'Attuale lascerebbe l'Ideale senza nessun Attuale a cui tornare:
+    // o si eliminano insieme (con una conferma che li nomina entrambi) o non si elimina niente
+    if (ideal && !rest.length && !opts.withPair) return { ok: false, reason: 'pair', idealId: ideal.id, idealTitle: ideal.title || '' };
+    if (ideal && ideal.validated && opts.withPair) { V.ui && V.ui.toast && V.ui.toast('Ideale validato \u{1F512}: apri il lucchetto prima di eliminarlo.'); return { ok: false, reason: 'validata' }; }
     // un giro eliminato non deve rompere la catena (i giri successivi si riattaccano al precedente)
-    // ne' orfanare l'Ideale (il pairId passa a un altro giro della catena)
+    // ne' orfanare l'Ideale (il pairId passa a un altro giro della catena). L'erede si sceglie ORA,
+    // finche' la catena e' ancora intera: staccando prima i giri successivi, la catena non li
+    // conterrebbe piu' e l'Ideale resterebbe appeso al vuoto (succedeva eliminando il primo giro).
+    const heir = rest.length ? rest[rest.length - 1] : null;
     const heirs = Object.values(V.doc.maps).filter(o => o.verOf === id);
     heirs.forEach(o => { o.verOf = (m.verOf && V.doc.maps[m.verOf]) ? m.verOf : null; });
-    if (m.kind === 'current' && m.pairId && V.doc.maps[m.pairId] && V.doc.maps[m.pairId].kind === 'future') {
-      const f = V.doc.maps[m.pairId];
-      const h = V.versionsOf(m).filter(x => x.id !== id).pop();
-      if (h) { h.pairId = f.id; f.pairId = h.id; }
-    }
+    if (ideal && heir) { heir.pairId = ideal.id; ideal.pairId = heir.id; }
     delete V.doc.maps[id];
-    Object.values(V.doc.maps).forEach(o => { if (o.pairId === id) o.pairId = null; if (o.parentId === id) o.parentId = null; if (o.verOf === id) o.verOf = null; });
-    if (V.doc.activeMapId === id) {
-      const next = (m.verOf && V.doc.maps[m.verOf] && m.verOf) || (heirs[0] && heirs[0].id) || Object.keys(V.doc.maps)[0];
+    if (opts.withPair && ideal) delete V.doc.maps[ideal.id];
+    Object.values(V.doc.maps).forEach(o => { if (!V.doc.maps[o.pairId]) o.pairId = null; if (!V.doc.maps[o.parentId]) o.parentId = null; if (!V.doc.maps[o.verOf]) o.verOf = null; });
+    if (!V.doc.maps[V.doc.activeMapId]) {
+      // si atterra su un foglio su cui si puo' lavorare: mai su un Ideale col lucchetto chiuso
+      const cands = [m.verOf, heir && heir.id, heirs[0] && heirs[0].id].concat(Object.keys(V.doc.maps)).filter(x => x && V.doc.maps[x]);
+      const next = cands.find(x => !V.doc.maps[x].validated) || cands[0];
       V.doc.activeMapId = next || V.addMap(V.newMap({ title: '' })).id;
     }
+    V.repairDoc();
     V.save(); emit({ switched: true });
+    return { ok: true, activeMapId: V.doc.activeMapId };
   };
   V.currentOf = (map) => map.kind === 'current' ? map : (map.pairId ? V.doc.maps[map.pairId] : null);
   /** i giri dell'attuale: dalla mappa si risale alla radice (verOf) e si scende ai giri successivi, in ordine */
@@ -229,9 +316,12 @@ window.VSM = window.VSM || {};
   V.createVersion = (cur) => {
     const chain = V.versionsOf(cur); const n = chain.length + 1;
     const names = [null, null, 'secondo giro', 'terzo giro', 'quarto giro', 'quinto giro', 'sesto giro'];
-    const f = V.newMap(Object.assign(clone(cur), { id: uid(), kind: 'current', verOf: cur.id, verName: names[n] || (n + 'º giro'), validated: false, tint: Math.floor(Math.random() * 360), created: Date.now() }));
+    // pairId e updated NON si copiano: il legame con l'Ideale appartiene alla catena (lo rimette a posto
+    // repairDoc sull'ultimo giro), e una data ereditata dal padre faceva comparire il giro nuovo in fondo
+    // all'elenco delle mappe, con la data di quello vecchio
+    const f = V.newMap(Object.assign(clone(cur), { id: uid(), kind: 'current', verOf: cur.id, verName: names[n] || (n + 'º giro'), validated: false, pairId: null, tint: Math.floor(Math.random() * 360), created: Date.now(), updated: Date.now() }));
     f.elements = clone(cur.elements); f.strokes = clone(cur.strokes); f.plan = clone(cur.plan);
-    V.addMap(f); V.save(); return f;
+    V.addMap(f); V.repairDoc(); V.save(); return f;
   };
   V.createFuture = (cur) => {
     const have = V.idealOf(cur); if (have) return have;
@@ -246,22 +336,92 @@ window.VSM = window.VSM || {};
   V.createDetail = (parent, title) => { const d = V.newMap({ kind: 'detail', parentId: parent.id, title: title || ('Dettaglio di ' + (parent.title || 'mappa')), unit: parent.unit, authors: parent.authors }); V.addMap(d); V.save(); return d; };
 
   // ---------- storage: IndexedDB con fallback localStorage ----------
-  const DB = 'vsm-coach', STORE = 'kv';
+  V.VERSION = (typeof self !== 'undefined' && self.VSM_VERSION) || '0.9';
+  V.BUILD = (typeof self !== 'undefined' && self.VSM_BUILD_LABEL) || 'in sviluppo';
+  /** come si legge la versione: numero dell'app e quando è stata pubblicata questa copia */
+  V.versionLabel = () => V.VERSION + ' · ' + V.BUILD;
+  /** IndexedDB e localStorage appartengono all'ORIGINE, non alla cartella: l'app pubblicata in / e la
+   *  beta in /beta/ scrivevano sullo stesso identico documento, ognuna con il proprio codice. Ogni
+   *  installazione ha ora il suo spazio, ricavato dalla cartella da cui e' servita; la prima volta il
+   *  documento gia' esistente viene copiato, cosi' la beta parte da dove si era rimasti. */
+  const SCOPE = (typeof location !== 'undefined' ? location.pathname.replace(/[^/]*$/, '') : '/');
+  const SUFFIX = (SCOPE === '/' || !SCOPE) ? '' : SCOPE.replace(/^\/|\/$/g, '').replace(/\//g, '-');
+  const DB = 'vsm-coach' + (SUFFIX ? '-' + SUFFIX : ''), STORE = 'kv';
+  const LS_DOC = 'vsm.doc' + (SUFFIX ? '.' + SUFFIX : '');
   let idb = null;
   function openIdb() { return new Promise((res) => { if (!('indexedDB' in window)) return res(null); const r = indexedDB.open(DB, 1); r.onupgradeneeded = () => r.result.createObjectStore(STORE); r.onsuccess = () => res(r.result); r.onerror = () => res(null); }); }
   function idbGet(k) { return new Promise((res) => { if (!idb) return res(undefined); const tx = idb.transaction(STORE, 'readonly'); const rq = tx.objectStore(STORE).get(k); rq.onsuccess = () => res(rq.result); rq.onerror = () => res(undefined); }); }
-  function idbSet(k, v) { return new Promise((res) => { if (!idb) return res(false); const tx = idb.transaction(STORE, 'readwrite'); tx.objectStore(STORE).put(v, k); tx.oncomplete = () => res(true); tx.onerror = () => res(false); }); }
-  let saveTimer = null;
-  V.save = () => { clearTimeout(saveTimer); saveTimer = setTimeout(async () => { const s = JSON.stringify(V.doc); const ok = await idbSet('doc', s); try { if (!ok) localStorage.setItem('vsm.doc', s); else localStorage.removeItem('vsm.doc'); localStorage.setItem('vsm.doc.meta', JSON.stringify({ at: Date.now(), active: V.doc.activeMapId })); } catch (e) { /* quota */ } }, 400); };
+  // onabort oltre a onerror: una transazione interrotta (quota esaurita, scheda chiusa a meta') non
+  // emette onerror, e senza questo la promessa restava appesa per sempre — il salvataggio spariva in
+  // silenzio, senza nemmeno ripiegare su localStorage
+  function idbSet(k, v) { return new Promise((res) => { if (!idb) return res(false); try { const tx = idb.transaction(STORE, 'readwrite'); tx.objectStore(STORE).put(v, k); tx.oncomplete = () => res(true); tx.onerror = () => res(false); tx.onabort = () => res(false); } catch (e) { res(false); } }); }
+  /** Salvataggio differito. Due tempi, non uno: si aspetta un attimo che il gesto finisca (400 ms), ma
+   *  non oltre 1,2 s dalla prima modifica non ancora scritta — con il solo rinvio, chi scriveva o
+   *  trascinava senza pause non vedeva mai partire una scrittura, e un riavvio in quel momento
+   *  riportava il foglio all'ultima pausa. Le scritture sono in fila indiana: non si sorpassano. */
+  let saveTimer = null, dirtyAt = 0, chain = Promise.resolve();
+  const writeNow = () => {
+    const s = JSON.stringify(V.doc);
+    chain = chain.then(async () => {
+      const ok = await idbSet('doc', s); let ls = false;
+      try { if (!ok) { localStorage.setItem(LS_DOC, s); ls = true; } else localStorage.removeItem(LS_DOC); localStorage.setItem(LS_DOC + '.meta', JSON.stringify({ at: Date.now(), active: V.doc.activeMapId, v: V.VERSION })); } catch (e) { /* quota */ }
+      if (!ok && !ls) V.ui && V.ui.toast && V.ui.toast('Non riesco a salvare su questo dispositivo: esporta il JSON dal menu ⋯ prima di chiudere.');
+    });
+    return chain;
+  };
+  V.save = () => {
+    if (!dirtyAt) dirtyAt = Date.now();
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => { dirtyAt = 0; writeNow(); }, Math.max(0, Math.min(400, dirtyAt + 1200 - Date.now())));
+  };
+  /** scrive subito e restituisce la promessa: prima di un ricaricamento, quando l'app va in sottofondo,
+   *  e dopo ogni operazione che l'utente considera conclusa (eliminazioni, cambio foglio) */
+  V.saveNow = () => { clearTimeout(saveTimer); dirtyAt = 0; return writeNow(); };
+  V.saveIdle = () => chain;
+  /** quando il documento e' stato scritto l'ultima volta (per la schermata di diagnosi) */
+  V.lastSaved = () => { try { return JSON.parse(localStorage.getItem(LS_DOC + '.meta') || '{}').at || null; } catch (e) { return null; } };
+  /** copia una tantum del documento dallo spazio dell'app principale (serve alla beta la prima volta:
+   *  senza, aprirla avrebbe mostrato una libreria vuota). L'originale non viene toccato. */
+  async function travasoDaOrigine() {
+    try {
+      const vecchio = await new Promise((res) => {
+        if (!('indexedDB' in window)) return res(null);
+        const r = indexedDB.open('vsm-coach', 1);
+        r.onupgradeneeded = () => { try { r.transaction.abort(); } catch (e) { } res(null); }; // non esisteva: niente da copiare
+        r.onsuccess = () => res(r.result); r.onerror = () => res(null);
+      });
+      if (!vecchio) { try { return localStorage.getItem('vsm.doc'); } catch (e) { return null; } }
+      const s = await new Promise((res) => { try { const tx = vecchio.transaction(STORE, 'readonly'); const rq = tx.objectStore(STORE).get('doc'); rq.onsuccess = () => res(rq.result); rq.onerror = () => res(null); } catch (e) { res(null); } });
+      try { vecchio.close(); } catch (e) { }
+      return s || null;
+    } catch (e) { return null; }
+  }
   V.load = async () => {
     idb = await openIdb();
-    let s = await idbGet('doc'); if (!s) { try { s = localStorage.getItem('vsm.doc'); } catch (e) { } }
-    if (s) { try { const d = JSON.parse(s); if (d && d.version === 2 && d.maps) { V.doc = d; Object.values(V.doc.maps).forEach(m => { keepLook(m); Object.assign(m, Object.assign(V.newMap(), m)); }); } } catch (e) { console.warn('doc non leggibile', e); } }
+    let s = await idbGet('doc'); if (!s) { try { s = localStorage.getItem(LS_DOC); } catch (e) { } }
+    // prima apertura di un'installazione con spazio proprio (la beta): si riparte dal documento che
+    // c'era, invece di trovarsi davanti un foglio vuoto
+    if (!s && SUFFIX) { s = await travasoDaOrigine(); }
+    if (s) {
+      try {
+        const d = JSON.parse(s);
+        if (d && d.version === 2 && d.maps) {
+          V.doc = d;
+          const oldDoc = !d.cleaned; // le legende sul foglio si tolgono una volta sola, non a ogni avvio
+          Object.values(V.doc.maps).forEach(m => { if (oldDoc) stripLegend(m); keepLook(m); Object.assign(m, Object.assign(V.newMap(), m)); });
+          V.doc.cleaned = 2;
+        }
+      } catch (e) { console.warn('doc non leggibile', e); }
+    }
     if (!Object.keys(V.doc.maps).length) {
       const v1 = migrateV1(); if (v1) { v1.forEach(m => V.addMap(m)); V.doc.activeMapId = v1[0].id; }
       else { const m = V.addMap(V.newMap({ title: '' })); V.doc.activeMapId = m.id; }
     }
-    if (!V.doc.maps[V.doc.activeMapId]) V.doc.activeMapId = Object.keys(V.doc.maps)[0];
+    V.repairDoc();
+    // quello che l'apertura ha normalizzato (tinte assegnate, id rimessi in riga, legami ricuciti) va
+    // riscritto subito: altrimenti resta valido solo finche' la scheda e' aperta e alla riapertura
+    // successiva cambia di nuovo — era il caso dello sfondo che si ricolorava a ogni avvio
+    if (JSON.stringify(V.doc) !== s) V.saveNow();
     return V.doc;
   };
   /** una mappa salvata prima che il foglio diventasse grande resta della sua misura: spostarle gli elementi sarebbe peggio */
@@ -269,21 +429,84 @@ window.VSM = window.VSM || {};
       collegamenti riprende il foglio A3. Il tratto invece viene normalizzato a "dritta", come ogni mappa
       nuova: è la lettura scelta per l'app, e la modalità resta cambiabile per singola mappa dal menu ⋯.
       (Le mappe che hanno già una modalità salvata non vengono toccate.) */
-  const keepLook = (m) => { if (m && !m.paper) m.paper = clone(V.PAPER_A3); if (m && !m.links) m.links = { mode: 'dritta' }; if (m && Array.isArray(m.elements)) m.elements = m.elements.filter(e => e.type !== 'legend'); return fitClouds(m); };
-  V.replaceDoc = (d) => { if (!d || d.version !== 2 || !d.maps) throw new Error('Formato non riconosciuto (serve un JSON di VSM Coach v2)'); V.doc = d; Object.values(V.doc.maps).forEach(m => { keepLook(m); Object.assign(m, Object.assign(V.newMap(), m)); }); if (!V.doc.maps[V.doc.activeMapId]) V.doc.activeMapId = Object.keys(V.doc.maps)[0]; undoStack.length = 0; redoStack.length = 0; V.save(); emit({ switched: true }); };
+  /** la legenda sul foglio non e' piu' in tavolozza: le mappe disegnate quando c'era vengono ripulite
+   *  una volta sola (con un segno sul documento), non a ogni apertura — altrimenti una legenda rimessa
+   *  in seguito sparirebbe in silenzio al riavvio successivo */
+  const stripLegend = (m) => { if (m && Array.isArray(m.elements)) m.elements = m.elements.filter(e => e.type !== 'legend'); };
+  const keepLook = (m) => { if (m && !m.paper) m.paper = clone(V.PAPER_A3); if (m && !m.links) m.links = { mode: 'dritta' }; V.sanitizeMap(m); return fitClouds(m); };
+  /** Gli invarianti della libreria, ricontrollati dopo ogni operazione che tocca la struttura delle mappe
+   *  (apertura, import, eliminazione di un giro). Riparare e' meglio che lasciare un documento che l'app
+   *  non sa piu' navigare: un Ideale che non ritrova il suo Attuale, un giro appeso a una mappa sparita,
+   *  due Ideali sulla stessa catena. Ritorna l'elenco di cio' che ha corretto, cosi' i test lo leggono. */
+  V.repairDoc = () => {
+    const maps = V.doc.maps, fixes = [];
+    // anche gli id delle mappe finiscono dentro attributi (l'elenco, le briciole, il badge verso un
+    // sotto-foglio): stessa regola degli elementi, e chi non la rispetta viene rinominato con i suoi
+    // riferimenti al seguito
+    const rename = new Map();
+    Object.keys(maps).forEach(k => { const m = maps[k]; if (!m || typeof m !== 'object') { delete maps[k]; return; } if (m.id !== k) m.id = k; if (!V.idOk(k)) rename.set(k, uid()); });
+    if (rename.size) {
+      rename.forEach((nuovo, vecchio) => { const m = maps[vecchio]; delete maps[vecchio]; m.id = nuovo; maps[nuovo] = m; });
+      const rf = (v) => (v && rename.has(v)) ? rename.get(v) : v;
+      Object.values(maps).forEach(m => { m.pairId = rf(m.pairId); m.parentId = rf(m.parentId); m.verOf = rf(m.verOf); (m.elements || []).forEach(el => { if (el.props && el.props.link) el.props.link = rf(el.props.link); }); });
+      V.doc.activeMapId = rf(V.doc.activeMapId);
+      fixes.push('id di mappa fuori alfabeto');
+    }
+    const all = Object.values(maps);
+    all.forEach(m => {
+      if (m.verOf && (m.verOf === m.id || !maps[m.verOf] || maps[m.verOf].kind !== 'current')) { m.verOf = null; fixes.push('verOf ' + m.id); }
+      if (m.parentId && (m.parentId === m.id || !maps[m.parentId])) { m.parentId = null; fixes.push('parentId ' + m.id); }
+      if (m.pairId && !maps[m.pairId]) { m.pairId = null; fixes.push('pairId assente ' + m.id); }
+    });
+    // catene: nessun anello, altrimenti versionsOf girerebbe a vuoto
+    all.forEach(m => { const seen = new Set([m.id]); let p = m.verOf; while (p && maps[p]) { if (seen.has(p)) { m.verOf = null; fixes.push('anello di giri ' + m.id); break; } seen.add(p); p = maps[p].verOf; } });
+    // un solo Ideale per catena, e il legame vale nei due sensi: dall'Attuale si apre l'Ideale e viceversa
+    const roots = all.filter(m => m.kind === 'current' && !m.verOf);
+    const claimed = new Set();
+    roots.forEach(r => {
+      const chain = V.versionsOf(r);
+      // se per un pasticcio la catena rivendica due Ideali, resta quello nato per primo: e' l'Ideale
+      // della catena, quello su cui si e' lavorato. L'altro viene staccato, non eliminato: resta in
+      // libreria e si apre da «Le tue mappe».
+      const futures = chain.map(c => c.pairId && maps[c.pairId]).filter(f => f && f.kind === 'future')
+        .sort((a, b) => (a.created || 0) - (b.created || 0));
+      const keep = futures[0] || null;
+      chain.forEach(c => { if (c.pairId && c.pairId !== (keep && keep.id)) { c.pairId = null; fixes.push('secondo Ideale ' + c.id); } });
+      if (keep) {
+        claimed.add(keep.id);
+        // il pair sta sull'ultimo giro: e' quello che si apre tornando dall'Ideale
+        const last = chain[chain.length - 1];
+        chain.forEach(c => { if (c !== last && c.pairId) c.pairId = null; });
+        if (last.pairId !== keep.id) { last.pairId = keep.id; fixes.push('pair ricucito ' + last.id); }
+        if (keep.pairId !== last.id) { keep.pairId = last.id; fixes.push('pair inverso ' + keep.id); }
+      }
+    });
+    // un Ideale che nessuna catena rivendica non deve restare col lucchetto chiuso: sarebbe una mappa
+    // che non si puo' ne' modificare ne' collegare a niente
+    all.filter(m => m.kind === 'future' && !claimed.has(m.id)).forEach(f => {
+      if (f.pairId) { f.pairId = null; fixes.push('Ideale orfano ' + f.id); }
+      if (f.validated) { f.validated = false; fixes.push('lucchetto aperto su Ideale orfano ' + f.id); }
+    });
+    if (!maps[V.doc.activeMapId]) { V.doc.activeMapId = Object.keys(maps)[0] || null; fixes.push('mappa attiva'); }
+    return fixes;
+  };
+  V.replaceDoc = (d) => { if (!d || d.version !== 2 || !d.maps) throw new Error('Formato non riconosciuto (serve un JSON di VSM Coach v2)'); V.doc = d; Object.values(V.doc.maps).forEach(m => { keepLook(m); Object.assign(m, Object.assign(V.newMap(), m)); }); V.repairDoc(); if (!V.doc.maps[V.doc.activeMapId]) V.doc.activeMapId = Object.keys(V.doc.maps)[0]; undoStack.length = 0; redoStack.length = 0; V.save(); emit({ switched: true }); };
   V.importMaps = (d) => { // aggiunge le mappe di un altro documento senza sostituire (id già esistenti → rigenerati, per non perdere le modifiche fatte nel frattempo)
     if (d.version === 2 && d.maps) {
       const idRemap = new Map();
       Object.keys(d.maps).forEach(id => { if (V.doc.maps[id]) idRemap.set(id, uid()); });
+      // ogni riferimento fra mappe va rinominato insieme all'id, non solo la coppia attuale/ideale:
+      // la catena dei giri (verOf) e il badge verso un sotto-foglio (props.link) puntavano alle mappe
+      // gia' in libreria, e il file riaperto si cuciva addosso a quelle invece di restare una copia a se'.
+      const ext = (v) => (v && idRemap.has(v)) ? idRemap.get(v) : v;
       const imported = Object.values(d.maps).map(m => {
         const nm = Object.assign(V.newMap(), keepLook(m));
-        if (idRemap.has(nm.id)) nm.id = idRemap.get(nm.id);
-        if (nm.pairId && idRemap.has(nm.pairId)) nm.pairId = idRemap.get(nm.pairId);
-        if (nm.parentId && idRemap.has(nm.parentId)) nm.parentId = idRemap.get(nm.parentId);
+        nm.id = ext(nm.id); nm.pairId = ext(nm.pairId); nm.parentId = ext(nm.parentId); nm.verOf = ext(nm.verOf);
+        nm.elements.forEach(el => { if (el.props && el.props.link) el.props.link = ext(el.props.link); });
         return nm;
       });
       imported.forEach(m => { V.doc.maps[m.id] = m; });
-      V.doc.activeMapId = imported[0].id; V.save(); emit({ switched: true }); return imported.length;
+      V.doc.activeMapId = imported[0].id; V.repairDoc(); V.save(); emit({ switched: true }); return imported.length;
     }
     if (d.version === 1 || d.current) { const ms = V.fromV1(d); ms.forEach(m => V.addMap(m)); V.doc.activeMapId = ms[0].id; V.save(); emit({ switched: true }); return ms.length; }
     throw new Error('Formato non riconosciuto');
@@ -317,30 +540,66 @@ window.VSM = window.VSM || {};
   };
   // il capo di una freccia sta dove l'elemento si VEDE: per un elemento bloccato e' R.elPos, non x/y grezzi
   V.endPoint = (end, map) => { if (end.el) { const e = V.byId(end.el, map); if (e) { const R2 = V.render; const p = (R2 && R2.elPos) ? R2.elPos(e, map) : e; return { x: p.x + e.w / 2, y: p.y + e.h / 2 }; } } return { x: end.x || 0, y: end.y || 0 }; };
-  /** ordine del flusso: catena dei box seguendo le frecce di flusso; fallback per x (stima). */
+  /** Ordine del flusso: la catena dei box seguendo le frecce; senza frecce, l'ordine e' stimato per x.
+   *  Restituisce anche i *tratti* (segments): uno per ogni freccia percorsa, from → to. La timeline si
+   *  disegna su questi, non sulle coppie consecutive dell'elenco: dove il processo si biforca (A→B e
+   *  A→C) B e C finivano uno dopo l'altro nell'elenco e fra i due rami compariva un'attesa che nella
+   *  realta' non esiste. I box che nessuna freccia raggiunge restano fuori (loose): infilarli in coda
+   *  alla catena li faceva entrare nel tempo a valore e spegneva l'avviso che li segnala. */
   V.flowOrder = (map) => {
+    const byX = (a, b) => a.x - b.x;
     const boxes = map.elements.filter(e => e.type === 'box');
     const flows = map.elements.filter(e => e.type === 'flow' && e.from.el && e.to.el);
-    if (!flows.length) return { order: boxes.slice().sort((a, b) => a.x - b.x), estimated: boxes.length > 1, flows: [] };
-    const outMap = new Map(), inCount = new Map(); boxes.forEach(b => { outMap.set(b.id, []); inCount.set(b.id, 0); });
-    flows.forEach(f => { if (outMap.has(f.from.el) && inCount.has(f.to.el)) { outMap.get(f.from.el).push(f); inCount.set(f.to.el, inCount.get(f.to.el) + 1); } });
-    const starts = boxes.filter(b => inCount.get(b.id) === 0).sort((a, b) => a.x - b.x);
-    const order = [], seen = new Set(); const usedFlows = [];
-    const visit = (b) => { if (seen.has(b.id)) return; seen.add(b.id); order.push(b); const outs = outMap.get(b.id).slice().sort((p, q) => (V.byId(p.to.el, map)?.x || 0) - (V.byId(q.to.el, map)?.x || 0)); outs.forEach(f => { usedFlows.push(f); const t = V.byId(f.to.el, map); if (t) visit(t); }); };
-    (starts.length ? starts : boxes.slice().sort((a, b) => a.x - b.x)).forEach(visit);
-    boxes.forEach(b => visit(b));
-    return { order, estimated: order.length !== boxes.length, flows: usedFlows };
+    if (!flows.length) return { order: boxes.slice().sort(byX), loose: [], estimated: boxes.length > 1, flows: [], segments: [], lane: new Map(), lanes: 1 };
+    const outMap = new Map(), inCount = new Map(), touched = new Set(); boxes.forEach(b => { outMap.set(b.id, []); inCount.set(b.id, 0); });
+    flows.forEach(f => { if (outMap.has(f.from.el) && inCount.has(f.to.el)) { outMap.get(f.from.el).push(f); inCount.set(f.to.el, inCount.get(f.to.el) + 1); touched.add(f.from.el); touched.add(f.to.el); } });
+    // un passo che nessuna freccia tocca non e' l'inizio di un ramo: e' un passo lasciato da parte
+    const starts = boxes.filter(b => touched.has(b.id) && inCount.get(b.id) === 0).sort(byX);
+    const order = [], seen = new Set(), usedFlows = [], segments = [], lane = new Map();
+    // ogni percorso alternativo prende una corsia sua: sulla timeline i rami stanno uno sotto l'altro,
+    // invece di finire disegnati l'uno sopra l'altro alla stessa altezza
+    let corsie = 0;
+    const visit = (b, ln) => {
+      if (seen.has(b.id)) return; seen.add(b.id); order.push(b); lane.set(b.id, ln);
+      const outs = outMap.get(b.id).slice().sort((p, q) => (V.byId(p.to.el, map)?.x || 0) - (V.byId(q.to.el, map)?.x || 0));
+      outs.forEach((f, i) => {
+        const t = V.byId(f.to.el, map); if (!t) return;
+        const ramo = i === 0 ? ln : ++corsie;
+        usedFlows.push(f); segments.push({ from: b, to: t, conn: f, lane: ramo });
+        visit(t, ramo);
+      });
+    };
+    // se ogni passo toccato ha un ingresso (le frecce girano in tondo) si parte comunque da sinistra
+    (starts.length ? starts : boxes.filter(b => touched.has(b.id)).sort(byX)).forEach((b, i) => visit(b, i ? ++corsie : 0));
+    const loose = boxes.filter(b => !seen.has(b.id)).sort(byX);
+    return { order, loose, estimated: loose.length > 0, flows: usedFlows, segments, lane, lanes: corsie + 1 };
   };
   V.metrics = (map) => {
     const boxes = map.elements.filter(e => e.type === 'box');
     const deltas = map.elements.filter(e => e.type === 'delta');
-    const va = boxes.map(b => num(b.props.avg)).filter(v => v != null).reduce((a, b) => a + b, 0);
-    const nva = deltas.map(d => num(d.props.avg)).filter(v => v != null).reduce((a, b) => a + b, 0);
+    const fo = V.flowOrder(map);
+    // Il riepilogo conta quello che la timeline mostra: i passi della catena e le attese appese alle
+    // frecce percorse. Un passo parcheggiato a lato o un delta lasciato sulla carta non gonfiano piu'
+    // il totale in silenzio — si contano a parte, e il controllo li nomina. Senza nessuna freccia non
+    // c'e' catena: li' si conta tutto, come prima, ed e' l'ordine per x a essere dichiarato stimato.
+    const used = new Set(fo.flows.map(f => f.id));
+    const counted = fo.flows.length ? deltas.filter(d => d.props.attachedTo && used.has(d.props.attachedTo)) : deltas.slice();
+    const looseDeltas = deltas.filter(d => !counted.includes(d) && num(d.props.avg) != null);
+    const va = fo.order.map(b => num(b.props.avg)).filter(v => v != null).reduce((a, b) => a + b, 0);
+    const nva = counted.map(d => num(d.props.avg)).filter(v => v != null).reduce((a, b) => a + b, 0);
     const tot = va + nva; const hasData = boxes.some(b => num(b.props.avg) != null) || deltas.some(d => num(d.props.avg) != null);
-    const ccs = boxes.map(b => num(b.props.cc)).filter(v => v != null);
+    const ccs = fo.order.map(b => num(b.props.cc)).filter(v => v != null);
     const ftq = ccs.length ? ccs.reduce((a, b) => a * (b / 100), 1) * 100 : null;
     const requests = map.elements.filter(e => e.type === 'request');
-    return { va, nva, tot, vaPct: tot > 0 ? va / tot * 100 : null, nvaPct: tot > 0 ? nva / tot * 100 : null, hasData, ftq, boxes: boxes.length, deltas: deltas.length, requests: requests.length, storms: map.elements.filter(e => e.type === 'storm').length, flows: map.elements.filter(e => e.type === 'flow').length, persons: map.elements.filter(e => e.type === 'person').length, incompleteBoxes: boxes.filter(b => num(b.props.avg) == null).length, incompleteDeltas: deltas.filter(d => num(d.props.avg) == null).length };
+    return {
+      va, nva, tot, vaPct: tot > 0 ? va / tot * 100 : null, nvaPct: tot > 0 ? nva / tot * 100 : null, hasData,
+      // ftqPartial: il prodotto dei soli C&C compilati e' sempre ottimista (un passo senza dato vale 100%)
+      ftq, ftqPartial: ccs.length > 0 && ccs.length < fo.order.length,
+      boxes: boxes.length, deltas: deltas.length, requests: requests.length,
+      looseBoxes: fo.loose.length, looseDeltas: looseDeltas.length,
+      storms: map.elements.filter(e => e.type === 'storm').length, flows: map.elements.filter(e => e.type === 'flow').length, persons: map.elements.filter(e => e.type === 'person').length,
+      incompleteBoxes: boxes.filter(b => num(b.props.avg) == null).length, incompleteDeltas: deltas.filter(d => num(d.props.avg) == null).length
+    };
   };
 
   // ---------- controlli offline (dal libro) ----------
@@ -369,9 +628,13 @@ window.VSM = window.VSM || {};
       const s = num(map.samples); if (s == null) add('warn', 5, 'Dichiara quante misure hai raccolto (~30; 8-10 per una vista rapida).'); else if (s < 8) add('warn', 5, `${s} misure sono poche: 8-10 per una vista rapida, ~30 per significatività.`);
       map.elements.filter(e => e.type === 'box' || e.type === 'delta').forEach(x => { const hi = num(x.props.hi), lo = num(x.props.lo), av = num(x.props.avg); if (hi != null && lo != null && av != null && !(lo <= av && av <= hi)) add('bad', 5, `Dati incoerenti (${x.props.title || x.props.note || 'delta'}): deve valere Lo ≤ Avg ≤ Hi.`, x.id); });
       if (M.incompleteBoxes + M.incompleteDeltas) add('warn', 5, `${M.incompleteBoxes + M.incompleteDeltas} elementi senza media: il riepilogo VA/NVA è parziale.`);
+      if (M.looseDeltas) add('warn', 5, `${M.looseDeltas} ${M.looseDeltas === 1 ? 'delta non è agganciato' : 'delta non sono agganciati'} a una freccia della catena: ${M.looseDeltas === 1 ? 'resta fuori' : 'restano fuori'} dal riepilogo e dalla timeline. Trascina il triangolo sulla freccia fra i due passi.`);
+      if (M.ftqPartial) add('warn', 5, 'First Time Quality parziale: senza il C&C di ogni passo della catena il dato esce più ottimista del vero.');
     }
     if (M.hasData && !M.storms) add('warn', 6, 'Nessuna nuvola temporalesca: che cosa, del modo in cui il lavoro accade ora, non è ideale?');
-    const fo = V.flowOrder(map); if (fo.estimated && M.boxes >= 2 && M.flows) add('warn', 2, 'Alcuni box non sono nella catena delle frecce: la timeline li ordina per posizione (stima).');
+    // l'avviso ora scatta davvero: prima i box fuori catena venivano infilati in coda all'ordine, cosi'
+    // "estimated" restava sempre falso e questo controllo non si accendeva mai
+    if (M.looseBoxes && M.flows) add('warn', 2, `${M.looseBoxes} ${M.looseBoxes === 1 ? 'box non è collegato' : 'box non sono collegati'} alla catena delle frecce: ${M.looseBoxes === 1 ? 'resta fuori' : 'restano fuori'} dalla timeline e dal riepilogo.`);
     if (map.kind === 'future') {
       const cur = V.currentOf(map);
       if (cur) {
