@@ -59,7 +59,7 @@
     if (t !== 'whatis' && !UI.guideVisible() && UI.guideCardOpen && UI.guideCardOpen()) UI.closeGuideCard();
     const dn = $('#tool-done'); if (dn) dn.classList.toggle('hidden', t === 'select');
     if (MORE_TOOLS.some(x => x[0] === t)) $('#palette [data-tool="more"]').setAttribute('aria-pressed', 'true');
-    const hints = { ink: 'Matita attiva: tieni premuto e trascina sul foglio per tracciare (dito, mouse o penna). Tocca di nuovo la matita per colore e spessore; ✓ Fine per finire.', eraser: 'Gomma attiva: passa sui tratti da cancellare.', area: 'Area: disegna un riquadro intorno a un settore. Poi puoi eliminarlo, duplicarlo o trasformarlo in un sotto-foglio.', box: 'Passo: tocca il foglio dove vuoi il process box (o trascina per la dimensione).', delta: 'Attesa: tocca vicino a una freccia di flusso — il delta si aggancia ed entra nella timeline.', flow: 'Flusso: tieni premuto su un box e trascina fino al box successivo.', request: 'Richiesta: tieni premuto sull\'omino e trascina fino al primo passo; una freccia per ogni via reale.', person: 'Persona: tocca il foglio — il primo omino è il richiedente (in alto a destra).', storm: 'Problema: tocca dove sta il problema. Che cosa non è ideale?', fluffy: 'Nuvola soffice: tocca dove va l\'idea o la cosa che funziona.', burst: 'Kaizen: tocca dove va il candidato a progetto.', inventory: 'Scorta: tocca dove sta la scorta.', inbox: 'In-box/attesa: tocca dove aspetta l\'informazione o la persona.', distance: 'Distanza: tocca dove segnare i metri percorsi.', lane: 'Corsia: trascina per una fascia orizzontale (un reparto).', text: 'Testo: tocca per una nota.', icon: 'Icona: tocca dove metterla (su un passo o una freccia si blocca da sola), poi scegli il simbolo.', face: 'Faccia: tocca dove sta chi vive quel momento (paziente, operatore) e scegli l\'espressione.', whatis: 'Che cos’è? Tocca un elemento sul foglio: ti dico cosa è e a che serve. ✓ Fine per uscire.', pan: 'Mano: trascina per spostare il foglio; pinch (o Ctrl+rotella) per lo zoom.', select: '' };
+    const hints = { ink: 'Matita attiva: tieni premuto e trascina sul foglio per tracciare (dito, mouse o penna). Tocca di nuovo la matita per colore e spessore; ✓ Fine per finire.', eraser: 'Gomma attiva: passa sui tratti da cancellare.', area: 'Area: disegna un riquadro intorno a un settore. Poi puoi eliminarlo, duplicarlo o trasformarlo in un sotto-foglio.', box: 'Passo: tocca il foglio dove vuoi il process box (o trascina per la dimensione).', delta: 'Attesa: tocca vicino a una freccia di flusso — il delta si aggancia ed entra nella timeline.', flow: 'Flusso: tieni premuto su un box e trascina fino al box successivo.', request: 'Richiesta: tieni premuto sull\'omino e trascina fino al passo; una freccia per ogni via reale. Dal menu «Collega» dell\'omino scegli anche il verbo: chiede, oppure si reca.', person: 'Persona: tocca il foglio, poi scrivi chi è (paziente, segretaria, corriere). Il primo omino nasce come richiedente, in alto a destra: la spunta si toglie dai suoi dettagli.', storm: 'Problema: tocca dove sta il problema. Che cosa non è ideale?', fluffy: 'Nuvola soffice: tocca dove va l\'idea o la cosa che funziona.', burst: 'Kaizen: tocca dove va il candidato a progetto.', inventory: 'Scorta: tocca dove sta la scorta.', inbox: 'In-box/attesa: tocca dove aspetta l\'informazione o la persona.', distance: 'Distanza: tocca dove segnare i metri percorsi.', lane: 'Corsia: trascina per una fascia orizzontale (un reparto).', text: 'Testo: tocca per una nota.', icon: 'Icona: tocca dove metterla (su un passo o una freccia si blocca da sola), poi scegli il simbolo.', face: 'Faccia: tocca dove sta chi vive quel momento (paziente, operatore) e scegli l\'espressione.', whatis: 'Che cos’è? Tocca un elemento sul foglio: ti dico cosa è e a che serve. ✓ Fine per uscire.', pan: 'Mano: trascina per spostare il foglio; pinch (o Ctrl+rotella) per lo zoom.', select: '' };
     if (hints[t]) I.hint(hints[t], 0); else I.hint('');
     UI.hideSuggestIfTool(t);
   };
@@ -133,6 +133,8 @@
   const inp = (k, v, attrs = '') => `<input data-k="${k}" value="${esc(v)}" autocomplete="off" ${attrs}>`;
   const ta = (k, v, attrs = '') => `<textarea data-k="${k}" ${attrs}>${esc(v)}</textarea>`;
   const sel = (k, v, opts) => `<select data-k="${k}">${opts.map(o => `<option value="${esc(o)}" ${o === v ? 'selected' : ''}>${esc(o || '—')}</option>`).join('')}</select>`;
+  /** come sel, ma per elenchi in cui il valore salvato e il nome che si legge sono due cose diverse */
+  const selId = (k, v, opts) => `<select data-k="${k}">${opts.map(o => `<option value="${esc(o.id)}" ${o.id === v ? 'selected' : ''}>${esc(o.name)}</option>`).join('')}</select>`;
   const chk = (k, v, label) => `<label class="check"><input type="checkbox" data-k="${k}" ${v ? 'checked' : ''}> <span>${label}</span></label>`;
   const selOv = (k, v, opts) => `<select data-ov="${k}">${opts.map(o => `<option value="${esc(o.id)}" ${o.id === v ? 'selected' : ''}>${esc(o.name)}</option>`).join('')}</select>`;
   /** Eccezione dichiarata all'aspetto di un collegamento: di regola il tratto viene dal significato (canale o
@@ -222,7 +224,9 @@
       case 'box': main += field('Titolo del passo', inp('title', p.title, 'placeholder="es. Accettazione" autofocus')) + `<div class="hint" style="margin:-4px 0 6px">Tempi (${esc(map.unit)}) dalla prima all'ultima attività</div>` + dataRow(p) + field('Attività dentro il box (una per riga, in ordine)', ta('activities', (p.activities || []).join('\n'), 'data-lines placeholder="prima attività (apre la porta)\n…\nultima attività (chiude la porta)"'));
         adv += `<div class="row">${field('Correct & Complete %', inp('cc', p.cc, 'inputmode="decimal" placeholder="es. 90"'))}${field('Chi / reparto', inp('owner', p.owner))}</div>`; break;
       case 'delta': { const c = p.attachedTo ? V.byId(p.attachedTo, map) : null; if (!c) main += `<div class="hint" style="margin-bottom:6px">Non agganciato a una freccia: conta nel totale NVA ma non nella timeline. Trascinalo vicino a una freccia o usa "Aggancia".</div>`; main += `<div class="hint" style="margin:0 0 6px">Attesa (${esc(map.unit)}) per differenza: fine box precedente → inizio successivo</div>` + dataRow(p) + field('Dove / perché sta ferma', inp('note', p.note, 'placeholder="richiesta nel vassoio; attesa del trasportatore…"')); adv += field('Tipo di attesa (cambia il glifo)', sel('kind', p.kind, V.DELTA_KINDS)); break; }
-      case 'person': main += field('Nome / etichetta', inp('label', p.label)) + `<div class="field"><label>Espressione (come vive questo momento)</label>${facePicker(p.mood)}</div>` + chk('requestor', p.requestor, 'È il richiedente (origina la richiesta)'); adv += field('Ruolo', inp('role', p.role, 'placeholder="paziente, medico di reparto, segretaria…"')); break;
+      // «chi è» e «ruolo» stanno tutti e due in vista: l'omino nasce senza etichetta, e la prima cosa
+      // da fare è dire chi è. Prima «Ruolo» era sepolto sotto «Altre opzioni» e non lo trovava nessuno.
+      case 'person': main += field('Chi è (si legge sul foglio)', inp('label', p.label, 'placeholder="paziente, segretaria, corriere…" autofocus')) + field('Ruolo o reparto (facoltativo)', inp('role', p.role, 'placeholder="medico di reparto, familiare, ditta esterna…"')) + `<div class="field"><label>Espressione (come vive questo momento)</label>${facePicker(p.mood)}</div>` + chk('requestor', p.requestor, 'È chi origina la richiesta (l\'omino della fascia alta)'); break;
       case 'face': main += `<div class="field"><label>Espressione</label>${facePicker(p.mood)}</div>` + `<div class="row">${field('Di chi', sel('who', p.who, ['paziente', 'operatore', 'famigliare', 'medico', 'infermiere', 'segreteria', '']))}${field('Etichetta (opzionale)', inp('label', p.label, 'placeholder="es. dopo 40 min di attesa"'))}</div>`; break;
       case 'icon': main += `<div class="field"><label>Simbolo</label>${iconPicker(p.icon)}</div>`; adv += field('Etichetta', inp('label', p.label, 'placeholder="es. fax al laboratorio"')); break;
       case 'storm': main += field('Problema (di processo, non di persone)', ta('text', p.text, 'placeholder="che cosa non è ideale qui?" autofocus')) + `<div class="row">${field('Muda', sel('muda', p.muda, ['', ...V.MUDA]))}${field('Regola violata', sel('rule', p.rule, ['', ...V.RULES]))}</div>`; adv += chk('a3', p.a3, 'Candidato ad A3 (5 perché → contromisure → test → follow-up)'); break;
@@ -235,7 +239,9 @@
       case 'text': main += field('Testo', ta('text', p.text, 'autofocus')); adv += field('Dimensione', sel('size', String(p.size), ['10', '12', '14', '18', '24'])); break;
       case 'legend': main += `<div class="hint">Legenda compatta per la stampa: spostala in alto a sinistra. Tutti i simboli con significato e varianti sono nella Guida pratica (menu ⋯).</div>`; break;
       case 'flow': adv += field('Etichetta (opzionale)', inp('label', p.label)) + field('Stile', sel('style', p.style, ['solid', 'info', 'material']), 'solid = flusso; info = tratteggiata (informazione); material = spessa (materiale/paziente)') + chk('or', p.or, '"or" — alternativa a un altro passo'); main += `<div class="hint">Per staccare o spostare un capo: trascina il cerchio all'estremità della freccia.</div>`; break;
-      case 'request': main += field('Canale (una freccia per ogni via reale)', sel('channel', p.channel, V.CHANNELS)) + field('Verso chi', inp('to', p.to, 'placeholder="segreteria, laboratorio…"')); adv += `<div class="row">${field('Quante mani tocca', inp('hands', p.hands, 'inputmode="numeric"'))}</div>` + field('Nota (cosa si perde, quando)', inp('note', p.note)); break;
+      // l'intento sta PRIMA del canale: è la domanda che viene per prima ("che cosa fa questa persona?")
+      // e da come si risponde dipende il canale proposto
+      case 'request': main += field('Che cosa fa questa persona', selId('intent', V.intentOf(el), V.INTENTS), V.INTENTS.find(x => x.id === V.intentOf(el)).hint) + field('Canale (una freccia per ogni via reale)', sel('channel', p.channel, V.CHANNELS)) + field('Verso chi', inp('to', p.to, 'placeholder="segreteria, laboratorio…"')); adv += `<div class="row">${field('Quante mani tocca', inp('hands', p.hands, 'inputmode="numeric"'))}</div>` + field('Nota (cosa si perde, quando)', inp('note', p.note)); break;
     }
     if (V.isConnector(el)) adv += lookFields(el);
     // stato di blocco (sempre visibile, una riga)
@@ -258,7 +264,7 @@
     UI.hideQuick(); // il pop-up contiene le stesse azioni della barra rapida
     const pop = $('#pop'); pop.innerHTML = h; pop.classList.remove('hidden'); P.place(el);
     $('#pop-x').onclick = P.close; $('#pop-why').onclick = () => { const w = $('#pop-whytext'); w.classList.toggle('hidden'); $('#pop-why').setAttribute('aria-expanded', !w.classList.contains('hidden')); };
-    $$('[data-pa]', pop).forEach(b => b.onclick = () => { const a = b.dataset.pa; if (['dup', 'del', 'connect', 'reqtool', 'lockto', 'lockall'].includes(a)) P.close(); UI.quickAction(a, id); if (['invert', 'attach', 'unlock', 'legend'].includes(a) && V.byId(id)) P.open(id); });
+    $$('[data-pa]', pop).forEach(b => b.onclick = () => { const a = b.dataset.pa; if (['dup', 'del', 'connect', 'lockto', 'lockall'].includes(a)) P.close(); UI.quickAction(a, id); if (['invert', 'attach', 'unlock', 'legend'].includes(a) && V.byId(id)) P.open(id); });
     // Ideale validato: il pop-up serve a leggere, i campi e le azioni restano spenti (la modifica riapre dal lucchetto)
     if (map.validated) $$('input,textarea,select,button', pop).forEach(x => { if (x.id !== 'pop-x' && x.id !== 'pop-why') x.disabled = true; });
     const tp = $('#pop-toplan'); if (tp) tp.onclick = () => { const plan = clone(map.plan); plan.push({ id: uid(), what: p.text || 'kaizen', who: p.owner || '', when: '', outcome: '', a3: true }); V.commit({ t: 'plan_set', after: plan }, 'piano'); UI.toast('Aggiunto al piano.'); UI.renderPlan(); };
@@ -285,6 +291,14 @@
         const v = val();
         if (k === 'link' && v === '__new__') { const d = V.createDetail(map, (p.title || p.text || 'dettaglio')); V.commit({ t: 'props', id, after: { link: d.id } }, 'collega mappa'); UI.toast('Mappa di dettaglio creata: apri con ↗'); P.open(id); return; }
         const cur = V.byId(id); if (!cur) return;
+        // chi «si reca» ci va quasi sempre di persona: il canale si mette da sé, in una sola voce di
+        // undo, e resta cambiabile (c'è chi si reca in ambulanza). Il pop-up si ridisegna per mostrarlo.
+        if (k === 'intent') {
+          const after = { intent: v };
+          if (v === 'si reca' && cur.props.channel !== 'di persona') after.channel = 'di persona';
+          V.commit({ t: 'props', id, after }, 'intento della via');
+          P.open(id); return;
+        }
         if (!final) { V.commit({ t: 'props', id, after: { [k]: v } }, 'modifica', { silent: true }); return; } // anteprima: nessuna voce di undo
         // una sola voce di undo per campo (dal focus al cambio)
         V.commit({ t: 'props', id, after: { [k]: v }, before: { [k]: before === undefined ? cur.props[k] : before } }, 'modifica');
@@ -358,7 +372,7 @@
   // del delta in «Dati», C&C % in «Passo», VA %/FTQ in «Leggere il foglio».
   const PRIMI = [
     { id: 'prima', t: 'La prima mappa', body: 'Sul foglio vuoto tocca i segnaposto ① Chi chiede? e ② Primo passo: è il modo più rapido per iniziare. Altrimenti scegli lo strumento nella barra in basso e tocca il punto del foglio dove vuoi l’elemento. Le mappe si salvano da sole, non c’è un tasto salva. Errore tipico: progettare tutto prima di disegnare — parti dal richiedente e segui il processo.' },
-    { id: 'modifica', t: 'Modificare e collegare', body: 'Un tocco su un elemento apre le azioni rapide (+ Passo dopo, ← Richiesta…); un secondo tocco apre i dettagli. Per una freccia di flusso o di richiesta tieni premuto e trascina fino all’altro elemento. Un’estremità staccata è segnata in rosso tratteggiato: riagganciala, altrimenti resta fuori dalla timeline.' },
+    { id: 'modifica', t: 'Modificare e collegare', body: 'Un tocco su un elemento apre le azioni rapide (+ Passo dopo, Collega →…); un secondo tocco apre i dettagli. «Collega →» apre un secondo menu con che cosa collegare: un passo nuovo, una scorta, un in-box, o un elemento già sul foglio — e sull\'omino prima ancora il verbo («chiede a…» / «si reca a…»). Per una freccia di flusso o di richiesta tieni premuto e trascina fino all’altro elemento. Un’estremità staccata è segnata in rosso tratteggiato: riagganciala, altrimenti resta fuori dalla timeline.' },
     { id: 'matita', t: 'Matita, coach, annulla', body: 'Con la Matita scrivi e disegni a mano libera (l’Apple Pencil scrive da sé, le dita muovono gli elementi). ✦ legge il foglio e propone modifiche: è un secondo parere, non un correttore — valuta prima di accettare. ↶ annulla l’ultima azione, tutte le volte che serve.' },
     { id: 'foglio', t: 'Leggere il foglio', body: 'Sotto i passi la timeline: verde in basso il tempo a valore, rosso in alto le attese; il riepilogo in basso a destra fa i conti (VA, NVA, VA %, First Time Quality). La catena ⛓ dice che un elemento è legato a un altro: spostando quello, si muove anche lui («Lega a…» / «Slega» nelle azioni rapide). Il lucchetto 🔒 invece inchioda un elemento al foglio: non si sposta finché non lo sblocchi («Blocca» / «Sblocca»). Il badge ↗ apre la mappa collegata (dettaglio, turno, futuro). «Provvisoria» nell’intestazione in barra resta finché non cammini e validi il processo (vedi Cammina e valida).' }
   ];
@@ -538,14 +552,16 @@
   UI.hideSuggest = () => { $('#suggest').classList.add('hidden'); $$('#palette .tool.suggest, #more-tools .tool.suggest').forEach(b => b.classList.remove('suggest')); SUG.current = null; };
   UI.hideSuggestIfTool = (t) => { if (SUG.current && SUG.current.tool === t) UI.hideSuggest(); };
   // ---------- azioni rapide contestuali: menu di icone rotonde attorno all'elemento selezionato ----------
-  const Q = { el: null };
+  // Q.menu: quando «Collega» apre il suo arco, il menu delle azioni lascia il posto a quello dei
+  // bersagli (stesso stile, stessa posizione). null = si vedono le azioni normali dell'elemento.
+  const Q = { el: null, menu: null };
   // un'icona per azione (la lista delle azioni resta UI.actionList: la stessa fonte serve anche il pop-up)
   const QICN = {
     next: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h6M7 9l3 3-3 3"/><rect x="13" y="5" width="8" height="14" rx="1"/></svg>',
     delta: IC.delta, deltaOn: IC.delta,
     cloud: IC.storm,
     connect: IC.flow,
-    request: IC.request, reqtool: IC.request,
+    request: IC.request,
     attach: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 14.5l5-5"/><path d="M8.5 11.5l-2.2 2.2a3.2 3.2 0 104.5 4.5l2.2-2.2"/><path d="M15.5 12.5l2.2-2.2a3.2 3.2 0 10-4.5-4.5L11 8"/></svg>',
     invert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h12M13 5l3 3-3 3M20 16H8M11 13l-3 3 3 3"/></svg>',
     shrink: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l9 16H3z"/><path d="M12 11v4"/><circle cx="12" cy="17.6" r=".4" fill="currentColor"/></svg>',
@@ -563,8 +579,14 @@
     del: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M10 7V5h4v2"/><path d="M7 7l1 13h8l1-13"/><path d="M10.5 11v5M13.5 11v5"/></svg>'
   };
   QICN.lockall = QICN.lockto; QICN.unlockall = QICN.unlock; QICN.unlockkids = QICN.unlock; QICN.dupall = QICN.dup;
+  // voci del menu di «Collega» (secondo arco): i verbi dell'omino e i bersagli
+  QICN['cx-chiede'] = IC.request; QICN['cx-sireca'] = IC.person;
+  QICN['cx-box'] = IC.box; QICN['cx-inventory'] = IC.inventory; QICN['cx-inbox'] = IC.inbox;
+  QICN['cx-sheet'] = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="6" width="16" height="12" rx="1.5" stroke-dasharray="3 2"/><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/></svg>';
+  QICN['cx-back'] = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12H5M10 7l-5 5 5 5"/></svg>';
   // etichette corte sotto l'icona (poche parole: la spiegazione intera resta nel title)
-  const QLBL = { next: 'Passo', delta: 'Attesa', deltaOn: 'Attesa', cloud: 'Problema', connect: 'Collega', request: 'Richiesta', reqtool: 'Richiesta', attach: 'Aggancia', invert: 'Inverti', shrink: 'Segnale', expand: 'Espandi', dup: 'Duplica', dupall: 'Duplica', legend: 'Apri', legendfull: 'Simboli', straighten: 'Raddrizza', pin: 'Blocca', unpin: 'Sblocca', lockto: 'Lega', lockall: 'Lega', unlock: 'Slega', unlockall: 'Slega', unlockkids: 'Slega', selkids: 'Gruppo', sheetify: 'Dettaglio', del: 'Elimina' };
+  const QLBL = { next: 'Passo', delta: 'Attesa', deltaOn: 'Attesa', cloud: 'Problema', connect: 'Collega', request: 'Richiesta', attach: 'Aggancia', invert: 'Inverti', shrink: 'Segnale', expand: 'Espandi', dup: 'Duplica', dupall: 'Duplica', legend: 'Apri', legendfull: 'Simboli', straighten: 'Raddrizza', pin: 'Blocca', unpin: 'Sblocca', lockto: 'Lega', lockall: 'Lega', unlock: 'Slega', unlockall: 'Slega', unlockkids: 'Slega', selkids: 'Gruppo', sheetify: 'Dettaglio', del: 'Elimina',
+    'cx-chiede': 'Chiede', 'cx-sireca': 'Si reca', 'cx-box': 'Passo', 'cx-inventory': 'Scorta', 'cx-inbox': 'In-box', 'cx-sheet': 'Sul foglio', 'cx-back': 'Indietro' };
   const qBtn = (a, el) => {
     // due azioni cambiano verso con lo stato dell'elemento: l'icona e l'etichetta seguono
     let key = a.id;
@@ -572,7 +594,9 @@
     if (a.id === 'legend' && el && !el.props.collapsed) return `<button class="pm-btn" data-qa="legend" title="${esc(a.title || a.label)}">${IC.legend}<span>Chiudi</span></button>`;
     return `<button class="pm-btn${a.id === 'del' ? ' danger' : ''}" data-qa="${a.id}" title="${esc(a.title || a.label)}">${QICN[key] || ''}<span>${esc(QLBL[key] || a.label)}</span></button>`;
   };
-  UI.hideQuick = () => { const q = $('#quick'); if (q) q.classList.add('hidden'); };
+  UI.hideQuick = () => { const q = $('#quick'); if (q) { q.classList.add('hidden'); Q.menu = null; } };
+  /** Esc dentro il menu di «Collega» torna all'arco precedente invece di chiudere tutto */
+  UI.quickMenuBack = () => { if (!Q.menu || !Q.el || !V.byId(Q.el)) { Q.menu = null; return false; } UI.quickAction('cx-back', Q.el); return true; };
   UI.onView = () => { if (Q.el && !$('#quick').classList.contains('hidden')) UI.positionQuick(); if (V.pop.current && V.pop.current !== '__title__') { const el = V.byId(V.pop.current); if (el) V.pop.place(el); } };
   /** dispone i bottoni rotondi ad arco attorno all'ancora (sopra l'elemento): pochi = ventaglio in alto
    *  come il menu del vuoto; tanti = l'arco si allarga fin quasi al cerchio pieno, col raggio che cresce
@@ -605,8 +629,32 @@
     q.style.left = cx + 'px'; q.style.top = cy + 'px';
     btns.forEach((b, i) => { const a = base + (i - (n - 1) / 2) * step; b.style.left = Math.round(Math.cos(a) * R0) + 'px'; b.style.top = Math.round(Math.sin(a) * R0) + 'px'; });
   };
+  /** mette in scena un arco di bottoni: una sola strada per le azioni normali e per i menu di «Collega» */
+  const paintQuick = (html) => {
+    const q = $('#quick'); q.innerHTML = html; q.classList.remove('hidden'); UI.positionQuick();
+    $$('[data-qa]', q).forEach(b => b.onclick = (ev) => { ev.stopPropagation(); UI.quickAction(b.dataset.qa, Q.el); });
+  };
+  UI.showQuick = (el, acts) => { Q.el = el.id; paintQuick(acts.map(a => qBtn(a, el)).join('')); };
+  /** Il menu di «Collega». Non è mai vuoto: «Passo» c'è sempre, anche quando sul foglio non c'è nessun
+   *  altro bersaglio da toccare — era il caso del passo unico, in cui «Collega» accendeva la modalità di
+   *  puntamento e non restava niente da puntare. Per l'omino il primo arco sono i verbi: da lui parte
+   *  una via che «chiede» oppure una in cui la persona «si reca», e sono due segni diversi sul foglio. */
+  UI.connectMenu = (el, map, bersagli) => {
+    const A = []; const btn = (id, label, title) => A.push({ id, label, title: title || label });
+    if (el.type === 'person' && !bersagli) {
+      V.INTENTS.forEach(x => btn('cx-' + (x.id === 'si reca' ? 'sireca' : x.id), x.name, x.hint));
+      return A;
+    }
+    const ctype = el.type === 'person' ? 'request' : 'flow';
+    const kinds = I.CONN_TARGETS[ctype] || ['box'];
+    kinds.forEach(k => btn('cx-' + k, PLACE_LBL[k] || V.TYPES[k].name, V.TYPES[k].name + ' nuovo, che nasce già collegato'));
+    if (map.elements.some(x => !V.isConnector(x) && x.id !== el.id && kinds.includes(x.type)))
+      btn('cx-sheet', 'Sul foglio', 'Tocca l’elemento già disegnato a cui collegarlo');
+    btn('cx-back', 'Indietro', el.type === 'person' ? 'Torna alla scelta del verbo' : 'Torna alle azioni di questo elemento');
+    return A;
+  };
   UI.onSelection = (ids) => {
-    const q = $('#quick'); if (!q) return; if (!ids.length) { q.classList.add('hidden'); Q.el = null; return; }
+    const q = $('#quick'); if (!q) return; Q.menu = null; if (!ids.length) { q.classList.add('hidden'); Q.el = null; return; }
     // col pop-up dei dettagli aperto il menu resta chiuso: sono le stesse azioni, e sovrapposte sono un caos.
     // (alla chiusura del pop-up, P.close richiama questa funzione e il menu torna)
     if (V.pop && V.pop.current) { q.classList.add('hidden'); Q.el = ids[0]; return; }
@@ -633,8 +681,7 @@
       if (acts.length <= 1) { q.classList.add('hidden'); return; }
       html = acts.map(a => qBtn(a, el)).join('');
     }
-    q.innerHTML = html; q.classList.remove('hidden'); UI.positionQuick();
-    $$('[data-qa]', q).forEach(b => b.onclick = (ev) => { ev.stopPropagation(); UI.quickAction(b.dataset.qa, Q.el); });
+    paintQuick(html);
   };
   /** azioni contestuali di un elemento: la stessa lista serve la barra rapida e il pop-up */
   UI.actionList = (el, map) => {
@@ -644,7 +691,9 @@
     switch (el.type) {
       // niente "Dettagli" qui: i dettagli si aprono col secondo tocco sull'elemento (e chiudono questa barra)
       case 'box': btn('next', '+ Passo dopo', 'Crea il passo successivo già collegato, con l\'attesa'); if (outFlows.length) btn('delta', '+ Attesa', 'Aggiungi il delta sulla freccia in uscita'); btn('cloud', '+ Problema'); btn('connect', 'Collega →', 'Trascina da qui a un altro passo'); if (requestor && !map.elements.some(c => c.type === 'request' && c.to.el === el.id)) btn('request', '← Richiesta', 'Via di richiesta dal richiedente a questo passo'); break;
-      case 'person': if (el.props.requestor) btn('reqtool', '+ Via di richiesta', 'Trascina dall\'omino al primo passo'); break;
+      // ogni persona può collegare, non solo il richiedente: il paziente che si reca al passo 2 è una
+      // persona qualunque del foglio. Il verbo si sceglie nel menu che si apre.
+      case 'person': btn('connect', 'Collega →', 'Da qui parte una via: «chiede a…» oppure «si reca a…»'); break;
       case 'delta': if (!el.props.attachedTo) btn('attach', 'Aggancia alla freccia'); break;
       case 'flow': btn('deltaOn', '+ Attesa qui'); btn('invert', 'Inverti'); break;
       case 'storm': btn('shrink', el.props.collapsed ? '▽ Espandi' : '⚠ Riduci a segnale', el.props.collapsed ? 'Torna nuvola con il testo visibile' : 'Diventa un triangolo di allerta: il foglio resta pulito, il testo si legge toccandolo'); btn('dup', 'Duplica'); break;
@@ -668,9 +717,27 @@
       case 'next': { const nx = Math.min(el.x + el.w + 90, V.paperOf(map).w - V.TYPES.box.w - 20); const nb = V.newElement('box', nx, el.y, {}); const f = V.newConnector('flow', { el: el.id }, { el: nb.id }); const d = V.newElement('delta', 0, 0, {}); d.props.attachedTo = f.id; d.props.dx = 0; d.props.dy = 0; V.commit([{ t: 'add', el: nb }, { t: 'add', el: f }, { t: 'add', el: d }], 'passo successivo'); I.select([nb.id], { keepPop: true }); V.pop.open(nb.id); UI.toast('Passo aggiunto con freccia e attesa: tocca il delta per i tempi.'); break; }
       case 'delta': { const f = map.elements.find(c => c.type === 'flow' && c.from.el === el.id); if (!f) return; const d = V.newElement('delta', 0, 0, {}); d.props.attachedTo = f.id; d.props.dx = 0; d.props.dy = 0; V.commit({ t: 'add', el: d }, 'attesa'); I.select([d.id], { keepPop: true }); V.pop.open(d.id); break; }
       case 'cloud': { const s = V.newElement('storm', el.x + el.w - 60, el.y - 62, {}); V.commit({ t: 'add', el: s }, 'nuvola'); I.select([s.id], { keepPop: true }); V.pop.open(s.id); break; }
-      case 'connect': I.select([id], { keepPop: true }); I.startPickConnect(id, 'flow'); break;
+      // «Collega» non entra più subito in modalità puntamento: apre il suo arco, al posto del precedente
+      case 'connect': { Q.menu = { bersagli: el.type !== 'person', intent: null }; UI.showQuick(el, UI.connectMenu(el, map, Q.menu.bersagli)); break; }
+      case 'cx-chiede': case 'cx-sireca': { Q.menu = { bersagli: true, intent: a === 'cx-sireca' ? 'si reca' : 'chiede' }; UI.showQuick(el, UI.connectMenu(el, map, true)); break; }
+      case 'cx-back': {
+        // dai bersagli si torna ai verbi (omino) o alle azioni normali dell'elemento
+        if (el.type === 'person' && Q.menu && Q.menu.bersagli) { Q.menu = { bersagli: false, intent: null }; UI.showQuick(el, UI.connectMenu(el, map, false)); break; }
+        Q.menu = null; UI.onSelection(I.selection); break;
+      }
+      case 'cx-sheet': { const it = Q.menu && Q.menu.intent; Q.menu = null; I.select([id], { keepPop: true }); I.startPickConnect(id, el.type === 'person' ? 'request' : 'flow', { intent: it }); break; }
+      case 'cx-box': case 'cx-inventory': case 'cx-inbox': {
+        const kind = a.slice(3), it = Q.menu && Q.menu.intent; Q.menu = null;
+        // da un passo a un passo è esattamente «+ Passo dopo»: stesso pulsante, stesso risultato
+        // (passo, freccia e attesa in una voce sola), invece di una seconda strada che diverge
+        if (el.type !== 'person' && kind === 'box') { UI.quickAction('next', id); break; }
+        const T = V.TYPES[kind], pos = R.elPos(el, map);
+        // l'omino sta in alto a destra: quello che nasce da lui va verso la fascia dei passi, non oltre il bordo
+        const w = el.type === 'person' ? { x: pos.x - 200, y: pos.y + 200 } : { x: pos.x + el.w + 90 + T.w / 2, y: pos.y + T.h / 2 };
+        I.placeAndConnect(kind, w, id, el.type === 'person' ? 'request' : 'flow', { intent: it });
+        break;
+      }
       case 'request': { const r = map.elements.find(e => e.type === 'person' && e.props.requestor); if (!r) return; const c = V.newConnector('request', { el: r.id }, { el: el.id }); c.props.offset = I.reqOffset(map, r.id); V.commit({ t: 'add', el: c }, 'via di richiesta'); I.select([c.id], { keepPop: true }); V.pop.open(c.id); break; }
-      case 'reqtool': I.select([id], { keepPop: true }); I.startPickConnect(id, 'request'); break;
       case 'attach': { const pos = R.elPos(el, map); let best = null, bd = 120; map.elements.filter(c => c.type === 'flow').forEach(c => { const Pc = R.connPath(c, map); const d = Math.hypot(Pc.mid.x - (pos.x + el.w / 2), Pc.mid.y - pos.y); if (d < bd) { bd = d; best = c; } }); if (!best) { UI.toast('Nessuna freccia di flusso vicina: avvicina il delta a una freccia.'); return; } V.commit({ t: 'props', id, after: { attachedTo: best.id, dx: 0, dy: 0 } }, 'aggancia'); I.select([id]); break; }
       case 'deltaOn': { const d = V.newElement('delta', 0, 0, {}); d.props.attachedTo = id; d.props.dx = 0; d.props.dy = 0; V.commit({ t: 'add', el: d }, 'attesa'); I.select([d.id], { keepPop: true }); V.pop.open(d.id); break; }
       case 'invert': V.commit({ t: 'update', id, after: { from: clone(el.to), to: clone(el.from) }, before: { from: clone(el.from), to: clone(el.to) } }, 'inverti'); I.select([id]); break;

@@ -164,7 +164,7 @@
       // conta solo il colpo diretto: lo snap "al piu' vicino" trasformava il tocco sul vuoto
       // (che qui promette di ANNULLARE) in un collegamento a sorpresa
       const tgt = hit && !V.isConnector(V.byId(hit.id, map)) ? hit.id : null;
-      if (tgt && tgt !== pc.from) I.connectTo(pc.from, tgt, pc.ctype);
+      if (tgt && tgt !== pc.from) I.connectTo(pc.from, tgt, pc.ctype, { intent: pc.intent });
       gesture = { type: 'noop' }; return;
     }
     if (I.pickLock) { const kids = I.pickLock; if (hit && !kids.includes(hit.id)) { I.cancelPickLock(); if (!I.lockMany(kids, hit.id)) I.hint('Non si può legare a questo elemento.', 2500); } else if (!hit) I.cancelPickLock(); gesture = { type: 'noop' }; return; }
@@ -307,7 +307,9 @@
       case 'pan': if (!g.moved) { if (I.selection.length || (V.pop && V.pop.current)) { I.select([]); V.pop.close(); } } else saveView(); break;
       case 'link': V.ui.openMap(g.link); break;
       case 'legend': { const el = V.byId(g.id, map); if (!el) break; const collapsed = !el.props.collapsed; V.commit([{ t: 'props', id: el.id, after: { collapsed } }, { t: 'update', id: el.id, after: { w: collapsed ? 74 : 170, h: collapsed ? 18 : 104 } }], 'legenda'); break; }
-      case 'place': { const T = V.TYPES[g.kind]; const el = V.newElement(g.kind, g.kind === 'person' ? g.x + 55 : g.x, g.kind === 'person' ? g.y + 8 : g.y); V.commit({ t: 'add', el }, 'aggiungi ' + T.name); I.select([el.id], { keepPop: true }); V.pop.open(el.id); break; }
+      // stessa regola del rilascio dopo il trascinamento: il richiedente e' uno solo, e chi arriva dopo
+      // nasce senza la spunta (ma con l'etichetta vuota: chi e', lo scrive chi disegna)
+      case 'place': { const T = V.TYPES[g.kind]; const el = V.newElement(g.kind, g.kind === 'person' ? g.x + 55 : g.x, g.kind === 'person' ? g.y + 8 : g.y); if (g.kind === 'person' && map.elements.some(x => x.type === 'person' && x.props.requestor)) el.props.requestor = false; V.commit({ t: 'add', el }, 'aggiungi ' + T.name); I.select([el.id], { keepPop: true }); V.pop.open(el.id); break; }
       case 'chan': { const c = V.byId(g.id, map); if (!g.moved) { I.select([c.id], { keepPop: true }); V.pop.open(c.id); break; } V.commit({ t: 'props', id: c.id, after: { t: c.props.t }, before: { t: g.t0 } }, 'sposta icona'); break; }
       case 'reconnect': {
         R.ghost(''); const c = V.byId(g.id, map); if (!c) break;
@@ -400,7 +402,9 @@
           if (g.connHit) best = V.byId(g.connHit, map) || best;
           if (best) { el.props.attachedTo = best.id; el.props.dx = 0; el.props.dy = 0; }
         }
-        if (g.ctype === 'person' && map.elements.some(x => x.type === 'person' && x.props.requestor)) el.props.requestor = false, el.props.label = 'operatore';
+        // un richiedente c'e' gia': la persona nuova non lo e'. L'etichetta pero' resta vuota — chi
+        // disegna scrive chi e' (paziente, segretaria, corriere), l'app non gli mette in bocca «operatore»
+        if (g.ctype === 'person' && map.elements.some(x => x.type === 'person' && x.props.requestor)) el.props.requestor = false;
         // creato sopra un passo/persona o vicino a una freccia → nasce già bloccato (come quando lo si lascia cadere)
         if (g.ctype !== 'delta') { const lk = I.findLockTarget(el, map); if (lk) I.lockOps(el, lk, map).forEach(op => Object.assign(op.t === 'props' ? el.props : el, op.after)); }
         V.commit({ t: 'add', el }, 'aggiungi ' + T.name); I.setTool('select'); I.select([el.id], { keepPop: true }); V.pop.open(el.id); break;
@@ -478,7 +482,16 @@
     return usati.length ? Math.max(...usati) + 1 : 0;
   };
   I.reqOffset = reqOffset;
-  I.connectTo = (fromId, toId, ctype) => {
+  /** Scrive l'intento su una via appena nata, con il canale che ne consegue. Sta qui da solo perche' le
+   *  vie nascono in tre modi (menu, tocco sul bersaglio, trascinamento nel vuoto) e la regola dev'essere
+   *  una sola: «si reca» arriva di persona, salvo poi cambiarlo dal pop-up. */
+  I.applyIntent = (c, intent) => {
+    if (!intent || !V.INTENTS.some(x => x.id === intent)) return c;
+    c.props.intent = intent;
+    if (intent === 'si reca') c.props.channel = 'di persona';
+    return c;
+  };
+  I.connectTo = (fromId, toId, ctype, opts = {}) => {
     const map = V.map();
     if (!fromId || !toId || fromId === toId) return null;
     const a = V.byId(fromId, map), b = V.byId(toId, map);
@@ -487,21 +500,23 @@
     if (okFrom && !okFrom.includes(a.type)) { I.hint(ctype === 'request' ? 'La via di richiesta parte da una persona.' : 'La freccia di flusso parte da un passo.', 3000); return null; }
     if (okTo && !okTo.includes(b.type)) { I.hint('Qui non ci arriva un collegamento: scegli un passo (o una scorta/in-box).', 3000); return null; }
     const c = V.newConnector(ctype, { el: fromId }, { el: toId });
-    if (ctype === 'request') c.props.offset = reqOffset(map, fromId);
+    if (ctype === 'request') { c.props.offset = reqOffset(map, fromId); I.applyIntent(c, opts.intent); }
     V.commit({ t: 'add', el: c }, 'collega'); I.setTool('select'); I.select([c.id], { keepPop: true }); V.pop.open(c.id);
     return c;
   };
 
   /** "Collega" senza trascinare: si tocca il bersaglio. Non blocca nulla — si esce toccando il vuoto o con Esc. */
-  I.startPickConnect = (fromId, ctype) => {
-    I.pickConn = { from: fromId, ctype };
+  I.startPickConnect = (fromId, ctype, opts = {}) => {
+    I.pickConn = { from: fromId, ctype, intent: opts.intent };
     svg.classList.add('picking'); V.ui.hideQuick && V.ui.hideQuick(); V.pop && V.pop.close();
     const map = V.map();
     const okTypes = I.CONN_TARGETS[ctype]; // stessa lista usata dalla validazione: gli anelli non mentono
     const rings = map.elements.filter(el => !V.isConnector(el) && el.id !== fromId && okTypes.includes(el.type))
       .map(el => { const q = R.elPos(el, map), z = R.elSize(el); return `<rect class="sel-ring ok" x="${q.x - 5}" y="${q.y - 5}" width="${z.w + 10}" height="${z.h + 10}"/>`; }).join('');
     R.ghost(rings);
-    I.hint(ctype === 'flow' ? 'Tocca il passo di arrivo (tocca il foglio vuoto per annullare).' : 'Tocca il passo a cui arriva la richiesta (tocca il foglio vuoto per annullare).', 0);
+    I.hint(ctype === 'flow' ? 'Tocca il passo di arrivo (tocca il foglio vuoto per annullare).'
+      : opts.intent === 'si reca' ? 'Tocca il passo a cui si reca la persona (tocca il foglio vuoto per annullare).'
+      : 'Tocca il passo a cui arriva la richiesta (tocca il foglio vuoto per annullare).', 0);
   };
   I.cancelPickConnect = () => {
     I.pickConn = null; svg.classList.remove('picking'); R.ghost(''); I.hint('');
@@ -511,7 +526,7 @@
   };
 
   /** Trascinato nel vuoto: l'elemento nuovo nasce li' e il collegamento lo raggiunge, in un solo passo di undo. */
-  I.placeAndConnect = (kind, w, fromId, ctype) => {
+  I.placeAndConnect = (kind, w, fromId, ctype, opts = {}) => {
     const map = V.map(); const T = V.TYPES[kind]; const P = V.paperOf(map);
     // col menu aperto si puo' annullare (Ctrl+Z) la creazione dell'elemento di partenza: senza questo
     // controllo nascerebbe una freccia con un capo nel vuoto, e il percorso finirebbe a coordinate NaN
@@ -523,7 +538,7 @@
     const ny = Math.max(0, Math.min(P.h - T.h, Math.round(w.y - T.h / 2)));
     const el = V.newElement(kind, nx, ny);
     const c = V.newConnector(ctype, { el: fromId }, { el: el.id });
-    if (ctype === 'request') c.props.offset = reqOffset(map, fromId);
+    if (ctype === 'request') { c.props.offset = reqOffset(map, fromId); I.applyIntent(c, opts.intent); }
     V.commit([{ t: 'add', el }, { t: 'add', el: c }], 'aggiungi ' + T.name + ' collegato');
     I.setTool('select'); I.select([el.id], { keepPop: true }); V.pop.open(el.id);
   };
@@ -634,7 +649,7 @@
       if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); flushNudge(); if (e.shiftKey) V.redo(); else V.undo(); return; }
       if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); flushNudge(); V.redo(); return; }
       if (e.key === 'Delete' || e.key === 'Backspace') { if (I.selection.length) { e.preventDefault(); I.deleteSelection(); } return; }
-      if (e.key === 'Escape') { if (I.pickConn) { I.cancelPickConnect(); return; } if (V.ui && V.ui.closePlaceMenu && V.ui.closePlaceMenu()) return; if (I.pickLock) { I.cancelPickLock(); return; } if (V.pop.current) { V.pop.close(); return; } if (I.tool !== 'select') { I.setTool('select'); return; } I.select([]); return; }
+      if (e.key === 'Escape') { if (I.pickConn) { I.cancelPickConnect(); return; } if (V.ui && V.ui.closePlaceMenu && V.ui.closePlaceMenu()) return; if (V.ui && V.ui.quickMenuBack && V.ui.quickMenuBack()) return; if (I.pickLock) { I.cancelPickLock(); return; } if (V.pop.current) { V.pop.close(); return; } if (I.tool !== 'select') { I.setTool('select'); return; } I.select([]); return; }
       if (mod && e.key.toLowerCase() === 'a') { e.preventDefault(); I.select(V.map().elements.filter(x => !V.isConnector(x) && x.type !== 'lane').map(x => x.id)); return; }
       if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); if (I.selection.length) I.duplicateMany(I.selection); return; }
       if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key) && I.selection.length) {

@@ -33,6 +33,26 @@ window.VSM = window.VSM || {};
     altro: { color: '#57606a', dash: '', family: 'altro' }
   };
   V.channelLook = (ch) => V.CHANNEL_LOOK[ch] || V.CHANNEL_LOOK.altro;
+  /** Intento di una via: che cosa fa la persona da cui la via parte. Il metodo conosce la richiesta
+   *  (l'omino a destra che chiede), ma sul foglio finisce anche chi *si reca* di persona a un passo:
+   *  sono due cose diverse e devono vedersi come due cose diverse, sempre allo stesso modo.
+   *  Le due dimensioni restano indipendenti e dichiarate in legenda: il CANALE decide colore e tratto,
+   *  l'INTENTO decide la punta della freccia — che è forma, non tinta, e si legge anche stampata in
+   *  bianco e nero. Le vie disegnate prima che l'intento esistesse non hanno la proprietà: valgono
+   *  «chiede», che è l'unica cosa che l'app sapesse disegnare fino a ieri. */
+  V.INTENTS = [
+    { id: 'chiede', name: 'chiede a…', hint: 'la richiesta del metodo: la persona chiede e il processo risponde' },
+    { id: 'si reca', name: 'si reca a…', hint: 'la persona si presenta di persona a quel passo (paziente in accettazione, corriere allo sportello)' }
+  ];
+  // «chiede» tiene la punta piena di sempre: le mappe gia' disegnate non devono cambiare aspetto.
+  // «si reca» prende la punta a V e un pallino alla partenza (il piede di chi si muove): due segni,
+  // non uno, cosi' non si confonde con una richiesta nemmeno in fotocopia.
+  V.INTENT_LOOK = {
+    chiede: { head: 'piena', start: false },
+    'si reca': { head: 'aperta', start: true }
+  };
+  V.intentOf = (el) => { const i = el && el.props && el.props.intent; return V.INTENTS.some(x => x.id === i) ? i : 'chiede'; };
+  V.intentLook = (el) => V.INTENT_LOOK[V.intentOf(el)];
   /** tinte ammesse quando si forza a mano l'aspetto di un collegamento (eccezione dichiarata, non tavolozza libera:
    *  due mappe dello stesso reparto devono restare confrontabili e la legenda deve poter spiegare ogni segno) */
   V.INK_COLORS = [
@@ -54,8 +74,8 @@ window.VSM = window.VSM || {};
       why: 'Un rettangolo verticale per ogni passo maggiore dell\'erogazione, con il titolo in alto e, se serve, le attività in ordine. Chiediti: che attività "apre la porta" del box e quale "la chiude"? Nel CSM le attività necessarie ora contano come valore. Più di 4-5 box: la complessità è necessaria o servono due mappe?' },
     delta: { name: 'Delta (attesa)', w: 30, h: 26, props: { note: '', kind: 'attesa', hi: '', lo: '', avg: '' },
       why: 'Il triangolo rovesciato rosso segna il tempo in cui nulla avanza (richiesta nel vassoio, campione in coda, viaggio, paziente in sala d\'attesa): è spreco reso visibile. Il tempo si ottiene per differenza tra la fine del box precedente e l\'inizio del successivo, non si cronometra. Aggancialo a una freccia di flusso per entrare nella timeline.' },
-    person: { name: 'Persona', w: 40, h: 78, props: { label: 'richiedente', role: '', mood: 'neutro', requestor: true },
-      why: 'L\'omino rappresenta chi origina la richiesta (a destra, nella fascia alta) o un operatore. L\'espressione (felice/neutro/triste) racconta l\'esperienza. Le vie di richiesta partono da qui.' },
+    person: { name: 'Persona', w: 40, h: 78, props: { label: '', role: '', mood: 'neutro', requestor: true },
+      why: 'L\'omino è chi sta nel processo: il richiedente (a destra, nella fascia alta), un paziente che si reca a un passo, un operatore. Scrivi chi è e che ruolo ha — l\'app non decide per te. L\'espressione (felice/neutro/triste) racconta l\'esperienza. Da qui partono le vie: «chiede a…» oppure «si reca a…».' },
     storm: { name: 'Nuvola temporalesca', w: 120, h: 50, props: { text: '', muda: '', rule: '', a3: false, collapsed: false },
       why: 'Un problema del processo, mai una colpa: "che cosa, del modo in cui il lavoro accade ora, non è ideale?". Etichettalo con il muda (confusione, movimento, attesa, sovra-processo, scorte, difetti, sovrapproduzione) e la regola violata. Le nuvole diventano candidate ad A3 (5 perché → contromisure → test → follow-up).' },
     fluffy: { name: 'Nuvola soffice', w: 120, h: 50, props: { text: '' },
@@ -80,8 +100,8 @@ window.VSM = window.VSM || {};
       why: 'In alto a sinistra: le icone usate nella mappa, così chiunque la legge da solo.' },
     flow: { name: 'Freccia di flusso', props: { label: '', or: false, style: 'solid' },
       why: 'Collega due passi nell\'ordine in cui accadono, da sinistra a destra. Alternative: più frecce con "or". Tratteggiata = flusso di informazione. L\'ordine del flusso, e quindi la timeline, deriva da queste frecce.' },
-    request: { name: 'Via di richiesta', props: { channel: 'telefono', to: '', hands: '', note: '' },
-      why: 'Ogni via reale con cui la richiesta arriva (telefono, fax, e-mail, verbale, di persona, sistema…): disegnale tutte. Molte frecce nella fascia alta = richiesta non standardizzata: è la prima leva di miglioramento.' }
+    request: { name: 'Via di richiesta', props: { channel: 'telefono', intent: 'chiede', to: '', hands: '', note: '' },
+      why: 'Ogni via reale con cui una persona arriva al processo: disegnale tutte. L\'intento dice che cosa fa («chiede a…» oppure «si reca a…») e decide la punta della freccia; il canale (telefono, fax, e-mail, verbale, di persona, sistema…) decide colore e tratto. Molte frecce nella fascia alta = richiesta non standardizzata: è la prima leva di miglioramento.' }
   };
   // Modalità di disegno dei collegamenti (come le "link render mode" di ComfyUI): riguarda il tracciato,
   // non il significato. Sta nella mappa e non nelle preferenze del dispositivo perché il foglio è un disegno:
@@ -136,6 +156,8 @@ window.VSM = window.VSM || {};
       // un aggancio che punta nel vuoto lascia l'elemento dov'e' disegnato, invece di mandarlo all'origine
       ['attachedTo', 'lockTo'].forEach(k => { if (p[k] != null) { const t = ref(p[k]); if (live.has(t) && t !== el.id) p[k] = t; else delete p[k]; } });
       if (p.link != null && !V.idOk(p.link)) delete p.link;
+      // l'intento e' un segno dichiarato in legenda, non testo libero: fuori elenco si torna a «chiede»
+      if (p.intent != null && !V.INTENTS.some(x => x.id === p.intent)) delete p.intent;
       if (p.override && typeof p.override === 'object') {
         const o = {};
         if (okInk(p.override.stroke)) o.stroke = p.override.stroke;
@@ -614,7 +636,9 @@ window.VSM = window.VSM || {};
     if (!map.scope) add('warn', 0, 'Definisci lo scopo in una frase: "dalla richiesta X alla consegna Y".');
     if (map.kind === 'current' && !map.prep.drawer) add('warn', 0, 'Un solo responsabile del disegno: chi è?');
     const requestors = map.elements.filter(e => e.type === 'person' && e.props.requestor);
-    if (M.boxes && !requestors.length) add('warn', 1, 'Chi è il richiedente? Metti l\'omino a destra, nella fascia alta.');
+    // non un rimprovero: sul foglio possono esserci persone che non chiedono niente (chi si reca, chi
+    // lavora nel processo). Qui si segnala solo che nessuna è dichiarata come origine della richiesta.
+    if (M.boxes && !requestors.length) add('warn', 1, M.persons ? 'Nessuna persona è segnata come richiedente: chi origina la richiesta? La spunta è nei suoi dettagli.' : 'Chi origina la richiesta? Metti l\'omino a destra, nella fascia alta.');
     if (M.boxes && requestors.length && !M.requests) add('warn', 1, 'Nessuna via di richiesta disegnata: come arriva la richiesta (telefono, fax, e-mail, verbale…)? Disegnale tutte.');
     if (!M.boxes) add('bad', 2, 'Nessun process box: qual è il primo passo maggiore?');
     if (M.boxes > 5) add('warn', 2, `${M.boxes} process box: la complessità è necessaria? Forse servono due mappe (turno, unità, caso).`);

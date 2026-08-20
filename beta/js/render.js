@@ -8,7 +8,8 @@
   let svg, L = {};
 
   // ---------- aspetto dei collegamenti (deriva dal significato) ----------
-  const markerId = (col) => 'arr' + String(col).replace('#', '-');
+  // due famiglie di punte: piena (la richiesta, com'e' sempre stata) e aperta a V (chi si reca di persona)
+  const markerId = (col, head) => (head === 'aperta' ? 'arrv' : 'arr') + String(col).replace('#', '-');
   /** tutte le tinte che possono comparire su un collegamento: quelle dei canali e quelle ammesse come eccezione */
   R.inkColors = () => Array.from(new Set(Object.values(V.CHANNEL_LOOK).map(l => l.color).concat(V.INK_COLORS.map(c => c.id)).filter(Boolean)));
   /** Come si disegna un collegamento: la via di richiesta prende colore e tratto dal *canale*, la freccia di
@@ -16,14 +17,16 @@
       props.override è l'eccezione dichiarata a mano, per la riunione in cui serve dire "guarda questa". */
   R.connLook = (c) => {
     const p = c.props || {}, ov = p.override || {};
-    let stroke = '#2b2b2b', dash = '', width = '';
-    if (c.type === 'request') { const k = V.channelLook(p.channel); stroke = k.color; dash = k.dash; }
+    let stroke = '#2b2b2b', dash = '', width = '', head = 'piena', start = false;
+    // due dimensioni indipendenti, entrambe dichiarate in legenda: il canale decide colore e tratto,
+    // l'intento decide la punta. La punta e' forma, non tinta: si legge anche in bianco e nero.
+    if (c.type === 'request') { const k = V.channelLook(p.channel); stroke = k.color; dash = k.dash; const i = V.intentLook(c); head = i.head; start = i.start; }
     else if (p.style === 'info') dash = '6 5';
     else if (p.style === 'material') width = '2.6';
     if (ov.stroke) stroke = ov.stroke;
     if (ov.dash) dash = ov.dash === 'none' ? '' : ov.dash;
     if (ov.width) width = ov.width;
-    return { stroke, dash, width, custom: !!(ov.stroke || ov.dash || ov.width), marker: markerId(stroke) };
+    return { stroke, dash, width, head, start, custom: !!(ov.stroke || ov.dash || ov.width), marker: markerId(stroke, head) };
   };
   /** attributi SVG del tratto (usati dal foglio e dalla legenda, così il campione è davvero lo stesso segno) */
   R.connAttrs = (c) => { const k = R.connLook(c); return `stroke="${esc(k.stroke)}"${k.dash ? ` stroke-dasharray="${k.dash}"` : ''}${k.width ? ` stroke-width="${k.width}"` : ''} marker-end="url(#${k.marker})"`; };
@@ -34,7 +37,11 @@
     // una punta per ogni tinta in uso: la punta nera su una linea colorata si legge come un errore di stampa
     defs.innerHTML = `<marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#2b2b2b"/></marker>
       <marker id="arr-sel" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#1f4e79"/></marker>`
-      + R.inkColors().map(col => `<marker id="${markerId(col)}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="${col}"/></marker>`).join('');
+      + R.inkColors().map(col => `<marker id="${markerId(col)}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="${col}"/></marker>`).join('')
+      // la punta di «si reca»: DOPPIA punta a V (»), stessa tinta del canale ma disegnata a tratto.
+      // Una V sola, alla misura della legenda, si confondeva con la punta piena della richiesta: due
+      // chevron non si confondono con niente, nemmeno in fotocopia, e dicono «qualcuno ci va».
+      + R.inkColors().map(col => `<marker id="${markerId(col, 'aperta')}" viewBox="0 0 12 10" refX="11" refY="5" markerWidth="11" markerHeight="9" orient="auto-start-reverse"><path d="M1 1.5 L5 5 L1 8.5 M6 1.5 L10 5 L6 8.5" fill="none" stroke="${col}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></marker>`).join('');
     svg.appendChild(defs);
     ['paper', 'lanes', 'ink', 'conn', 'el', 'hand', 'overlay', 'ui'].forEach(k => { const g = document.createElementNS(NS, 'g'); g.id = 'L-' + k; svg.appendChild(g); L[k] = g; });
     L.ink.setAttribute('pointer-events', 'none');
@@ -122,7 +129,9 @@
       case 'person': {
         const cx = w / 2;
         s += `<g class="pencil">${R.face(p.mood, cx, 9, 9)}<path d="M${cx} 18 V44 M${cx - 14} 28 H${cx + 14} M${cx} 44 L${cx - 12} 66 M${cx} 44 L${cx + 12} 66"/></g>`;
-        s += `<text class="hand" x="${cx}" y="${h + 4}" text-anchor="middle" font-size="11" ${p.requestor ? 'font-weight="700"' : ''}>${tspans(fitLines(wrap(p.label || (p.requestor ? 'richiedente' : 'persona'), 16), 2), cx, h + 4, 12)}</text>`;
+        // senza etichetta si vede un segnaposto tenue: l'app chiede chi è, non lo decide al posto tuo
+        // (prima nasceva già scritto «richiedente», e quella parola restava lì anche quando era un paziente)
+        s += `<text class="hand" x="${cx}" y="${h + 4}" text-anchor="middle" font-size="11" ${p.label && p.requestor ? 'font-weight="700"' : ''} ${p.label ? '' : 'opacity=".45"'}>${tspans(fitLines(wrap(p.label || 'chi?', 16), 2), cx, h + 4, 12)}</text>`;
         if (p.role) s += `<text class="hand muted" x="${cx}" y="${h + 30}" text-anchor="middle" font-size="9">${esc(p.role)}</text>`;
         break;
       }
@@ -435,6 +444,10 @@
       if (p.label) s += `<text class="hand muted" x="${P.mid.x}" y="${P.mid.y + 14}" text-anchor="middle" font-size="9">${esc(p.label)}</text>`;
     } else {
       s += `<path class="pencil" d="${P.d}" ${R.connAttrs(c)}/>`;
+      // «si reca»: il pallino alla partenza (il piede di chi si muove) affianca la punta a V — due segni
+      // per un solo significato, così la via non si legge come una richiesta nemmeno di sfuggita
+      const kk = R.connLook(c);
+      if (kk.start) s += `<circle cx="${P.a.x}" cy="${P.a.y}" r="3.4" fill="${esc(kk.stroke)}"/>`;
       const sub = [p.channel, p.to ? '→ ' + p.to : ''].filter(Boolean).join(' ');
       s += `<text class="chan-txt hand" x="${P.mid.x}" y="${P.mid.y + 22}" text-anchor="middle">${esc(sub)}</text>`;
       if (p.note) s += `<text class="hand muted" x="${P.mid.x}" y="${P.mid.y + 35}" text-anchor="middle" font-size="8.5">${esc(p.note.slice(0, 60))}</text>`;

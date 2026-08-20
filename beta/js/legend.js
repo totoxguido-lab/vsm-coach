@@ -15,6 +15,14 @@
   };
   const ARROW = (d, w = 60, h = 24) => `<svg class="lg-g" viewBox="0 0 ${w} ${h}" aria-hidden="true">${d}</svg>`;
   const head = (x, y, ang = 0) => `<path d="M${x - 8} ${y - 4} L${x} ${y} L${x - 8} ${y + 4} z" fill="#2b2b2b" transform="rotate(${ang} ${x} ${y})"/>`;
+  /** la doppia punta di «si reca»: forma, non tinta — si distingue anche in fotocopia */
+  const headV = (x, y, ang = 0) => `<path d="M${x - 11} ${y - 4} L${x - 6} ${y} L${x - 11} ${y + 4} M${x - 5} ${y - 4} L${x} ${y} L${x - 5} ${y + 4}" fill="none" stroke="#2b2b2b" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" transform="rotate(${ang} ${x} ${y})"/>`;
+  /** campione di un intento: la punta (e il pallino di partenza) senza il colore, che appartiene al canale */
+  const intento = (id) => {
+    const k = V.INTENT_LOOK[id], nome = (V.INTENTS.find(x => x.id === id) || {}).name || id;
+    const d = `<path class="pencil" d="M6 12 H44"/>${k.head === 'aperta' ? headV(46, 12) : head(46, 12)}${k.start ? '<circle cx="6" cy="12" r="3.4" fill="#2b2b2b"/>' : ''}`;
+    return `<span>${ARROW(d, 54, 24)}${esc(nome.replace(' a…', ''))}</span>`;
+  };
   /** campione di una via di richiesta: colore = canale, tratto = famiglia, più l'icona */
   const chan = (ch) => {
     const k = V.channelLook(ch);
@@ -26,8 +34,8 @@
    *  nelle voci del metodo, qui solo cosa è, quando si usa, l'errore tipico. */
   UI.SYMBOLS = () => [
     { id: 'person', name: 'Persona', tool: 'person', glyph: glyph('person', { label: 'richiedente', requestor: true }, { pad: 4, extraB: 10 }),
-      body: 'Il richiedente (in alto a destra, etichetta in grassetto) o un operatore del processo. Usala per chi innesca la richiesta e per le persone che contano nel flusso. Errore tipico: disegnare tutto il personale — solo chi tocca la richiesta.',
-      vars: `<span>${glyph('person', { label: 'richiedente', requestor: true }, { pad: 2, extraB: 8 })}richiedente</span><span>${glyph('person', { label: 'operatore', requestor: false }, { pad: 2, extraB: 8 })}operatore</span>` },
+      body: 'Chi sta nel processo: il richiedente (in alto a destra, etichetta in grassetto), un paziente che si reca a un passo, un operatore. L’omino nasce senza nome — scrivi chi è, l’app non lo decide per te. Usala per chi innesca la richiesta e per le persone che contano nel flusso. Errore tipico: disegnare tutto il personale — solo chi tocca la richiesta.',
+      vars: `<span>${glyph('person', { label: 'richiedente', requestor: true }, { pad: 2, extraB: 8 })}richiedente</span><span>${glyph('person', { label: 'paziente', requestor: false }, { pad: 2, extraB: 8 })}chi si reca</span><span>${glyph('person', { label: 'operatore', requestor: false }, { pad: 2, extraB: 8 })}operatore</span>` },
     { id: 'face', name: 'Faccina', tool: 'face', glyph: `<svg class="lg-g" viewBox="0 0 34 34" aria-hidden="true"><g class="pencil">${R.face('preoccupato', 17, 17, 14)}</g></svg>`,
       body: 'L’esperienza di chi vive quel punto del flusso (paziente, familiare, operatore); le stesse espressioni valgono come testa dell’omino. Mettila dove l’attesa o il disagio si sentono. Errore: usarla come decorazione invece che come dato.',
       vars: (V.MOODS || []).map(m => `<span><svg class="lg-g" viewBox="0 0 30 30" aria-hidden="true"><g class="pencil">${R.face(m, 15, 15, 12)}</g></svg>${esc(m)}</span>`).join('') },
@@ -40,8 +48,8 @@
       body: 'Triangolo rosso rovesciato: il tempo in cui nulla avanza tra un passo e l’altro. Aggancialo alla freccia, uno per ogni punto in cui la cosa aspetta; il glifo accanto dice dove (in-box, coda…). Errore tipico: dimenticare le attese «normali» (il vassoio pronto, il referto in coda) — sono proprio quelle che contano. Si misura come i passi: Hi / Lo / Avg.',
       vars: (V.DELTA_KINDS || []).map(k => `<span>${glyph('delta', { kind: k }, { pad: 3, extraR: 20 })}${esc(k)}</span>`).join('') },
     { id: 'request', name: 'Via di richiesta', tool: 'request', glyph: ARROW(`<path class="pencil" d="M54 6 C 30 4, 20 6, 8 20"/>${head(8, 20, 135)}<circle class="chan" cx="30" cy="8" r="7"/>${R.chanIcon('telefono', 30, 8, 0.45)}`),
-      body: 'Dal richiedente al passo che riceve: una freccia per ogni via reale, con l’icona del canale. Il colore dice il canale e il tratto la famiglia (a voce, elettronica, cartacea): mai il colore da solo, il foglio si stampa anche in bianco e nero. Errore: disegnare solo la via «ufficiale» — servono tutte quelle che succedono davvero.',
-      vars: (V.CHANNELS || []).map(chan).join('') },
+      body: 'Da una persona al passo che la riceve: una freccia per ogni via reale, con l’icona del canale. Due segni indipendenti, e nessuno dei due si sceglie a piacere: la <b>punta</b> dice l’intento (piena = chiede, a V col pallino alla partenza = si reca di persona), il <b>colore</b> dice il canale e il <b>tratto</b> la famiglia (a voce, elettronica, cartacea). Mai il colore da solo: il foglio si stampa anche in bianco e nero. Errore: disegnare solo la via «ufficiale» — servono tutte quelle che succedono davvero.',
+      vars: (V.INTENTS || []).map(x => intento(x.id)).join('') + (V.CHANNELS || []).map(chan).join('') },
     { id: 'storm', name: 'Nuvola', tool: 'storm', glyph: glyph('storm', { text: 'problema…', muda: 'attesa' }, { pad: 4, extraB: 12 }),
       body: 'Un problema del processo, mai di una persona: etichettala con muda e regola violata. Mettila sul punto esatto dove il flusso si rompe. Errore tipico: nuvole generiche («comunicazione scarsa») — senza muda e regola non è analisi, è un’opinione.' },
     { id: 'fluffy', name: 'Nuvoletta', tool: 'fluffy', glyph: glyph('fluffy', { text: 'idea / funziona' }, { pad: 4 }),
