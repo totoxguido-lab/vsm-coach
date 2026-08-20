@@ -340,14 +340,17 @@ window.VSM = window.VSM || {};
   V.BUILD = (typeof self !== 'undefined' && self.VSM_BUILD_LABEL) || 'in sviluppo';
   /** come si legge la versione: numero dell'app e quando è stata pubblicata questa copia */
   V.versionLabel = () => V.VERSION + ' · ' + V.BUILD;
-  /** IndexedDB e localStorage appartengono all'ORIGINE, non alla cartella: l'app pubblicata in / e la
-   *  beta in /beta/ scrivevano sullo stesso identico documento, ognuna con il proprio codice. Ogni
-   *  installazione ha ora il suo spazio, ricavato dalla cartella da cui e' servita; la prima volta il
-   *  documento gia' esistente viene copiato, cosi' la beta parte da dove si era rimasti. */
-  const SCOPE = (typeof location !== 'undefined' ? location.pathname.replace(/[^/]*$/, '') : '/');
-  const SUFFIX = (SCOPE === '/' || !SCOPE) ? '' : SCOPE.replace(/^\/|\/$/g, '').replace(/\//g, '-');
+  /** IndexedDB e localStorage appartengono all'ORIGINE, non alla cartella: l'app pubblicata e la beta
+   *  scrivevano sullo stesso identico documento, ognuna con il proprio codice. Ogni installazione ha
+   *  ora il suo spazio, deciso dal canale dichiarato in version.js (non dal percorso, che su GitHub
+   *  Pages porta dentro anche il nome del repo). La prima volta il documento che c'era viene copiato,
+   *  così la beta parte da dove si era rimasti invece che da un foglio vuoto. */
+  const CHANNEL = (typeof self !== 'undefined' && self.VSM_CHANNEL) || 'sviluppo';
+  const SUFFIX = CHANNEL === 'stabile' ? '' : CHANNEL;
   const DB = 'vsm-coach' + (SUFFIX ? '-' + SUFFIX : ''), STORE = 'kv';
   const LS_DOC = 'vsm.doc' + (SUFFIX ? '.' + SUFFIX : '');
+  /** dove questa installazione tiene le mappe: serve alla schermata di diagnosi e alle prove */
+  V.storage = () => ({ canale: CHANNEL, db: DB, chiave: LS_DOC });
   let idb = null;
   function openIdb() { return new Promise((res) => { if (!('indexedDB' in window)) return res(null); const r = indexedDB.open(DB, 1); r.onupgradeneeded = () => r.result.createObjectStore(STORE); r.onsuccess = () => res(r.result); r.onerror = () => res(null); }); }
   function idbGet(k) { return new Promise((res) => { if (!idb) return res(undefined); const tx = idb.transaction(STORE, 'readonly'); const rq = tx.objectStore(STORE).get(k); rq.onsuccess = () => res(rq.result); rq.onerror = () => res(undefined); }); }
