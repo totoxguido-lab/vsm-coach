@@ -4,7 +4,7 @@
   const I = V.interact, R = V.render, UI = V.ui, C = V.coach; const { clone, today } = V.util;
   const $ = (s, r = document) => r.querySelector(s); const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 
-  function fullRender() { const map = V.map(); R.all(map, { selection: I.selection.filter(id => V.byId(id, map)) }); UI.renderHeader(); UI.renderLevels && UI.renderLevels(); if (!$('#drawer').classList.contains('closed')) { if (!$('#pane-guide').classList.contains('hidden')) UI.renderGuide(); if (!$('#pane-plan').classList.contains('hidden')) UI.renderPlan(); } }
+  function fullRender() { const map = V.map(); R.all(map, { selection: I.selection.filter(id => V.byId(id, map)) }); UI.renderHeader(); UI.renderLevels && UI.renderLevels(); if (UI.guideVisible && UI.guideVisible()) UI.renderGuide(); if (!$('#drawer').classList.contains('closed') && !$('#pane-plan').classList.contains('hidden')) UI.renderPlan(); }
   let sugTimer = null;
   V.onChange((info) => {
     if (info.switched) { I.selection = []; V.pop.close(); UI.hideQuick(); fullRender(); return; }
@@ -13,11 +13,11 @@
     const onlyProps = ops.length && ops.every(o => o.t === 'props' || o.t === 'update');
     if (onlyProps && !info.undo && !info.redo) { ops.forEach(o => R.updateEl(o.id, map)); R.overlay(map, map.overlays !== false); R.selection(I.selection, map); UI.renderHeader(); if (V.pop.current && V.pop.current !== '__title__' && ops.some(o => o.id === V.pop.current)) { if (ops.every(o => o.t === 'update')) V.pop.place(V.byId(V.pop.current, map)); V.pop.refresh && V.pop.refresh(V.pop.current); } }
     else if (ops.length && ops.every(o => o.t === 'stroke_add' || o.t === 'stroke_remove') && !info.undo && !info.redo) { R.strokes(map); UI.renderHeader(); }
-    else if (ops.length && ops.every(o => o.t === 'meta') && !info.undo && !info.redo) { R.paper(map); R.overlay(map, map.overlays !== false); UI.renderHeader(); if (!$('#drawer').classList.contains('closed') && !$('#pane-guide').classList.contains('hidden') && !ops.some(o => 'guidePhase' in o.after)) { /* già gestito dal form */ } }
+    else if (ops.length && ops.every(o => o.t === 'meta') && !info.undo && !info.redo) { R.paper(map); R.overlay(map, map.overlays !== false); UI.renderHeader(); /* la guida non si ridisegna sui meta: chi scrive nei suoi campi non deve perdere il cursore */ }
     else fullRender();
     if ((info.undo || info.redo) && V.pop.current && V.pop.current !== '__title__' && !V.byId(V.pop.current, map)) V.pop.close();
     if (info.undo || info.redo) { I.selection = I.selection.filter(id => V.byId(id, map)); R.selection(I.selection, map); UI.onSelection(I.selection); }
-    if (!$('#drawer').classList.contains('closed') && !$('#pane-guide').classList.contains('hidden') && !(ops.length && ops.every(o => o.t === 'meta'))) UI.renderGuide();
+    if (UI.guideVisible && UI.guideVisible() && !(ops.length && ops.every(o => o.t === 'meta'))) UI.renderGuide();
     clearTimeout(sugTimer); sugTimer = setTimeout(UI.evalSuggest, 1800);
   });
 
@@ -27,11 +27,12 @@
   function bindHeader() {
     $('#map-title').addEventListener('input', (e) => V.commit({ t: 'meta', after: { title: e.target.value } }, 'titolo', { silent: true }));
     $('#tab-current').onclick = () => { const m = V.map(); const c = V.currentOf(m); if (c && c !== m) UI.openMap(c.id); else if (m.kind !== 'current') UI.toast('Questa mappa non ha uno stato attuale accoppiato.'); };
-    $('#tab-future').onclick = () => { const m = V.map(); const f = V.futureOf(m); if (f && f !== m) UI.openMap(f.id); else if (m.kind === 'current') { if (confirm('Creare lo stato futuro come copia di questa mappa? Poi semplifica: meno vie di richiesta, meno passi, tempi dai dati.')) { const nf = V.createFuture(m); UI.openMap(nf.id); } } };
+    // "Futuro" crea direttamente la copia se non esiste: niente conferme, si annulla eliminando la mappa
+    $('#tab-future').onclick = () => { const m = V.map(); const f = V.futureOf(m); if (f && f !== m) UI.openMap(f.id); else if (m.kind === 'current') { const nf = V.createFuture(m); UI.openMap(nf.id); UI.toast('Stato futuro creato come copia: ora semplifica. Se non serve: menu ⋯ → Elimina.'); } else if (m.kind !== 'future') UI.toast('I sotto-fogli non hanno uno stato futuro: torna alla mappa madre.'); };
     $('#btn-undo').onclick = () => V.undo(); $('#btn-redo').onclick = () => V.redo();
-    $('#btn-guide').onclick = () => { if ($('#drawer').classList.contains('closed') || $('#pane-guide').classList.contains('hidden')) UI.showTab('guide'); else UI.closeDrawer(); };
+    $('#btn-guide').onclick = () => UI.toggleGuide();
     $('#drawer-close').onclick = UI.closeDrawer;
-    ['guide', 'coach', 'plan', 'legend'].forEach(t => $('#tab-' + t).onclick = () => UI.showTab(t));
+    ['coach', 'plan', 'legend'].forEach(t => $('#tab-' + t).onclick = () => UI.showTab(t));
     $('#btn-legend').onclick = () => { if ($('#drawer').classList.contains('closed') || $('#pane-legend').classList.contains('hidden')) UI.showTab('legend'); else UI.closeDrawer(); };
     $('#btn-maps').onclick = () => { UI.renderMaps(); $('#dlg-maps').showModal(); }; $('#maps-close').onclick = () => $('#dlg-maps').close();
     const menuCheck = (id, on) => { const b = $(id); b.setAttribute('aria-pressed', on); b.textContent = (on ? '✓ ' : '○ ') + b.textContent.replace(/^[✓○] /, ''); };
@@ -39,7 +40,7 @@
     $('#btn-pen-mode').onclick = () => { I.penDraws = !I.penDraws; localStorage.setItem('vsm.penDraws', I.penDraws ? '1' : '0'); menuCheck('#btn-pen-mode', I.penDraws); $('#menu').classList.add('hidden'); UI.toast(I.penDraws ? 'Penna: sulla carta vuota scrive a matita.' : 'Penna: usa lo strumento scelto.'); };
     $('#btn-tools-left').onclick = () => { UI.setToolsLeft(!$('#app').classList.contains('tools-left')); $('#menu').classList.add('hidden'); };
     // aspetto dei collegamenti: si cicla fra le modalità, così si confronta a colpo d'occhio quale si legge meglio
-    const linkModeLabel = () => { const m = V.linkModeOf(V.map()); $('#btn-link-mode').textContent = 'Collegamenti: ' + m; };
+    const linkModeLabel = () => { const m = V.linkModeOf(V.map()); $('#btn-link-mode').textContent = 'Frecce: ' + ({ dritta: 'dritte', curva: 'curve' }[m] || m); };
     $('#btn-link-mode').onclick = () => {
       const map = V.map(); const ids = V.LINK_MODES.map(x => x.id); const cur = V.linkModeOf(map);
       const next = V.LINK_MODES[(ids.indexOf(cur) + 1) % ids.length];
@@ -60,18 +61,21 @@
     $('#ui-toggle').onclick = () => UI.toggleChrome();
     $('#help-close').onclick = () => { $('#dlg-help').close(); localStorage.setItem('vsm.welcomed', '1'); };
     $('#help-example').onclick = () => { $('#dlg-help').close(); localStorage.setItem('vsm.welcomed', '1'); menuAction('example'); };
-    // menu
+    // menu: i sottogruppi (File, Opzioni, Coach) si aprono a fisarmonica, uno alla volta, e si richiudono a ogni apertura
     const menu = $('#menu');
-    $('#btn-menu').onclick = (e) => { e.stopPropagation(); menu.classList.toggle('hidden'); };
-    document.addEventListener('pointerdown', (e) => { if (!menu.classList.contains('hidden') && !menu.contains(e.target) && e.target !== $('#btn-menu')) menu.classList.add('hidden'); if (!$('#more-tools').classList.contains('hidden') && !$('#more-tools').contains(e.target) && !e.target.closest('[data-tool="more"]')) $('#more-tools').classList.add('hidden'); });
+    const closeSubs = () => { $$('#menu .submenu').forEach(s => s.classList.add('hidden')); $$('#menu .sub-head').forEach(h => h.setAttribute('aria-expanded', 'false')); };
+    $$('#menu .sub-head').forEach(h => h.onclick = () => { const s = $('#sub-' + h.dataset.sub); const wasClosed = s.classList.contains('hidden'); closeSubs(); if (wasClosed) { s.classList.remove('hidden'); h.setAttribute('aria-expanded', 'true'); } });
+    $('#btn-menu').onclick = (e) => { e.stopPropagation(); const opening = menu.classList.contains('hidden'); menu.classList.toggle('hidden'); if (opening) closeSubs(); };
+    document.addEventListener('pointerdown', (e) => { if (!menu.classList.contains('hidden') && !menu.contains(e.target) && e.target !== $('#btn-menu')) menu.classList.add('hidden'); if (!$('#more-tools').classList.contains('hidden') && !$('#more-tools').contains(e.target) && !e.target.closest('[data-tool="more"]')) $('#more-tools').classList.add('hidden'); if (UI.guideVisible() && !$('#guidepop').contains(e.target) && !e.target.closest('#btn-guide')) UI.toggleGuide(false); });
     $$('#menu [data-m]').forEach(b => b.onclick = () => { menu.classList.add('hidden'); menuAction(b.dataset.m); });
     $('#file-open').addEventListener('change', (e) => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => { try { const n = V.importMaps(JSON.parse(r.result)); I.restoreView(); UI.toast(n + ' mappe importate.'); } catch (err) { UI.toast('File non valido: ' + err.message); } }; r.readAsText(f); e.target.value = ''; });
   }
   function menuAction(a) {
     const map = V.map();
     switch (a) {
-      case 'new': { const m = V.addMap(V.newMap({ title: '', authors: map.authors, unit: map.unit })); m.elements.push(V.newElement('legend', 30, 20)); UI.openMap(m.id); I.fit(); UI.toast('Nuovo foglio. Tocca il titolo in alto a destra per intestarlo.'); break; }
-      case 'future': { const cur = V.currentOf(map) || map; const f = V.futureOf(map); if (f && f !== map) UI.openMap(f.id); else if (map.kind === 'future') UI.toast('Sei già sullo stato futuro.'); else { const nf = V.createFuture(cur); UI.openMap(nf.id); UI.toast('Stato futuro creato come copia: ora semplifica.'); } break; }
+      case 'new': { UI.closeDrawer(); const m = V.addMap(V.newMap({ title: '', authors: map.authors, unit: map.unit })); m.elements.push(V.newElement('legend', 30, 20)); UI.openMap(m.id); I.fit(); UI.toast('Nuovo foglio. Tocca il titolo in alto a destra per intestarlo.'); break; }
+      // solo su schermi piccoli, dove il selettore Attuale/Futuro in testata non c'è
+      case 'af': { if (map.kind === 'future') { const c = V.currentOf(map); if (c && c !== map) UI.openMap(c.id); } else { const f = V.futureOf(map); if (f && f !== map) UI.openMap(f.id); else if (map.kind === 'current') { const nf = V.createFuture(map); UI.openMap(nf.id); UI.toast('Stato futuro creato come copia: ora semplifica.'); } else UI.toast('I sotto-fogli non hanno uno stato futuro.'); } break; }
       case 'detail': { const d = V.createDetail(map, ''); UI.openMap(d.id); I.fit(); UI.toast('Mappa di dettaglio: collegala da un box (pop-up → Collega a un\'altra mappa).'); break; }
       case 'example': { const m = V.addMap(V.example()); UI.openMap(m.id); I.fit(); UI.toast('Esempio caricato (numeri dalla Fig. 5.1 del libro).'); break; }
       case 'open': $('#file-open').click(); break;
@@ -79,10 +83,10 @@
       case 'svg': download(`${slug(map.title)}-${map.kind}.svg`, R.exportSVG(map), 'image/svg+xml'); break;
       case 'print': window.print(); break;
       case 'legend': UI.showTab('legend'); break;
-      case 'guide': UI.showTab('guide'); break;
+      case 'guide': UI.toggleGuide(true); break;
       case 'maps': UI.renderMaps(); $('#dlg-maps').showModal(); break;
       case 'help': UI.showHelp(false); break;
-      case 'current': { const c = V.currentOf(map); if (c && c !== map) UI.openMap(c.id); else UI.toast(map.kind === 'current' ? 'Sei già sullo stato attuale.' : 'Questa mappa non ha uno stato attuale accoppiato.'); break; }
+      case 'coach': UI.showTab('coach'); break;
       case 'settings': C.openSettings(); break;
       case 'clear-ink': if (map.strokes.length && confirm('Cancellare tutti i tratti a matita di questa mappa?')) V.commit({ t: 'strokes_set', after: [] }, 'cancella inchiostro'); break;
       case 'delete': if (confirm(`Eliminare la mappa "${map.title || 'senza titolo'}"? Non si può annullare.`)) { V.deleteMap(map.id); I.restoreView(); UI.toast('Mappa eliminata.'); } break;

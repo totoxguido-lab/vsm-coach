@@ -299,9 +299,10 @@
   P.openTitle = () => {
     const map = V.map(); const pop = $('#pop'); P.current = '__title__';
     pop.innerHTML = `<div class="pop-head"><b>Titolo, data, autori</b><button class="btn small ghost" id="pop-x" aria-label="Chiudi">✕</button></div><div class="why">In alto a destra: titolo, data e iniziali di chi ha disegnato. Con la piega a metà e a un quarto restano visibili nel raccoglitore.</div>
-      ${field('Titolo', `<input data-m="title" value="${esc(map.title)}" autofocus>`)}<div class="row">${field('Data', `<input data-m="date" type="date" value="${esc(map.date)}">`)}${field('Iniziali autori', `<input data-m="authors" value="${esc(map.authors)}">`)}</div>${field('Reparto / unità', `<input data-m="unitName" value="${esc(map.unitName)}">`)}${field('Scopo in una frase', `<textarea data-m="scope" placeholder="Dalla richiesta di … alla consegna di …">${esc(map.scope)}</textarea>`)}<div class="row">${field('Unità di misura (unica)', `<select data-m="unit">${['secondi', 'minuti', 'ore', 'giorni'].map(u => `<option ${u === map.unit ? 'selected' : ''}>${u}</option>`).join('')}</select>`)}${field('N. misure', `<input data-m="samples" inputmode="numeric" value="${esc(map.samples)}">`)}</div>`;
+      ${field('Titolo', `<input data-m="title" value="${esc(map.title)}" autofocus>`)}<div class="row">${field('Data', `<input data-m="date" type="date" value="${esc(map.date)}">`)}${field('Iniziali autori', `<input data-m="authors" value="${esc(map.authors)}">`)}</div>${field('Reparto / unità', `<input data-m="unitName" value="${esc(map.unitName)}">`)}${field('Scopo in una frase', `<textarea data-m="scope" placeholder="Dalla richiesta di … alla consegna di …">${esc(map.scope)}</textarea>`)}<div class="row">${field('Unità di misura (unica)', `<select data-m="unit">${['secondi', 'minuti', 'ore', 'giorni'].map(u => `<option ${u === map.unit ? 'selected' : ''}>${u}</option>`).join('')}</select>`)}${field('N. misure', `<input data-m="samples" inputmode="numeric" value="${esc(map.samples)}">`)}</div>${field('Responsabile unico del disegno', `<input data-tdrawer value="${esc(map.prep.drawer || '')}" autocomplete="off">`)}`;
     pop.classList.remove('hidden'); const st = $('#stage').getBoundingClientRect(); const s = I.toScreen(V.paperOf(map).w - 470, 90); pop.style.left = Math.max(10, Math.min(st.width - 340, s.x)) + 'px'; pop.style.top = Math.max(10, s.y + 6) + 'px';
     $('#pop-x').onclick = P.close;
+    const td = $('[data-tdrawer]', pop); td.addEventListener('input', () => { const after = Object.assign(clone(V.map().prep), { drawer: td.value }); V.commit({ t: 'meta', after: { prep: after } }, 'intestazione', { silent: true }); });
     $$('[data-m]', pop).forEach(e => {
       const k = e.dataset.m; let before;
       const commit = (final) => { if (!final) { V.commit({ t: 'meta', after: { [k]: e.value } }, 'intestazione', { silent: true }); return; } V.commit({ t: 'meta', after: { [k]: e.value }, before: { [k]: before === undefined ? V.map()[k] : before } }, 'intestazione'); before = undefined; };
@@ -331,51 +332,58 @@
     $$('#maplist [data-open]').forEach(b => b.onclick = () => { $('#dlg-maps').close(); UI.openMap(b.dataset.open); });
   };
 
-  // ---------- guida ----------
-  UI.renderGuide = () => {
-    const map = V.map(); const body = $('#guide-body'); const L = V.lint(map);
-    let h = `<label class="check" style="margin:0 0 8px"><input type="checkbox" id="g-on" ${UI.guideOn ? 'checked' : ''}> <span><b>Guida attiva</b> — fasi del metodo, controlli e suggerimenti. Spegnila per lavorare libero.</span></label>`;
-    if (UI.guideOn) {
-      h += `<div class="phases">` + V.PHASES.map(p => { const done = V.phaseDone(map, p.n); const w = L.filter(x => x.phase === p.n).length; return `<button class="phase ${done ? 'done' : ''}" data-ph="${p.n}" ${map.guidePhase === p.n ? 'aria-current="step"' : ''}><span class="n">${done ? '✓' : p.n}</span><span>${p.t}${map.guidePhase === p.n ? `<br><span class="hint">${p.s}</span>` : ''}</span><span class="badge">${w ? w + ' ⚠' : ''}</span></button>`; }).join('') + `</div>`;
-      h += UI.phaseForm(map, map.guidePhase);
-    }
-    h += `<h4 style="margin:12px 0 6px;font-size:13px">Controlli sul foglio</h4><div class="lint">${L.length ? L.slice(0, 14).map((x, i) => `<button class="chip ${x.level}" data-li="${i}">${x.level === 'bad' ? '✕' : '⚠'} ${esc(x.msg)}</button>`).join('') : '<span class="chip ok">✓ Nessun rilievo dai controlli offline. Chiedi al coach una revisione.</span>'}</div>`;
-    body.innerHTML = h;
-    $('#g-on').onchange = (e) => { UI.guideOn = e.target.checked; localStorage.setItem('vsm.guideOn', UI.guideOn ? '1' : '0'); UI.renderGuide(); };
-    $$('[data-ph]', body).forEach(b => b.onclick = () => { V.commit({ t: 'meta', after: { guidePhase: +b.dataset.ph } }, '', { silent: true }); UI.renderGuide(); });
-    $$('[data-li]', body).forEach(b => b.onclick = () => { const x = L[+b.dataset.li]; if (x.elId) { I.select([x.elId]); R.flash(x.elId); } else if (UI.guideOn) { V.commit({ t: 'meta', after: { guidePhase: x.phase } }, '', { silent: true }); UI.renderGuide(); } });
-    bindMeta(body, map);
+  // ---------- guida: promemoria del metodo, una sezione alla volta ----------
+  // Ridisegnata come pannello leggero (revisione Kimi K3, 2026-08-20): otto promemoria brevi in tono da
+  // collega esperto, niente form ne' fasi con spunte — l'utente conosce gia' le mappe. I campi "di registro"
+  // sono migrati: responsabile del disegno nell'intestazione, validazione qui in due campi essenziali,
+  // data di rimisurazione nel Piano.
+  const GUIDE = [
+    { id: 'testata', t: 'Intestazione e scopo', body: 'Titolo, data e iniziali in alto a destra; scopo in una frase: dalla richiesta X alla consegna Y. Un processo solo: se cambia turno o unità, è un’altra mappa.', q: 'Cosa soddisfa esattamente questa mappa?', acts: [['title', 'Apri l’intestazione']] },
+    { id: 'richiesta', t: 'La richiesta', body: 'Il richiedente e <b>tutte</b> le vie reali — telefono, fax, e-mail, a voce, di persona. La giungla di frecce in alto non è un difetto estetico: è il primo spreco da attaccare.', q: 'Quante mani tocca la richiesta prima di arrivare a chi eroga?', tools: [['person', 'Persona'], ['request', 'Richiesta']] },
+    { id: 'flusso', t: 'Flusso e attese', body: 'Box nell’ordine reale, non come dovrebbe essere; nello stato attuale ciò che sta nei box è valore <i>adesso</i> — non giudicare ancora. Tra ogni coppia di box un delta: il tempo in cui la cosa sta ferma. Più di 4-5 box? Forse lo scopo è troppo largo.', q: 'Quale attività apre la porta del box e quale la chiude?', tools: [['box', 'Passo'], ['delta', 'Attesa']] },
+    { id: 'valida', t: 'Cammina e valida', body: 'Mappa da memoria = bozza. Cammina il processo dall’inizio alla fine e mostrala a chi fa il lavoro: accuratezza e adesione arrivano insieme.', q: 'Ti sembra giusto? Ho lasciato fuori qualcosa?', valida: true },
+    { id: 'dati', t: 'Dati', body: 'Hi / Lo / Avg per ogni box e ogni delta, un’unità sola. Il delta non si cronometra: si calcola per differenza (fine box 1 → inizio box 2). ~30 misure per credibilità, 8-10 per una vista rapida. Il massimo è dove si nascondono i workaround.', q: 'Perché a volte 5 minuti e a volte 19?' },
+    { id: 'analisi', t: 'Analisi', body: 'Una nuvola su ogni punto debole, con muda e regola violata — una riga, non un tema. Prima le nuvole a monte: correggere la richiesta rende più di quanto sembri. «A volte, dipende, forse» = processo non specificato = nuvola.', q: 'Così accade adesso — è abbastanza buono?', tools: [['storm', 'Nuvola']] },
+    { id: 'futuro', t: 'Stato futuro', body: 'Futuro ≠ ideale: dev’essere <b>raggiungibile</b> (persone, sponsor, data) <b>e</b> più vicino all’ideale. Prima mossa: meno vie di richiesta; poi eliminare o combinare box; tempi standard solo dai dati. Se non è visibilmente più semplice dell’attuale, torna a osservare. Niente monumenti: non automatizzare ciò che non funziona a mano.', q: 'Questo cambiamento ci avvicina all’ideale? Su quale punto?', acts: [['future', 'Apri / crea lo stato futuro']], cmp: true },
+    { id: 'piano', t: 'Piano e follow-up', body: 'Ogni riga: cosa, chi, entro quando, esito — senza chi e quando non accadrà. L’ostacolo grosso merita un A3, non una riga. Poi si rimisura: nuova mappa attuale e confronto fianco a fianco.', q: 'Chi fa cosa, entro quando?', acts: [['plan', 'Apri il piano']] }
+  ];
+  UI.guideSec = null;
+  UI.guideVisible = () => { const g = $('#guidepop'); return !!g && !g.classList.contains('hidden'); };
+  UI.toggleGuide = (show) => {
+    const g = $('#guidepop'); const want = show != null ? !!show : g.classList.contains('hidden');
+    g.classList.toggle('hidden', !want); $('#btn-guide').setAttribute('aria-pressed', want);
+    if (want) UI.renderGuide();
   };
-  const mchk = (k, v, label) => `<label class="check"><input type="checkbox" data-mp="${k}" ${v ? 'checked' : ''}> <span>${label}</span></label>`;
-  const minp = (k, v, attrs = '') => `<input data-mp="${k}" value="${esc(v)}" autocomplete="off" ${attrs}>`;
-  const mta = (k, v, attrs = '') => `<textarea data-mp="${k}" ${attrs}>${esc(v)}</textarea>`;
-  const note = (t) => `<div class="coachnote"><b>Il coach chiede</b>${t}</div>`;
-  const getPath = (o, path) => path.split('.').reduce((a, k) => a == null ? undefined : a[k], o);
-  function bindMeta(root, map) {
-    $$('[data-mp]', root).forEach(el => {
-      const path = el.dataset.mp; const handler = () => {
-        const v = el.type === 'checkbox' ? el.checked : el.value; const [top, ...rest] = path.split('.');
-        const after = clone(map[top]); if (rest.length) { let o = after; for (let i = 0; i < rest.length - 1; i++) { if (o[rest[i]] == null) o[rest[i]] = {}; o = o[rest[i]]; } o[rest[rest.length - 1]] = v; V.commit({ t: 'meta', after: { [top]: after } }, 'guida', { silent: true }); } else V.commit({ t: 'meta', after: { [top]: v } }, 'guida', { silent: true });
-      }; el.addEventListener(el.type === 'checkbox' || el.tagName === 'SELECT' ? 'change' : 'input', handler);
-    });
-  }
-  UI.phaseForm = (map, ph) => {
-    const M = V.metrics(map); let h = '';
-    const q = (t) => `<div class="hint" style="margin-bottom:6px">${t}</div>`;
-    switch (ph) {
-      case 0: h += note('Qual è la <i>richiesta</i> che il processo soddisfa e chi la fa? È osservabile, frequente, degno? Chi disegna (uno solo)? Chi "possiede" l\'iniziativa in direzione?') + `<div class="card"><h4>Scopo</h4>${q('Tocca il titolo in alto a destra sul foglio per titolo, data, iniziali, scopo, unità.')}${mchk('prep.observable', map.prep.observable, 'Osservabile')}${mchk('prep.frequent', map.prep.frequent, 'Frequente')}${mchk('prep.worthy', map.prep.worthy, 'Degno (paziente, organizzazione, lavoratore)')}</div><div class="card"><h4>Team</h4><div class="field"><label>Responsabile unico del disegno</label>${minp('prep.drawer', map.prep.drawer)}</div><div class="field"><label>Owner amministrativo</label>${minp('prep.owner', map.prep.owner)}</div>${mchk('prep.physicians', map.prep.physicians, 'Medici coinvolti (se clinico)')}${mchk('prep.staffing', map.prep.staffing, 'Organico stabile')}${mchk('prep.stable', map.prep.stable, 'Nessun\'altra grande iniziativa in corso')}</div><div class="field"><label>L\'ideale per questo processo</label>${mta('ideal', map.ideal, 'placeholder="senza difetti · zero spreco · attenzione individuale · on-demand · risposta immediata"')}</div>`; break;
-      case 1: h += note('Chi chiede? Con quali vie — tutte (telefono, fax, e-mail, verbale, di persona, sistema)? Quante mani tocca la richiesta? Dove si perde?') + `<div class="card">${q('Strumenti: <b>Persona</b> per il richiedente (in alto a destra), poi <b>Via di richiesta</b> trascinando dall\'omino al primo passo, una per ogni via reale.')}<div class="kv"><b>Richiedenti</b><span>${map.elements.filter(e => e.type === 'person' && e.props.requestor).length}</span><b>Vie di richiesta</b><span>${M.requests}</span></div><div class="actions"><button class="btn small" data-tool-go="person">Persona</button><button class="btn small" data-tool-go="request">Via di richiesta</button></div></div>`; break;
-      case 2: h += note('Qual è il primo passo maggiore? Che attività "apre la porta" e quale "la chiude"? Nel CSM le attività necessarie ora sono valore: non giudicare ancora.') + `<div class="card">${q('Strumenti: <b>Process box</b> (tocca il foglio), poi <b>Freccia di flusso</b> da un box al successivo; alternative con "or".')}<div class="kv"><b>Box</b><span>${M.boxes}</span><b>Frecce di flusso</b><span>${M.flows}</span></div><div class="actions"><button class="btn small" data-tool-go="box">Process box</button><button class="btn small" data-tool-go="flow">Freccia</button></div></div>`; break;
-      case 3: h += note('Tra un box e il successivo, quando nulla avanza? Dove sta ferma la cosa (vassoio, coda, viaggio, telefonata senza risposta)?') + `<div class="card">${q('Strumento: <b>Delta</b> — tocca vicino a una freccia di flusso: si aggancia ed entra nella timeline.')}<div class="kv"><b>Delta</b><span>${M.deltas}</span></div><div class="actions"><button class="btn small" data-tool-go="delta">Delta</button></div></div>`; break;
-      case 4: h += note('Il processo è stato osservato dall\'inizio alla fine? Da chi? Gli osservati sapevano che non è un\'ispezione? Cosa hanno corretto vedendo la mappa?') + `<div class="card">${mchk('validation.prepared', map.validation.prepared, 'Osservati preparati (non punitivo; segnalano varianti)')}${mchk('validation.walked', map.validation.walked, 'Processo camminato dall\'inizio alla fine')}<div class="row"><div class="field"><label>Osservato da</label>${minp('validation.walkedBy', map.validation.walkedBy)}</div><div class="field"><label>Data</label>${minp('validation.walkedDate', map.validation.walkedDate, 'type="date"')}</div></div><div class="row"><div class="field"><label>Validato da (chi fa il lavoro)</label>${minp('validation.validatedBy', map.validation.validatedBy)}</div><div class="field"><label>Data</label>${minp('validation.validatedDate', map.validation.validatedDate, 'type="date"')}</div></div><div class="field"><label>Correzioni emerse</label>${mta('validation.corrections', map.validation.corrections)}</div></div>`; break;
-      case 5: h += note('Inizio/fine di ogni box concordati con chi raccoglie? Strumento vistoso che viaggia con la cartella? Quante misure (~30; 8-10 per vista rapida)? Chi restituisce i risultati allo staff?') + `<div class="card">${q('Tocca ogni box e ogni delta per inserire Hi / Lo / Avg (una sola unità: ' + esc(map.unit) + '). Il riepilogo si aggiorna sul foglio.')}${mchk('data.boundariesAgreed', map.data.boundariesAgreed, 'Inizio/fine dei box concordati; glossario comune')}${mchk('data.tool', map.data.tool, 'Strumento di raccolta visibile + busta di consegna')}${mchk('data.feedback', map.data.feedback, 'Restituzione dei risultati allo staff prevista')}<div class="kv"><b>Box senza media</b><span>${M.incompleteBoxes}</span><b>Delta senza media</b><span>${M.incompleteDeltas}</span><b>VA / NVA</b><span>${fmt(M.va)} / ${fmt(M.nva)} → ${fmt(M.vaPct)} % a valore</span></div><div class="field"><label>Note sui massimi / outlier</label>${mta('data.notes', map.data.notes)}</div></div>`; break;
-      case 6: h += note('Il processo serve? Ogni passo serve, aggiunge valore, è fatto sempre uguale, con il minimo di persone? Dove la variazione è maggiore: perché a volte veloce, cosa nel caso lento? Etichetta ogni problema con muda e regola.') + `<div class="card">${q('Strumento: <b>Nuvola temporalesca</b> sul punto del problema (muda + regola). Poi la domanda: "così accade adesso — è abbastanza buono?"')}<div class="kv"><b>Nuvole</b><span>${M.storms}</span></div><div class="actions"><button class="btn small" data-tool-go="storm">Nuvola</button></div><div class="field" style="margin-top:8px"><label>È abbastanza buono? Che cosa non è ideale</label>${mta('analysis.goodEnough', map.analysis.goodEnough)}</div></div>`; break;
-      case 7: { const f = V.futureOf(map); const cur = V.currentOf(map) || map; const fm = f ? V.metrics(f) : null, cm = V.metrics(cur); h += note('Il processo va tenuto, reinventato o eliminato? Quante vie di richiesta restano (idealmente una)? Quali box si eliminano o combinano? Chi ha le risorse, chi è lo sponsor, entro quando si sperimenta? Non aspettare i "monumenti".') + `<div class="card">${map.kind !== 'future' ? `<div class="actions"><button class="btn small primary" id="g-mkfuture">${f ? 'Apri lo stato futuro' : 'Crea lo stato futuro (copia dell\'attuale)'}</button></div>` : ''}${f ? `<div class="cmp" style="margin-top:8px"><span class="h"></span><span class="h">Attuale</span><span class="h">Futuro</span><span class="h"></span>${cmpRow('Vie di richiesta', cm.requests, fm.requests)}${cmpRow('Process box', cm.boxes, fm.boxes)}${cmpRow('Tempo totale', cm.hasData ? cm.tot : null, fm.hasData ? fm.tot : null)}${cmpRow('NVA (attese)', cm.hasData ? cm.nva : null, fm.hasData ? fm.nva : null)}${cmpRow('VA %', cm.vaPct, fm.vaPct, false)}</div>` : ''}</div>` + (map.kind === 'future' ? `<div class="card"><h4>Realismo</h4>${mchk('futureCheck.people', map.futureCheck.people, 'Persone con tempo reale per portare a termine i cambiamenti')}<div class="field"><label>Sponsor / owner</label>${minp('futureCheck.sponsor', map.futureCheck.sponsor)}</div><div class="field"><label>Data per sperimentare</label>${minp('futureCheck.date', map.futureCheck.date, 'type="date"')}</div><div class="field"><label>Vincoli</label>${minp('futureCheck.constraints', map.futureCheck.constraints)}</div><div class="field"><label>Validato con lo staff da</label>${minp('futureCheck.validatedBy', map.futureCheck.validatedBy)}</div></div>` : ''); break; }
-      case 8: h += note('Per ogni cambiamento: cosa, chi, entro quando, esito atteso. Quali richiedono un A3? Chi degli altri reparti deve sedere al tavolo?') + `<div class="card">${q('Il piano è nella scheda <b>Piano</b> del cassetto (What / Who / When / Outcome).')}<div class="actions"><button class="btn small" id="g-toplan">Apri il piano</button></div></div>`; break;
-      case 9: h += note('Quando si rimisura (1-3-6 mesi)? Meno linee nella richiesta, meno box, meno loop, meno passaggi, delta più brevi, meno variazione? Accettare o iterare?') + `<div class="card"><div class="field"><label>Data di ri-misurazione</label>${minp('closure.remeasureDate', map.closure.remeasureDate, 'type="date"')}</div>${['Più leggibile', 'Meno linee di comunicazione nella richiesta', 'Meno process box', 'Meno loop', 'Meno attività ridondanti', 'Meno passaggi tra operatori', 'Delta più brevi', 'Meno variazione nei box', 'Correlazione con soddisfazione/throughput'].map((c, i) => mchk('closure.checks.c' + i, map.closure.checks['c' + i], c)).join('')}<div class="field"><label>Decisione (accettare o iterare)</label>${mta('closure.notes', map.closure.notes)}</div></div>`; break;
-    }
-    setTimeout(() => { $$('[data-tool-go]').forEach(b => b.onclick = () => I.setTool(b.dataset.toolGo)); const mk = $('#g-mkfuture'); if (mk) mk.onclick = () => { const f = V.createFuture(V.currentOf(map) || map); UI.openMap(f.id); }; const tp = $('#g-toplan'); if (tp) tp.onclick = () => UI.showTab('plan'); }, 0);
-    return h;
+  UI.renderGuide = () => {
+    if (!UI.guideVisible()) return;
+    const map = V.map(); const g = $('#guidepop'); const L = V.lint(map);
+    const secBody = (s) => {
+      let b = `<div class="gp-body">${s.body}<div class="gp-q">${esc(s.q)}</div>`;
+      if (s.valida) {
+        b += `<label class="check" style="margin-top:8px"><input type="checkbox" id="gp-walked" ${map.validation.walked ? 'checked' : ''}> <span>Processo camminato (osservazione diretta)</span></label>`
+          + `<div class="field" style="margin-top:4px"><label>Validata da (chi fa il lavoro)</label><input id="gp-validated" value="${esc(map.validation.validatedBy || '')}" autocomplete="off"></div>`;
+      }
+      if (s.cmp) {
+        const f = V.futureOf(map); const cur = V.currentOf(map) || map;
+        if (f) { const fm = V.metrics(f), cm = V.metrics(cur); b += `<div class="cmp" style="margin-top:8px"><span class="h"></span><span class="h">Attuale</span><span class="h">Futuro</span><span class="h"></span>${cmpRow('Vie di richiesta', cm.requests, fm.requests)}${cmpRow('Process box', cm.boxes, fm.boxes)}${cmpRow('Tempo totale', cm.hasData ? cm.tot : null, fm.hasData ? fm.tot : null)}${cmpRow('NVA (attese)', cm.hasData ? cm.nva : null, fm.hasData ? fm.nva : null)}${cmpRow('VA %', cm.vaPct, fm.vaPct, false)}</div>`; }
+      }
+      const btns = (s.tools || []).map(t => `<button class="btn small" data-tool-go="${t[0]}">${t[1]}</button>`).concat((s.acts || []).map(a => `<button class="btn small" data-ga="${a[0]}">${a[1]}</button>`));
+      if (btns.length) b += `<div class="actions" style="margin-top:8px">${btns.join('')}</div>`;
+      return b + '</div>';
+    };
+    let h = `<div class="gp-head"><b>Guida</b><span class="hint">promemoria del metodo</span><span class="spacer"></span><button class="btn small ghost" id="gp-x" aria-label="Chiudi">✕</button></div>`;
+    h += GUIDE.map((s, i) => `<button class="gp-sec" data-gs="${s.id}" aria-expanded="${UI.guideSec === s.id}"><span class="gp-n">${i + 1}</span>${esc(s.t)}<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>` + (UI.guideSec === s.id ? secBody(s) : '')).join('');
+    h += `<div class="gp-lint">${L.length ? L.slice(0, 10).map((x, i) => `<button class="chip ${x.level}" data-li="${i}">${x.level === 'bad' ? '✕' : '⚠'} ${esc(x.msg)}</button>`).join('') : '<span class="chip ok">✓ Nessun rilievo dai controlli. Chiedi al coach una revisione.</span>'}</div>`;
+    h += `<label class="check gp-foot"><input type="checkbox" id="gp-sug" ${UI.guideOn ? 'checked' : ''}> <span>Suggerimenti discreti mentre disegni</span></label>`;
+    g.innerHTML = h;
+    $('#gp-x').onclick = () => UI.toggleGuide(false);
+    $$('[data-gs]', g).forEach(b => b.onclick = () => { UI.guideSec = UI.guideSec === b.dataset.gs ? null : b.dataset.gs; UI.renderGuide(); });
+    $$('[data-tool-go]', g).forEach(b => b.onclick = () => { I.setTool(b.dataset.toolGo); UI.toggleGuide(false); });
+    $$('[data-ga]', g).forEach(b => b.onclick = () => { const a = b.dataset.ga; UI.toggleGuide(false); if (a === 'title') V.pop.openTitle(); else if (a === 'plan') UI.showTab('plan'); else if (a === 'future') $('#tab-future').click(); });
+    $$('[data-li]', g).forEach(b => b.onclick = () => { const x = L[+b.dataset.li]; if (x.elId) { UI.toggleGuide(false); I.select([x.elId]); R.flash(x.elId); } });
+    $('#gp-sug').onchange = (e) => { UI.guideOn = e.target.checked; localStorage.setItem('vsm.guideOn', UI.guideOn ? '1' : '0'); };
+    const wk = $('#gp-walked'); if (wk) wk.onchange = () => { const after = Object.assign(clone(V.map().validation), { walked: wk.checked, walkedDate: wk.checked ? today() : '' }); V.commit({ t: 'meta', after: { validation: after } }, 'validazione', { silent: true }); UI.renderGuide(); };
+    const vd = $('#gp-validated'); if (vd) vd.addEventListener('input', () => { const after = Object.assign(clone(V.map().validation), { validatedBy: vd.value, validatedDate: vd.value ? today() : '' }); V.commit({ t: 'meta', after: { validation: after } }, 'validazione', { silent: true }); });
   };
   function cmpRow(label, a, b, lowerBetter = true) { const cls = (a == null || b == null) ? '' : (lowerBetter ? (b < a ? 'good' : b > a ? 'badv' : '') : (b > a ? 'good' : b < a ? 'badv' : '')); return `<span>${label}</span><span>${a == null ? '–' : fmt(a)}</span><span>${b == null ? '–' : fmt(b)}</span><span class="${cls}">${cls === 'good' ? '▼ meglio' : cls === 'badv' ? '▲ peggio' : '='}</span>`; }
 
@@ -384,15 +392,17 @@
     const map = V.map(); const body = $('#plan-body');
     let h = `<div class="coachnote"><b>Piano dello stato futuro</b>Ogni riga: What / Who / When / Outcome. Nessun impegno verbale senza data ed esito. Revisione periodica: in tempo? ritardo e ripianificazione? da scartare?</div>`;
     h += `<table class="plan"><thead><tr><th>#</th><th>What</th><th>Who</th><th>When</th><th>Outcome</th><th>A3</th><th></th></tr></thead><tbody>${map.plan.map((r, i) => `<tr><td>${i + 1}</td><td><input data-pi="${i}" data-pk="what" value="${esc(r.what)}"></td><td><input data-pi="${i}" data-pk="who" value="${esc(r.who)}"></td><td><input data-pi="${i}" data-pk="when" type="date" value="${esc(r.when)}"></td><td><input data-pi="${i}" data-pk="outcome" value="${esc(r.outcome)}"></td><td><input type="checkbox" data-pi="${i}" data-pk="a3" ${r.a3 ? 'checked' : ''}></td><td><button class="btn small ghost danger" data-pdel="${i}" aria-label="Elimina riga ${i + 1}">×</button></td></tr>`).join('')}</tbody></table><p><button class="btn" id="plan-add">+ Aggiungi riga</button></p>`;
+    h += `<div class="field" style="max-width:220px"><label>Rimisurazione (nuova mappa attuale, a 1-3-6 mesi)</label><input id="plan-remeasure" type="date" value="${esc(map.closure.remeasureDate || '')}"></div>`;
     body.innerHTML = h;
     $('#plan-add').onclick = () => { const plan = clone(map.plan); plan.push({ id: uid(), what: '', who: '', when: '', outcome: '', a3: false }); V.commit({ t: 'plan_set', after: plan }, 'piano'); UI.renderPlan(); };
+    $('#plan-remeasure').onchange = (e) => { const after = Object.assign(clone(V.map().closure), { remeasureDate: e.target.value }); V.commit({ t: 'meta', after: { closure: after } }, 'piano', { silent: true }); };
     $$('[data-pdel]', body).forEach(b => b.onclick = () => { const plan = clone(map.plan); plan.splice(+b.dataset.pdel, 1); V.commit({ t: 'plan_set', after: plan }, 'piano'); UI.renderPlan(); });
     $$('[data-pi]', body).forEach(e => e.addEventListener(e.type === 'checkbox' || e.type === 'date' ? 'change' : 'input', () => { const plan = clone(map.plan); plan[+e.dataset.pi][e.dataset.pk] = e.type === 'checkbox' ? e.checked : e.value; V.commit({ t: 'plan_set', after: plan }, 'piano', { silent: true }); }));
   };
 
   // ---------- cassetto ----------
-  UI.showTab = (name) => { $('#drawer').classList.remove('closed'); ['guide', 'coach', 'plan', 'legend'].forEach(t => { $('#tab-' + t).setAttribute('aria-selected', t === name); $('#pane-' + t).classList.toggle('hidden', t !== name); }); if (name === 'guide') UI.renderGuide(); if (name === 'plan') UI.renderPlan(); if (name === 'legend') UI.renderLegend(); if (name === 'coach') setTimeout(() => { const c = $('#chat'); c.scrollTop = 1e9; }, 0); $('#btn-guide').setAttribute('aria-pressed', name === 'guide'); $('#btn-legend').setAttribute('aria-pressed', name === 'legend'); };
-  UI.closeDrawer = () => { $('#drawer').classList.add('closed'); $('#btn-guide').setAttribute('aria-pressed', 'false'); $('#btn-legend').setAttribute('aria-pressed', 'false'); };
+  UI.showTab = (name) => { $('#drawer').classList.remove('closed'); ['coach', 'plan', 'legend'].forEach(t => { $('#tab-' + t).setAttribute('aria-selected', t === name); $('#pane-' + t).classList.toggle('hidden', t !== name); }); if (name === 'plan') UI.renderPlan(); if (name === 'legend') UI.renderLegend(); if (name === 'coach') setTimeout(() => { const c = $('#chat'); c.scrollTop = 1e9; }, 0); $('#btn-legend').setAttribute('aria-pressed', name === 'legend'); };
+  UI.closeDrawer = () => { $('#drawer').classList.add('closed'); $('#btn-legend').setAttribute('aria-pressed', 'false'); };
 
   // ---------- interfaccia nascosta ("schermo pulito"): resta il foglio; si mostra e si nasconde solo col pulsante ----------
   UI.setChrome = (visible, opts = {}) => {
@@ -400,7 +410,7 @@
     app.classList.toggle('clean', hidden);
     const b = $('#ui-toggle');
     if (b) { b.setAttribute('aria-pressed', hidden ? 'true' : 'false'); b.textContent = hidden ? '⇲' : '⇱'; const lbl = hidden ? 'Mostra l\'interfaccia' : 'Nascondi l\'interfaccia (più foglio)'; b.title = lbl; b.setAttribute('aria-label', lbl); }
-    if (hidden) { UI.closeDrawer(); UI.hideSuggest && UI.hideSuggest(); $('#more-tools').classList.add('hidden'); $('#menu').classList.add('hidden'); }
+    if (hidden) { UI.closeDrawer(); UI.hideSuggest && UI.hideSuggest(); $('#more-tools').classList.add('hidden'); $('#menu').classList.add('hidden'); UI.toggleGuide && UI.toggleGuide(false); }
     try { localStorage.setItem('vsm.chrome', hidden ? '0' : '1'); } catch (e) { /* storage bloccato */ }
     if (opts.hint !== false && hidden) I.hint('Interfaccia nascosta: tocca ⇲ in alto a sinistra per riaverla. Resta così finché non lo ripremi.', 3500);
     if (V.render && V.interact) V.interact.applyView();
@@ -428,7 +438,7 @@
     { id: 'delta', when: (M) => M.boxes >= 2 && M.flows >= 1 && M.deltas === 0, tool: 'delta', msg: 'Tra un box e il successivo, quando nulla avanza? Aggiungi un delta sulla freccia.' },
     { id: 'data', when: (M) => M.boxes >= 2 && M.deltas >= 1 && !M.hasData, tool: 'select', msg: 'Ora i tempi: tocca un box o un delta e inserisci Hi / Lo / Avg (una sola unità).' },
     { id: 'storm', when: (M) => M.hasData && M.storms === 0, tool: 'storm', msg: 'Che cosa non è ideale? Segna i problemi con le nuvole temporalesche (muda + regola).' },
-    { id: 'future', when: (M, map) => map.kind === 'current' && M.storms >= 2 && M.hasData && !V.futureOf(map), tool: null, msg: 'Con nuvole e dati sei pronto per lo stato futuro: menu ⋯ → "Crea lo stato futuro".' }
+    { id: 'future', when: (M, map) => map.kind === 'current' && M.storms >= 2 && M.hasData && !V.futureOf(map), tool: null, msg: 'Con nuvole e dati sei pronto per lo stato futuro: tocca «Futuro» in alto.' }
   ];
   UI.evalSuggest = () => {
     if (!UI.suggestOn || !UI.guideOn) return; if (SUG.current) return; const map = V.map(); const M = V.metrics(map); const now = Date.now();

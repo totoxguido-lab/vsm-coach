@@ -10,7 +10,7 @@
 <meta name="theme-color" content="#dfe3e9" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#14171b" media="(prefers-color-scheme: dark)">
 <meta name="color-scheme" content="light dark">
-<title>VSM Coach (beta)</title>
+<title>VSM Coach</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -58,14 +58,12 @@
 
     <aside id="drawer" class="closed">
       <div class="tabs">
-        <button id="tab-guide" aria-selected="true">Guida</button>
-        <button id="tab-coach" aria-selected="false">Coach ✦</button>
+        <button id="tab-coach" aria-selected="true">Coach ✦</button>
         <button id="tab-plan" aria-selected="false">Piano</button>
         <button id="tab-legend" aria-selected="false">Legenda</button>
         <button class="close" id="drawer-close" title="Chiudi" aria-label="Chiudi il cassetto">✕</button>
       </div>
-      <section class="pane" id="pane-guide"><div class="pane-body" id="guide-body"></div></section>
-      <section class="pane hidden" id="pane-coach">
+      <section class="pane" id="pane-coach">
         <div id="chat"></div>
         <div class="quick">
           <button class="btn small" data-q="Cosa faccio adesso? Guarda il foglio e dimmi il prossimo passo e lo strumento da usare.">Cosa faccio adesso?</button>
@@ -82,46 +80,54 @@
   </main>
 </div>
 
+<div id="guidepop" class="hidden" role="dialog" aria-label="Guida — promemoria del metodo"></div>
+
 <div id="menu" class="hidden">
-  <button data-m="new">Nuova mappa (foglio vuoto)</button>
-  <button data-m="future">Crea / apri lo stato futuro di questa mappa</button>
-  <button data-m="detail">Nuova mappa di dettaglio collegata</button>
-  <button data-m="example">Carica l'esempio del libro</button>
-  <button data-m="legend">Legenda dei simboli</button>
-  <button class="compact-only" data-m="current">Torna allo stato attuale</button>
-  <button class="compact-only" data-m="guide">Guida passo-passo</button>
-  <button class="compact-only" data-m="maps">Le tue mappe</button>
-  <button class="compact-only" data-m="help">Come si usa</button>
+  <button data-m="new"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9z"/><path d="M13 3v6h6"/><path d="M12 12v6M9 15h6"/></svg>Nuova mappa</button>
+  <button data-m="detail"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="8" y="3" width="13" height="13" rx="1.5"/><path d="M16 16v3a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h3" stroke-linecap="round"/></svg>Sotto-foglio di dettaglio</button>
+  <button data-m="example"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5c-2-1.4-4.5-2-8-2v16c3.5 0 6 .6 8 2 2-1.4 4.5-2 8-2V3c-3.5 0-6 .6-8 2z"/><path d="M12 5v16"/></svg>Esempio del libro</button>
+  <button data-m="legend"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h8M8 13h8M8 17h5" stroke-linecap="round"/></svg>Legenda</button>
+  <button class="compact-only" data-m="af"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13M14 4l4 4-4 4M20 16H7M10 12l-4 4 4 4"/></svg>Attuale ⇄ Futuro</button>
+  <button class="compact-only" data-m="guide"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.6 2.6 0 1 1 3.6 2.4c-.9.4-1.2 1-1.2 1.8"/><circle cx="12" cy="17" r=".4" fill="currentColor"/></svg>Guida</button>
+  <button class="compact-only" data-m="maps"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>Le tue mappe</button>
+  <button class="compact-only" data-m="help"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>Come si usa</button>
   <hr>
-  <button data-m="open">Apri JSON…</button>
-  <button data-m="save">Salva JSON</button>
-  <button data-m="svg">Esporta SVG</button>
-  <button data-m="print">Stampa A3</button>
+  <button class="sub-head" data-sub="file" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 5a1 1 0 0 1 1-1h11l4 4v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M8 4v5h7V4M7 20v-7h10v7"/></svg>File e stampa<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
+  <div class="submenu hidden" id="sub-file">
+    <button data-m="open">Apri JSON…</button>
+    <button data-m="save">Salva JSON</button>
+    <button data-m="svg">Esporta SVG</button>
+    <button data-m="print">Stampa A3</button>
+  </div>
+  <button class="sub-head" data-sub="opt" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h8M16 7h4M4 17h4M12 17h8"/><circle cx="14" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Opzioni<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
+  <div class="submenu hidden" id="sub-opt">
+    <button id="btn-link-mode">Frecce: dritte</button>
+    <button id="btn-trace" aria-pressed="true">✓ Evidenzia il percorso</button>
+    <button id="btn-tools-left" aria-pressed="false">○ Strumenti a sinistra</button>
+    <button id="btn-overlays" aria-pressed="true">✓ Riepilogo sul foglio</button>
+    <button id="btn-pen-mode" aria-pressed="true">✓ Penna Apple = matita</button>
+    <button data-m="clear-ink">Cancella l'inchiostro</button>
+  </div>
+  <button class="sub-head" data-sub="coach" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M18.5 15.5l.9 2.6 2.6.9-2.6.9-.9 2.6-.9-2.6-2.6-.9 2.6-.9z"/></svg>Coach<span class="tag-alfa">alfa</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
+  <div class="submenu hidden" id="sub-coach">
+    <button data-m="coach">Apri il coach ✦</button>
+    <button data-m="settings">Impostazioni API…</button>
+  </div>
   <hr>
-  <button id="btn-link-mode">Collegamenti: squadrata</button>
-  <button id="btn-trace" aria-pressed="true">✓ Evidenzia dove va ciò che selezioni</button>
-  <button id="btn-tools-left" aria-pressed="false">○ Strumenti in colonna a sinistra</button>
-  <button id="btn-overlays" aria-pressed="true">✓ Riepilogo e timeline sul foglio</button>
-  <button id="btn-pen-mode" aria-pressed="true">✓ Penna Apple = matita (sulla carta vuota)</button>
-  <hr>
-  <button data-m="settings">Impostazioni coach…</button>
-  <button data-m="clear-ink">Cancella tutto l'inchiostro</button>
-  <button data-m="delete" class="danger">Elimina questa mappa</button>
-  <button data-m="exit">Esci dall'app</button>
+  <button data-m="delete" class="danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13h10l1-13M10 11v5M14 11v5"/></svg>Elimina questa mappa</button>
+  <button data-m="exit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 8l-4 4 4 4M6 12h9"/></svg>Esci</button>
 </div>
 <input type="file" id="file-open" accept="application/json" hidden>
 
 <dialog id="dlg-help">
-  <div class="d-head">Come si usa VSM Coach — in 3 mosse</div>
+  <div class="d-head">Come si usa — in 3 mosse</div>
   <div class="d-body">
     <ol class="howto">
-      <li><b>Metti gli elementi sul foglio.</b> Scegli uno strumento in basso (Passo, Attesa, Persona, Problema…) e <b>tocca il foglio</b> dove vuoi metterlo. Sul foglio vuoto puoi toccare direttamente i segnaposto ① Chi chiede? e ② Primo passo.</li>
-      <li><b>Collega e completa.</b> Tocca un elemento: sopra compaiono le <b>azioni rapide</b> (es. su un passo: <i>+ Passo dopo</i> crea il successivo già collegato con l'attesa; <i>← Richiesta</i> traccia la via dal richiedente). Con <b>Flusso</b> o <b>Richiesta</b>: <b>tieni premuto</b> su un elemento e trascina fino all'altro. Il pop-up ha i campi (tempi Hi/Lo/Avg, attività, muda…) e il <b>?</b> che spiega cos'è secondo il libro. Per staccare o spostare una freccia: selezionala e trascina il cerchio all'estremità.</li>
-      <li><b>Scrivi a mano e chiedi al coach.</b> <b>Matita</b>: tieni premuto e trascina per tracciare (con l'Apple Pencil disegni sempre, col dito e col mouse dopo aver scelto la matita); <b>Gomma</b> per cancellare. <b>✦</b> in alto a destra: il coach legge il foglio, dice cosa manca e propone modifiche da applicare con un tocco. ↶ annulla tutto.</li>
+      <li><b>Metti gli elementi.</b> Strumento in basso, poi tocca il foglio dove vuoi l'elemento. Sul foglio vuoto bastano i segnaposto ① Chi chiede? e ② Primo passo.</li>
+      <li><b>Collega e completa.</b> Un tocco su un elemento apre le azioni rapide (<i>+ Passo dopo</i>, <i>← Richiesta</i>…); un secondo tocco apre i dettagli, col <b>?</b> che spiega il simbolo. Con Flusso o Richiesta: tieni premuto e trascina fino all'altro elemento.</li>
+      <li><b>Scrivi e chiedi.</b> Matita per l'inchiostro (l'Apple Pencil disegna da sé), <b>✦</b> per il coach che legge il foglio e propone modifiche. ↶ annulla tutto.</li>
     </ol>
-    <p class="hint"><b>Blocchi 🔒</b>: nuvole, kaizen, testi, scorte, in-box e distanze si <b>bloccano da soli</b> al passo su cui li lasci cadere (o alla freccia vicina) e da lì in poi si muovono con lui; i delta si agganciano alle frecce. "Blocca a…" nelle azioni rapide sceglie il genitore a mano (anche per più elementi selezionati col lazo: "Blocca tutti a…"); "Sblocca" li libera. Selezionando un elemento vedi a chi è bloccato (linea tratteggiata) e, su un passo, quanti elementi porta con sé (⛶ li seleziona tutti). Eliminare il genitore libera i figli.</p>
-    <p class="hint"><b>Su schermi piccoli</b>: un tocco sulla <b>carta vuota</b> chiude quello che è aperto (selezione, pop-up). Il pulsante <b>⇱</b> in alto a sinistra nasconde l'interfaccia e lascia solo il foglio: resta così finché non lo ripremi (da tastiera: <b>U</b>). Sul telefono l'intestazione tiene solo il titolo e l'essenziale: Guida, Mappe, Legenda e stato attuale/futuro stanno nel menu <b>⋯</b>, dove c'è anche <b>Strumenti in colonna a sinistra</b> se in basso ti coprono il foglio.</p>
-    <p class="hint"><b>Legenda</b> (in alto, o nel menu ⋯): tutti i simboli del libro con il loro significato e le varianti; da lì si sceglie anche lo strumento. Sposta: trascina. Zoom: pinch o Ctrl+rotella. Selezione multipla: lazo su area vuota. Canc elimina. Le mappe si salvano da sole; menu ⋯ per JSON, SVG, stampa A3, stato futuro, mappe di dettaglio.</p>
+    <p class="hint">La <b>Guida</b> in alto è il promemoria del metodo, una sezione alla volta. La <b>Legenda</b> spiega ogni simbolo — e da lì attivi lo strumento giusto. Le mappe si salvano da sole.</p>
   </div>
   <div class="d-foot"><button class="btn" id="help-example">Carica l'esempio del libro</button><button class="btn primary" id="help-close">Inizia</button></div>
 </dialog>

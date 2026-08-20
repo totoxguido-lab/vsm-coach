@@ -28,7 +28,7 @@
     const other = (m) => m ? { id: m.id, title: m.title, kind: m.kind, box: m.elements.filter(e => e.type === 'box').map(b => ({ id: b.id, title: b.props.title, avg: b.props.avg })), riepilogo: (() => { const k = V.metrics(m); return k.hasData ? { VA: k.va, NVA: k.nva, VA_pct: Math.round(k.vaPct) } : 'senza dati'; })() } : null;
     return {
       mappa: { id: map.id, titolo: map.title, tipo: map.kind, data: map.date, autori: map.authors, unita_organizzativa: map.unitName, scopo: map.scope, ideale: map.ideal, unita_misura: map.unit, misure: map.samples },
-      guida: { attiva: !!UI.guideOn, fase_corrente: (V.PHASES[map.guidePhase] || V.PHASES[0]).n + ' ' + (V.PHASES[map.guidePhase] || V.PHASES[0]).t },
+      guida: { attiva: !!UI.guideOn },
       elementi: map.elements.map(el),
       ordine_flusso: fo.order.map(b => b.props.title || b.id), ordine_stimato: fo.estimated,
       tratti_a_matita: map.strokes.length,

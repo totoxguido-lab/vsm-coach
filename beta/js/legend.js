@@ -21,8 +21,10 @@
   };
   const lockIcon = `<svg class="lg-g" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="11" width="12" height="9" rx="2" fill="#1f4e79"/><path d="M8 11V8a4 4 0 018 0v3" fill="none" stroke="#1f4e79" stroke-width="2"/></svg>`;
 
-  const row = (o) => `<div class="lg-row"><div class="lg-ico">${o.g}</div><div class="lg-txt"><b>${esc(o.name)}</b> <span class="lg-mean">${o.mean}</span>${o.vars ? `<div class="lg-var">${o.vars}</div>` : ''}${o.why ? `<details class="lg-why"><summary>dal libro</summary>${esc(o.why)}</details>` : ''}</div>${o.tool ? `<button class="btn small" data-tool-go="${o.tool}" title="Attiva lo strumento">Usa</button>` : '<span></span>'}</div>`;
-  const section = (title, rows) => `<h4 class="lg-h">${esc(title)}</h4>${rows.join('')}`;
+  // il "?" apre la spiegazione estesa del simbolo (stesso segno del pop-up degli elementi)
+  const row = (o) => `<div class="lg-row"><div class="lg-ico">${o.g}</div><div class="lg-txt"><b>${esc(o.name)}</b>${o.why ? ` <button class="lg-why-btn" aria-expanded="false" title="Che cos'è" aria-label="Spiegazione di ${esc(o.name)}">?</button>` : ''} <span class="lg-mean">${o.mean}</span>${o.vars ? `<div class="lg-var">${o.vars}</div>` : ''}${o.why ? `<div class="lg-why hidden">${esc(o.why)}</div>` : ''}</div>${o.tool ? `<button class="btn small" data-tool-go="${o.tool}" title="Attiva lo strumento">Usa</button>` : '<span></span>'}</div>`;
+  // sezioni chiuse di default: la legenda è una consultazione mirata, si apre solo ciò che serve
+  const section = (title, rows) => `<button class="lg-sec" aria-expanded="false">${esc(title)}<span class="lg-count">${rows.length}</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button><div class="lg-body hidden">${rows.join('')}</div>`;
   const T = () => V.TYPES;
 
   UI.legendHTML = () => {
@@ -76,10 +78,12 @@
     const map = V.map();
     const forzati = map ? map.elements.filter(e => V.isConnector(e) && e.props.override && (e.props.override.stroke || e.props.override.dash || e.props.override.width)) : [];
     const nota = forzati.length ? `<div class="lg-intro hint">✱ ${forzati.length} ${forzati.length === 1 ? 'collegamento ha' : 'collegamenti hanno'} un aspetto scelto a mano: quel segno non è spiegato da questa legenda. Si torna al significato dal pop-up della freccia, in "Altre opzioni".</div>` : '';
-    return `<div class="lg-intro hint">I simboli sono quelli di <i>Value Stream Mapping for Healthcare Made Easy</i> (Jimmerson). "Usa" attiva lo strumento; "dal libro" apre la spiegazione.</div>${nota}` + S.join('');
+    return nota + S.join('');
   };
   UI.renderLegend = () => {
     const body = $('#legend-body'); if (!body) return; body.innerHTML = UI.legendHTML();
     $$('[data-tool-go]', body).forEach(b => b.onclick = () => { I.setTool(b.dataset.toolGo); if (window.matchMedia('(max-width: 900px)').matches) UI.closeDrawer(); });
+    $$('.lg-sec', body).forEach(b => b.onclick = () => { const open = b.getAttribute('aria-expanded') === 'true'; b.setAttribute('aria-expanded', !open); b.nextElementSibling.classList.toggle('hidden', open); });
+    $$('.lg-why-btn', body).forEach(b => b.onclick = () => { const w = b.parentElement.querySelector('.lg-why'); const open = !w.classList.contains('hidden'); w.classList.toggle('hidden', open); b.setAttribute('aria-expanded', !open); });
   };
 })(window.VSM);
