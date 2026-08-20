@@ -104,6 +104,10 @@
     // se la cattura del puntatore fallisce (succede con eventi sintetici e su qualche browser) il gesto
     // deve comunque partire: prima un'eccezione qui buttava via l'intero tocco
     try { svg.setPointerCapture(e.pointerId); } catch (err) { /* si prosegue senza cattura */ }
+    // rete di sicurezza: il PRIMO dito di un tocco nuovo (isPrimary) certifica che non c'e' nessun altro
+    // dito a terra. Un puntatore rimasto appeso (pointerup perso su un popup comparso sotto il dito)
+    // faceva contare 2 puntatori a ogni tocco singolo: il pan diventava per sempre un pinch.
+    if (e.isPrimary && e.pointerType !== 'mouse' && ptrs.size) { ptrs.clear(); if (gesture && (gesture.type === 'pinch' || gesture.type === 'pan')) gesture = null; }
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (ptrs.size === 2) { // pinch: annulla il gesto in corso (rollback delle mutazioni non committate)
       if (gesture && gesture.type === 'ink' && gesture.pathEl) gesture.pathEl.remove();
@@ -141,8 +145,10 @@
     if (I.pickLock) { const kids = I.pickLock; if (hit && !kids.includes(hit.id)) { I.cancelPickLock(); if (!I.lockMany(kids, hit.id)) I.hint('Non si può bloccare a questo elemento.', 2500); } else if (!hit) I.cancelPickLock(); gesture = { type: 'noop' }; return; }
     if (e.target.closest && e.target.closest('[data-toggle-legend]')) { gesture = { type: 'legend', id: e.target.closest('[data-toggle-legend]').dataset.toggleLegend }; return; }
     if (e.target.closest && e.target.closest('[data-place]')) { const g = e.target.closest('[data-place]'); gesture = { type: 'place', kind: g.dataset.place, x: +g.dataset.px, y: +g.dataset.py }; return; }
-    if (t === 'whatis') { // modalita' «?»: il tocco spiega l'elemento invece di selezionarlo; sul vuoto si sposta il foglio
-      if (hit) { const el2 = V.byId(hit.id, map); if (el2 && V.ui.showWhatIs) V.ui.showWhatIs(el2, e.clientX, e.clientY); gesture = { type: 'noop' }; return; }
+    if (t === 'whatis') { // modalita' «?»: il tocco spiega l'elemento invece di selezionarlo; sul vuoto si sposta il foglio.
+      // La scheda si apre al RILASCIO: aperta al pointerdown finiva sotto il dito e si mangiava il
+      // pointerup dell'svg — il puntatore restava appeso e il pan successivo diventava un pinch.
+      if (hit) { gesture = { type: 'whatis', hitId: hit.id }; return; }
       if (V.ui.closeGuideCard) V.ui.closeGuideCard(); startPan(e); return;
     }
     if (t === 'select' || kind === 'create') {
@@ -268,6 +274,7 @@
         I.select([c.id], { keepPop: true }); break;
       }
       case 'title': V.pop.openTitle(); break;
+      case 'whatis': { const el2 = V.byId(g.hitId, map); if (el2 && V.ui.showWhatIs) V.ui.showWhatIs(el2, e.clientX, e.clientY); break; }
       case 'via': {
         const c = V.byId(g.id, map); if (!c) break;
         if (!g.moved) { // tocco fermo sulla linea: comportamento di sempre

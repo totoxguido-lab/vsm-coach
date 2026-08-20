@@ -132,7 +132,14 @@
           break;
         }
         s += `<path class="${cls}" d="${cloudPath(w, h)}"/>`;
-        const lines = wrap(p.text || (el.type === 'storm' ? 'problema…' : 'idea…'), Math.max(10, Math.floor(w / 5.4))).slice(0, Math.max(1, Math.floor((h - 14) / 11)));
+        // il problema porta un fulmine rosso: senza, nuvola e nuvoletta erano gemelle a colpo d'occhio
+        if (el.type === 'storm') s += `<path d="M${w - 12} ${h - 13} l-4.5 7 h3.6 l-4.5 8" fill="none" stroke="#c8321e" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`;
+        // il testo sta dentro la pancia della nuvola (piu' stretta del rettangolo w×h): larghezza utile ~72%.
+        // Se non ci sta in altezza si tronca con «…» — la misura giusta la sistema l'auto-crescita al momento della scrittura.
+        const maxLn = Math.max(1, Math.floor((h - 22) / 11));
+        const allLn = wrap(p.text || (el.type === 'storm' ? 'problema…' : 'idea…'), Math.max(9, Math.floor(w * 0.72 / 5)));
+        const lines = allLn.slice(0, maxLn);
+        if (allLn.length > maxLn) lines[lines.length - 1] = lines[lines.length - 1].replace(/.{0,2}$/, '…');
         s += `<text class="hand ${cls}-txt" x="${w / 2}" y="${h / 2 - (lines.length - 1) * 5.5 + 3}" text-anchor="middle" font-size="9.5">${tspans(lines, w / 2, h / 2 - (lines.length - 1) * 5.5 + 3, 11)}</text>`;
         if (el.type === 'storm' && (p.muda || p.rule)) s += `<text class="hand cloud-txt" x="${w / 2}" y="${h + 10}" text-anchor="middle" font-size="8">${esc([p.muda, p.rule ? 'R' + p.rule[0] : ''].filter(Boolean).join(' · '))}${p.a3 ? ' · A3' : ''}</text>`;
         break;
@@ -595,6 +602,8 @@
   };
   R.LOCK_PARENTS = ['box', 'person', 'lane', 'flow', 'request', 'inventory'];
   R.LOCKABLE = ['storm', 'fluffy', 'burst', 'text', 'inbox', 'inventory', 'distance', 'delta', 'person', 'box', 'icon', 'face'];
+  /** altezza necessaria perche' il testo stia nella pancia della nuvola (stesse costanti del disegno) */
+  R.cloudFit = (w, text) => { const n = wrap(String(text || ''), Math.max(9, Math.floor(w * 0.72 / 5))).length; return Math.max(56, n * 11 + 26); };
   R.children = (id, map) => map.elements.filter(e => e.props && (e.props.lockTo === id || (e.type === 'delta' && e.props.attachedTo === id)));
 
   /** Area sensibile: molti elementi sono disegnati a sole linee (l'omino ha tratti da 1.6 px su un

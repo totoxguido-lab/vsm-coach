@@ -176,7 +176,9 @@ window.VSM = window.VSM || {};
   V.canUndo = () => undoStack.length > 0; V.canRedo = () => redoStack.length > 0;
 
   // ---------- mappe: crea, cambia, elimina ----------
-  V.addMap = (map) => { V.doc.maps[map.id] = map; return map; };
+  /** le nuvole si alzano quanto serve al loro testo (stesse costanti del disegno): senza, il testo sforava */
+  const fitClouds = (m) => { const R2 = V.render; if (!m || !Array.isArray(m.elements) || !R2 || !R2.cloudFit) return m; m.elements.forEach(el => { if ((el.type === 'storm' || el.type === 'fluffy') && !el.props.collapsed && el.props.text) el.h = Math.max(el.h, R2.cloudFit(el.w, el.props.text)); }); return m; };
+  V.addMap = (map) => { V.doc.maps[map.id] = fitClouds(map); return map; };
   V.switchMap = (id) => { if (!V.doc.maps[id]) return; V.doc.activeMapId = id; V.save(); emit({ switched: true }); };
   V.deleteMap = (id) => { const m = V.doc.maps[id]; if (!m) return; delete V.doc.maps[id]; Object.values(V.doc.maps).forEach(o => { if (o.pairId === id) o.pairId = null; if (o.parentId === id) o.parentId = null; }); if (V.doc.activeMapId === id) { const first = Object.keys(V.doc.maps)[0]; V.doc.activeMapId = first || V.addMap(V.newMap({ title: '' })).id; } V.save(); emit({ switched: true }); };
   V.futureOf = (map) => map.kind === 'future' ? map : (map.pairId ? V.doc.maps[map.pairId] : null);
@@ -213,7 +215,7 @@ window.VSM = window.VSM || {};
       collegamenti riprende il foglio A3. Il tratto invece viene normalizzato a "dritta", come ogni mappa
       nuova: è la lettura scelta per l'app, e la modalità resta cambiabile per singola mappa dal menu ⋯.
       (Le mappe che hanno già una modalità salvata non vengono toccate.) */
-  const keepLook = (m) => { if (m && !m.paper) m.paper = clone(V.PAPER_A3); if (m && !m.links) m.links = { mode: 'dritta' }; return m; };
+  const keepLook = (m) => { if (m && !m.paper) m.paper = clone(V.PAPER_A3); if (m && !m.links) m.links = { mode: 'dritta' }; if (m && Array.isArray(m.elements)) m.elements = m.elements.filter(e => e.type !== 'legend'); return fitClouds(m); };
   V.replaceDoc = (d) => { if (!d || d.version !== 2 || !d.maps) throw new Error('Formato non riconosciuto (serve un JSON di VSM Coach v2)'); V.doc = d; Object.values(V.doc.maps).forEach(m => { keepLook(m); Object.assign(m, Object.assign(V.newMap(), m)); }); if (!V.doc.maps[V.doc.activeMapId]) V.doc.activeMapId = Object.keys(V.doc.maps)[0]; undoStack.length = 0; redoStack.length = 0; V.save(); emit({ switched: true }); };
   V.importMaps = (d) => { // aggiunge le mappe di un altro documento senza sostituire (id già esistenti → rigenerati, per non perdere le modifiche fatte nel frattempo)
     if (d.version === 2 && d.maps) {
