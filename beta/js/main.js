@@ -84,7 +84,7 @@
   function menuAction(a) {
     const map = V.map();
     switch (a) {
-      case 'new': { UI.closeDrawer(); const m = V.addMap(V.newMap({ title: '', authors: map.authors, unit: map.unit })); m.elements.push(V.newElement('legend', 30, 20)); UI.openMap(m.id); I.fit(); UI.toast('Nuovo foglio. Tocca il titolo in alto a destra per intestarlo.'); break; }
+      case 'new': { UI.closeDrawer(); const m = V.addMap(V.newMap({ title: '', authors: map.authors, unit: map.unit })); UI.openMap(m.id); I.fit(); UI.toast('Nuovo foglio. Tocca il titolo in alto a destra per intestarlo.'); break; }
       // solo su schermi piccoli, dove il selettore Attuale/Futuro in testata non c'è
       case 'af': { if (map.kind === 'future') { const c = V.currentOf(map); if (c && c !== map) UI.openMap(c.id); } else { const f = V.futureOf(map); if (f && f !== map) UI.openMap(f.id); else if (map.kind === 'current') { const nf = V.createFuture(map); UI.openMap(nf.id); UI.toast('Stato futuro creato come copia: ora semplifica.'); } else UI.toast('I sotto-fogli non hanno uno stato futuro.'); } break; }
       case 'detail': { const d = V.createDetail(map, ''); UI.openMap(d.id); I.fit(); UI.toast('Mappa di dettaglio: collegala da un box (pop-up → Collega a un\'altra mappa).'); break; }
@@ -122,7 +122,7 @@
       UI.setToolsLeft(tools === '1'); if (chrome === '0') UI.setChrome(false, { hint: false }); }
     try { if (localStorage.getItem('vsm.paletteHidden') === '1') UI.setPaletteHidden(true, { quiet: true }); } catch (e) { /* storage bloccato */ }
     fullRender(); I.restoreView();
-    if (!V.map().elements.length && Object.keys(V.doc.maps).length === 1) { V.map().elements.push(V.newElement('legend', 30, 20)); V.save(); fullRender(); I.hint('Foglio nuovo: tocca il titolo in alto a destra, poi metti il richiedente e i process box. La Guida (in alto) ti accompagna se vuoi.', 6000); }
+    if (!V.map().elements.length && Object.keys(V.doc.maps).length === 1) I.hint('Foglio nuovo: tocca il titolo in alto a destra, poi metti il richiedente e i process box. La Guida pratica (menu ⋯) ti accompagna se vuoi.', 6000);
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
       navigator.serviceWorker.register('sw.js').catch(() => {});
       // quando un service worker NUOVO prende il controllo (aggiornamento installato in sottofondo),

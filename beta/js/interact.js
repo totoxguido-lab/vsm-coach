@@ -6,7 +6,7 @@
   let svg, stage;
   const ptrs = new Map(); let gesture = null;
   let nudgeSession = null, nudgeTimer = null;
-  const TOOL_KINDS = { select: 'select', pan: 'pan', ink: 'ink', eraser: 'eraser', area: 'area', flow: 'connect', request: 'connect' };
+  const TOOL_KINDS = { select: 'select', pan: 'pan', ink: 'ink', eraser: 'eraser', area: 'area', flow: 'connect', request: 'connect', whatis: 'whatis' };
   I.kindOf = (t) => TOOL_KINDS[t] || 'create';
 
   // ---------- vista ----------
@@ -120,7 +120,7 @@
     // sotto un omino (o sotto il suo nome) non si poteva piu' toccare. Se il tocco cade proprio sulla linea,
     // il connettore vince. Vale solo per il rettangolo di comodo, non per il disegno vero dell'elemento.
     const onPad = e.target.classList && e.target.classList.contains('el-hit');
-    if (onPad && I.tool === 'select') {
+    if (onPad && (I.tool === 'select' || I.tool === 'whatis')) {
       const near = nearConn(w, map, 12, hit && hit.id);
       if (near) hit = { id: near.id, g: null, type: near.type };
     }
@@ -141,6 +141,10 @@
     if (I.pickLock) { const kids = I.pickLock; if (hit && !kids.includes(hit.id)) { I.cancelPickLock(); if (!I.lockMany(kids, hit.id)) I.hint('Non si può bloccare a questo elemento.', 2500); } else if (!hit) I.cancelPickLock(); gesture = { type: 'noop' }; return; }
     if (e.target.closest && e.target.closest('[data-toggle-legend]')) { gesture = { type: 'legend', id: e.target.closest('[data-toggle-legend]').dataset.toggleLegend }; return; }
     if (e.target.closest && e.target.closest('[data-place]')) { const g = e.target.closest('[data-place]'); gesture = { type: 'place', kind: g.dataset.place, x: +g.dataset.px, y: +g.dataset.py }; return; }
+    if (t === 'whatis') { // modalita' «?»: il tocco spiega l'elemento invece di selezionarlo; sul vuoto si sposta il foglio
+      if (hit) { const el2 = V.byId(hit.id, map); if (el2 && V.ui.showWhatIs) V.ui.showWhatIs(el2, e.clientX, e.clientY); gesture = { type: 'noop' }; return; }
+      if (V.ui.closeGuideCard) V.ui.closeGuideCard(); startPan(e); return;
+    }
     if (t === 'select' || kind === 'create') {
       const ch = e.target.closest && e.target.closest('[data-chan-handle]'); if (ch) { const c = V.byId(ch.dataset.chanHandle, map); gesture = { type: 'chan', id: c.id, t0: c.props.t == null ? 0.5 : c.props.t, startClient: { x: e.clientX, y: e.clientY }, moved: false }; return; }
       const eh = e.target.closest && e.target.closest('[data-endhandle]'); if (eh) { gesture = { type: 'reconnect', id: eh.dataset.conn, end: eh.dataset.endhandle, moved: false }; V.ui.hideQuick && V.ui.hideQuick(); return; }

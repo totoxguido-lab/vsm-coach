@@ -60,8 +60,6 @@
     { id: 'icon', name: 'Icona', tool: 'icon', glyph: glyph('icon', { icon: 'fax', label: 'fax' }, { pad: 4, extraB: 14 }),
       body: 'Piccolo simbolo con etichetta opzionale: con che cosa, attraverso che cosa, dove; si blocca a un passo o a una freccia. La libreria completa è nel pop-up dell’elemento. Errore: icone senza etichetta che capisci solo tu — la mappa deve raccontarsi da sola.' },
     { id: 'text', name: 'Nota', tool: 'text', glyph: glyph('text', { text: 'nota' }, { pad: 4, w: 60 }),
-      body: 'Poche parole dove il disegno non basta. Errore: usarla per spiegare il processo invece di disegnarlo — se servono molte note, manca un simbolo.' },
-    { id: 'legend', name: 'Legenda sul foglio', tool: 'legend', glyph: glyph('legend', {}, { pad: 4, w: 170, h: 104 }),
-      body: 'La legenda compatta stampabile, in alto a sinistra come nel libro. Mettila quando la mappa esce dalle tue mani (riunione, archivio); questa guida resta la versione completa.' }
+      body: 'Poche parole dove il disegno non basta. Errore: usarla per spiegare il processo invece di disegnarlo — se servono molte note, manca un simbolo.' }
   ];
 })(window.VSM);

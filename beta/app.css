@@ -64,6 +64,7 @@ main{position:relative;min-height:0;display:grid;grid-template-columns:1fr auto}
 #canvas.tool-pan{cursor:grab}
 #canvas.tool-create{cursor:copy}
 #canvas.tool-connect{cursor:alias}
+#canvas.tool-whatis{cursor:help}
 #canvas.picking{cursor:cell}
 #canvas.picking .el-box,#canvas.picking .el-person,#canvas.picking .el-lane,#canvas.picking .el-inventory{filter:drop-shadow(0 0 4px rgba(31,78,121,.5))}
 

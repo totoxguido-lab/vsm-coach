@@ -30,18 +30,19 @@
     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 9h3l1.5 3-1.5 1a5 5 0 002.5 2.5l1-1.5 3 1.5v2a1.5 1.5 0 01-1.5 1.5A9 9 0 018.5 10.5 1.5 1.5 0 018.5 9z"/></svg>',
     face: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5q3.5 3 7 0"/><circle cx="9" cy="9.5" r=".9" fill="currentColor"/><circle cx="15" cy="9.5" r=".9" fill="currentColor"/></svg>',
     area: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="4 3"><rect x="4" y="5" width="16" height="14" rx="1.5"/></svg>',
-    more: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="18" cy="12" r="2"/></svg>'
+    more: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="18" cy="12" r="2"/></svg>',
+    whatis: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.6 2.6 0 1 1 3.6 2.4c-.9.4-1.2 1-1.2 1.8"/><circle cx="12" cy="17" r=".4" fill="currentColor"/></svg>'
   };
   // Seleziona e Mano non sono nella barra: col dito si seleziona toccando e si sposta il foglio trascinando
   // il vuoto, quindi erano due bottoni che non facevano nulla di nuovo. Matita e Gomma invece restano:
   // col dito non c'e' modo di distinguere "disegno" da "trascino" senza un interruttore (con la penna parte da se').
-  const MAIN_TOOLS = [['box', 'Process box (B)'], ['delta', 'Delta / attesa (D)'], ['flow', 'Freccia di flusso (F)'], ['request', 'Via di richiesta (R)'], ['person', 'Persona / richiedente (O)'], ['storm', 'Nuvola temporalesca (N)'], null, ['area', 'Seleziona un\u2019area (A)'], ['ink', 'Matita (P)'], ['eraser', 'Gomma (E)'], null, ['more', 'Altri elementi del libro']];
-  const MORE_TOOLS = [['fluffy', 'Nuvola soffice'], ['burst', 'Kaizen burst'], ['face', 'Faccia (esperienza)'], ['icon', 'Icona (canale, mezzo, documento…)'], ['inventory', 'Scorta'], ['inbox', 'In-box / attesa'], ['distance', 'Distanza'], ['lane', 'Corsia (reparto)'], ['text', 'Testo'], ['legend', 'Legenda']];
+  const MAIN_TOOLS = [['box', 'Process box (B)'], ['delta', 'Delta / attesa (D)'], ['flow', 'Freccia di flusso (F)'], ['request', 'Via di richiesta (R)'], ['person', 'Persona / richiedente (O)'], ['storm', 'Nuvola temporalesca (N)'], null, ['area', 'Seleziona un\u2019area (A)'], ['ink', 'Matita (P)'], ['eraser', 'Gomma (E)'], null, ['more', 'Altri elementi del libro'], ['whatis', 'Che cos’è? Tocca un elemento e te lo spiego']];
+  const MORE_TOOLS = [['fluffy', 'Nuvola soffice'], ['burst', 'Kaizen burst'], ['face', 'Faccia (esperienza)'], ['icon', 'Icona (canale, mezzo, documento…)'], ['inventory', 'Scorta'], ['inbox', 'In-box / attesa'], ['distance', 'Distanza'], ['lane', 'Corsia (reparto)'], ['text', 'Testo']];
   const INK_COLORS = [['#2b2b2b', 'grafite'], ['#c8321e', 'rosso'], ['#1f4e79', 'blu'], ['#3f7d5a', 'verde']];
 
   UI.buildPalette = () => {
     const pal = $('#palette'); pal.innerHTML = '';
-    const SHORT = { ink: 'Matita', eraser: 'Gomma', area: 'Area', box: 'Passo', delta: 'Attesa', flow: 'Flusso', request: 'Richiesta', person: 'Persona', storm: 'Problema', more: 'Altro' };
+    const SHORT = { ink: 'Matita', eraser: 'Gomma', area: 'Area', box: 'Passo', delta: 'Attesa', flow: 'Flusso', request: 'Richiesta', person: 'Persona', storm: 'Problema', more: 'Altro', whatis: 'Cos’è?' };
     // "✓ Fine" compare solo quando uno strumento e' attivo: e' l'uscita, al posto del vecchio tasto Seleziona
     const done = document.createElement('button');
     done.className = 'tool done hidden'; done.id = 'tool-done'; done.title = 'Torna a selezionare (Esc)';
@@ -55,9 +56,10 @@
   };
   UI.onTool = (t) => {
     $$('#palette .tool, #more-tools .tool').forEach(b => b.setAttribute('aria-pressed', b.dataset.tool === t));
+    if (t !== 'whatis' && !UI.guideVisible() && UI.guideCardOpen && UI.guideCardOpen()) UI.closeGuideCard();
     const dn = $('#tool-done'); if (dn) dn.classList.toggle('hidden', t === 'select');
     if (MORE_TOOLS.some(x => x[0] === t)) $('#palette [data-tool="more"]').setAttribute('aria-pressed', 'true');
-    const hints = { ink: 'Matita attiva: tieni premuto e trascina sul foglio per tracciare (dito, mouse o penna). Tocca di nuovo la matita per colore e spessore; ✓ Fine per finire.', eraser: 'Gomma attiva: passa sui tratti da cancellare.', area: 'Area: disegna un riquadro intorno a un settore. Poi puoi eliminarlo, duplicarlo o trasformarlo in un sotto-foglio.', box: 'Passo: tocca il foglio dove vuoi il process box (o trascina per la dimensione).', delta: 'Attesa: tocca vicino a una freccia di flusso — il delta si aggancia ed entra nella timeline.', flow: 'Flusso: tieni premuto su un box e trascina fino al box successivo.', request: 'Richiesta: tieni premuto sull\'omino e trascina fino al primo passo; una freccia per ogni via reale.', person: 'Persona: tocca il foglio — il primo omino è il richiedente (in alto a destra).', storm: 'Problema: tocca dove sta il problema. Che cosa non è ideale?', fluffy: 'Nuvola soffice: tocca dove va l\'idea o la cosa che funziona.', burst: 'Kaizen: tocca dove va il candidato a progetto.', inventory: 'Scorta: tocca dove sta la scorta.', inbox: 'In-box/attesa: tocca dove aspetta l\'informazione o la persona.', distance: 'Distanza: tocca dove segnare i metri percorsi.', lane: 'Corsia: trascina per una fascia orizzontale (un reparto).', text: 'Testo: tocca per una nota.', icon: 'Icona: tocca dove metterla (su un passo o una freccia si blocca da sola), poi scegli il simbolo.', face: 'Faccia: tocca dove sta chi vive quel momento (paziente, operatore) e scegli l\'espressione.', legend: 'Legenda: tocca dove metterla (di solito in alto a sinistra).', pan: 'Mano: trascina per spostare il foglio; pinch (o Ctrl+rotella) per lo zoom.', select: '' };
+    const hints = { ink: 'Matita attiva: tieni premuto e trascina sul foglio per tracciare (dito, mouse o penna). Tocca di nuovo la matita per colore e spessore; ✓ Fine per finire.', eraser: 'Gomma attiva: passa sui tratti da cancellare.', area: 'Area: disegna un riquadro intorno a un settore. Poi puoi eliminarlo, duplicarlo o trasformarlo in un sotto-foglio.', box: 'Passo: tocca il foglio dove vuoi il process box (o trascina per la dimensione).', delta: 'Attesa: tocca vicino a una freccia di flusso — il delta si aggancia ed entra nella timeline.', flow: 'Flusso: tieni premuto su un box e trascina fino al box successivo.', request: 'Richiesta: tieni premuto sull\'omino e trascina fino al primo passo; una freccia per ogni via reale.', person: 'Persona: tocca il foglio — il primo omino è il richiedente (in alto a destra).', storm: 'Problema: tocca dove sta il problema. Che cosa non è ideale?', fluffy: 'Nuvola soffice: tocca dove va l\'idea o la cosa che funziona.', burst: 'Kaizen: tocca dove va il candidato a progetto.', inventory: 'Scorta: tocca dove sta la scorta.', inbox: 'In-box/attesa: tocca dove aspetta l\'informazione o la persona.', distance: 'Distanza: tocca dove segnare i metri percorsi.', lane: 'Corsia: trascina per una fascia orizzontale (un reparto).', text: 'Testo: tocca per una nota.', icon: 'Icona: tocca dove metterla (su un passo o una freccia si blocca da sola), poi scegli il simbolo.', face: 'Faccia: tocca dove sta chi vive quel momento (paziente, operatore) e scegli l\'espressione.', whatis: 'Che cos’è? Tocca un elemento sul foglio: ti dico cosa è e a che serve. ✓ Fine per uscire.', pan: 'Mano: trascina per spostare il foglio; pinch (o Ctrl+rotella) per lo zoom.', select: '' };
     if (hints[t]) I.hint(hints[t], 0); else I.hint('');
     UI.hideSuggestIfTool(t);
   };
@@ -369,7 +371,7 @@
     h += `<div class="gp-sechead" data-sec="primi">Primi passi</div>` + PRIMI.map((it, i) => row('primi', it, i)).join('');
     h += `<div class="gp-sechead" data-sec="metodo">Il metodo</div>` + METODO.map((it, i) => row('metodo', it, i)).join('');
     h += `<div class="gp-sechead" data-sec="simboli">I simboli</div><div class="gp-grid">` + UI.SYMBOLS().map(s => `<button class="gp-chip" data-card="simboli:${s.id}"><span class="gp-glyph">${s.glyph}</span><span>${esc(s.name)}</span></button>`).join('') + `</div>`;
-    h += `<div class="actions" style="padding:8px 10px 0"><button class="btn small" id="gp-example">Carica l'esempio del libro</button></div>`;
+    h += `<div class="actions" style="padding:8px 10px 0"><button class="btn small" id="gp-example">Esempio</button></div>`;
     h += `<div class="gp-lint">${L.length ? L.slice(0, 10).map((x, i) => `<button class="chip ${x.level}" data-li="${i}">${x.level === 'bad' ? '✕' : '⚠'} ${esc(x.msg)}</button>`).join('') : '<span class="chip ok">✓ Nessun rilievo dai controlli. Chiedi al coach una revisione.</span>'}</div>`;
     h += `<label class="check gp-foot"><input type="checkbox" id="gp-sug" ${UI.guideOn ? 'checked' : ''}> <span>Suggerimenti discreti mentre disegni</span></label>`;
     g.innerHTML = h;
@@ -383,6 +385,25 @@
   // ----- scheda flottante di una voce -----
   UI.guideCardOpen = () => !!$('#gpcard');
   UI.closeGuideCard = () => { const c = $('#gpcard'); if (c) c.remove(); };
+  /** modalità «?» della barra: scheda che spiega l'elemento toccato, con gli stessi contenuti della Guida pratica */
+  UI.showWhatIs = (el, cx, cy) => {
+    const sym = UI.SYMBOLS().find(s => s.id === el.type);
+    const T = V.TYPES[el.type];
+    const name = sym ? sym.name : (T ? T.name : el.type);
+    const body = sym ? sym.body : (T && T.why ? esc(T.why) : '');
+    // dopo il giro del pointerdown globale (che chiude la scheda precedente), mai prima:
+    // altrimenti la scheda appena aperta viene chiusa dallo stesso tocco che l'ha chiesta
+    setTimeout(() => {
+      UI.closeGuideCard();
+      const c = document.createElement('div'); c.id = 'gpcard';
+      c.innerHTML = `<div class="gpc-head">${sym ? `<span class="gp-glyph">${sym.glyph}</span>` : ''}<b>${esc(name)}</b><span class="spacer"></span><button class="btn small ghost" id="gpc-x" aria-label="Chiudi">✕</button></div><div class="gpc-body">${body}${sym && sym.vars ? `<div class="lg-var">${sym.vars}</div>` : ''}</div>`;
+      document.body.appendChild(c);
+      const chW = c.offsetWidth, chH = c.offsetHeight;
+      c.style.left = Math.round(Math.max(8, Math.min(window.innerWidth - chW - 8, cx + 16))) + 'px';
+      c.style.top = Math.round(Math.max(58, Math.min(window.innerHeight - chH - 10, cy - 24))) + 'px';
+      $('#gpc-x').onclick = UI.closeGuideCard;
+    }, 0);
+  };
   UI.openGuideCard = (sec, id, anchor) => {
     UI.closeGuideCard();
     const map = V.map();
