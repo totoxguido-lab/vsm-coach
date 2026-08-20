@@ -338,7 +338,9 @@ dialog .d-foot{padding:10px 16px;border-top:1px solid var(--line);display:flex;g
 /* col foglio libero a sinistra, il pulsante dell'interfaccia si sposta per non finirci sopra */
 #app.tools-left #ui-toggle{left:auto;right:calc(12px + 56px)}
 /* linguetta a bordo schermo: ripiega ed evoca la barra degli strumenti */
-#palette-toggle{position:absolute;left:0;top:50%;transform:translateY(-50%);z-index:5;width:21px;height:58px;border:1px solid var(--line);border-left:0;border-radius:0 10px 10px 0;background:var(--panel);box-shadow:var(--shadow);color:var(--ink-2);display:grid;place-items:center;padding:0}
+#palette-toggle{position:absolute;left:0;top:50%;transform:translateY(-50%);z-index:6;width:24px;height:64px;border:1px solid var(--line);border-left:0;border-radius:0 10px 10px 0;background:var(--panel);box-shadow:var(--shadow);color:var(--ink-2);display:grid;place-items:center;padding:0;touch-action:none}
+/* area di tocco allargata oltre il disegno: col dito 24px non bastano */
+#palette-toggle::before{content:'';position:absolute;top:-14px;bottom:-14px;left:0;right:-10px}
 #palette-toggle .chev{margin-left:0;transition:transform .15s}
 #app.palette-hidden #palette,#app.palette-hidden #more-tools{display:none}
 #app.palette-hidden #palette-toggle .chev{transform:rotate(180deg)}

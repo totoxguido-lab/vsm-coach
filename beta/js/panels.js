@@ -419,11 +419,12 @@
   UI.toggleChrome = () => UI.setChrome(!UI.chromeVisible());
 
   /** barra strumenti ripiegata: resta solo la linguetta a bordo schermo, un tocco la riapre */
-  UI.setPaletteHidden = (on) => {
+  UI.setPaletteHidden = (on, opts = {}) => {
     $('#app').classList.toggle('palette-hidden', !!on);
     if (on) $('#more-tools').classList.add('hidden');
     const b = $('#palette-toggle');
     if (b) { b.setAttribute('aria-pressed', on ? 'true' : 'false'); const lbl = on ? 'Mostra gli strumenti' : 'Nascondi gli strumenti'; b.title = lbl; b.setAttribute('aria-label', lbl); }
+    if (!opts.quiet) UI.toast(on ? 'Strumenti ripiegati: la linguetta › li riporta.' : 'Strumenti aperti.');
     try { localStorage.setItem('vsm.paletteHidden', on ? '1' : '0'); } catch (e) { /* storage bloccato */ }
   };
 

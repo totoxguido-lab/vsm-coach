@@ -59,7 +59,11 @@
     $('#zoom-fit').onclick = () => I.fit();
     $('#btn-help').onclick = () => UI.showHelp(false);
     $('#ui-toggle').onclick = () => UI.toggleChrome();
-    $('#palette-toggle').onclick = () => UI.setPaletteHidden(!$('#app').classList.contains('palette-hidden'));
+    // La linguetta risponde al pointerup, non al click: su iPad il click sintetizzato dopo il tocco
+    // puo' perdersi o raddoppiare vicino al bordo del foglio; cosi' il gesto e' deterministico.
+    const ptog = $('#palette-toggle');
+    ptog.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); });
+    ptog.addEventListener('pointerup', (e) => { e.stopPropagation(); e.preventDefault(); UI.setPaletteHidden(!$('#app').classList.contains('palette-hidden')); });
     $('#help-close').onclick = () => { $('#dlg-help').close(); localStorage.setItem('vsm.welcomed', '1'); };
     $('#help-example').onclick = () => { $('#dlg-help').close(); localStorage.setItem('vsm.welcomed', '1'); menuAction('example'); };
     // menu: i sottogruppi (File, Opzioni, Coach) si aprono a fisarmonica, uno alla volta, e si richiudono a ogni apertura
@@ -113,7 +117,7 @@
     UI.buildPalette(); bindHeader(); UI.bindLevels(); UI.renderLevels(); C.init(); UI.menuCheck('#btn-pen-mode', I.penDraws); UI.menuCheck('#btn-overlays', V.map().overlays !== false); UI.menuCheck('#btn-trace', R.traceOn);
     { let chrome = '1', tools = '0'; try { chrome = localStorage.getItem('vsm.chrome') ?? '1'; tools = localStorage.getItem('vsm.toolsLeft') ?? '0'; } catch (e) { /* storage bloccato */ }
       UI.setToolsLeft(tools === '1'); if (chrome === '0') UI.setChrome(false, { hint: false }); }
-    try { if (localStorage.getItem('vsm.paletteHidden') === '1') UI.setPaletteHidden(true); } catch (e) { /* storage bloccato */ }
+    try { if (localStorage.getItem('vsm.paletteHidden') === '1') UI.setPaletteHidden(true, { quiet: true }); } catch (e) { /* storage bloccato */ }
     fullRender(); I.restoreView();
     if (!V.map().elements.length && Object.keys(V.doc.maps).length === 1) { V.map().elements.push(V.newElement('legend', 30, 20)); V.save(); fullRender(); I.hint('Foglio nuovo: tocca il titolo in alto a destra, poi metti il richiedente e i process box. La Guida (in alto) ti accompagna se vuoi.', 6000); }
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
