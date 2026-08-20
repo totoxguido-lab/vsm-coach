@@ -13,5 +13,5 @@ self.VSM_VERSION = '0.9';
    l'app pubblicata e la beta scrivevano sullo stesso identico documento, ognuna col proprio codice.
    Lo imposta publish_beta.py nella copia pubblicata; nei sorgenti resta 'sviluppo'. */
 self.VSM_CHANNEL = 'beta';
-self.VSM_BUILD = '20260820-2009';           // identificatore breve, entra nel nome della cache
-self.VSM_BUILD_LABEL = '20 ago 2026, 20:09';  // come si legge nel menu
+self.VSM_BUILD = '20260820-2012';           // identificatore breve, entra nel nome della cache
+self.VSM_BUILD_LABEL = '20 ago 2026, 20:12';  // come si legge nel menu

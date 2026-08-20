@@ -3,11 +3,15 @@
 // cancella solo le versioni vecchie della PROPRIA famiglia. Senza questo, aprire la beta avrebbe svuotato
 // la cache dell'app gia' installata sull'iPad — cioe' le avrebbe tolto il funzionamento senza rete.
 const FAMILY = 'vsm-coach-beta';
-// la versione sta in un file solo (js/version.js), letto anche dalla pagina: un numero unico da cambiare.
-// Nel nome entra anche l'ora della pubblicazione, cosi' ogni push produce una cache nuova e i
-// dispositivi si aggiornano davvero (con un nome fermo, un deploy passava inosservato).
+// Il numero dell'app sta in un file solo (js/version.js), letto anche dalla pagina.
+// BUILD invece va scritto QUI dentro, e lo riscrive publish_beta.py a ogni pubblicazione: il browser
+// decide se c'e' un service worker nuovo confrontando i BYTE DI QUESTO FILE, e con la sola versione
+// importata da fuori questo file restava identico — il service worker non si aggiornava, e i
+// dispositivi continuavano a servire dalla cache la build precedente. publish_beta.py controlla che i
+// due timbri coincidano, cosi' non possono separarsi.
 importScripts('./js/version.js');
-const CACHE = FAMILY + '-v' + self.VSM_VERSION + '-' + self.VSM_BUILD;
+const BUILD = '20260820-2012';
+const CACHE = FAMILY + '-v' + self.VSM_VERSION + '-' + BUILD;
 const FILES = ['./', './index.html', './app.css', './prompt.js', './js/version.js', './js/model.js', './js/render.js', './js/interact.js', './js/panels.js', './js/legend.js', './js/coach.js', './js/main.js', './manifest.webmanifest', './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
 // Install atomico, di proposito: se un file manca, l'install FALLISCE e restano in servizio il service
 // worker e la cache precedenti, completi e funzionanti. La variante "tollerante" (cache file per file)
