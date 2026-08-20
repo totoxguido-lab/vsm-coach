@@ -241,8 +241,8 @@
     // stato di blocco (sempre visibile, una riga)
     if (!V.isConnector(el)) {
       const lk = el.props.lockTo || (el.type === 'delta' && el.props.attachedTo); const lpar = lk ? V.byId(lk, map) : null;
-      if (lpar) main += `<div class="hint lockrow">🔒 Bloccato a <b>${esc(lpar.props.title || lpar.props.label || lpar.props.name || V.TYPES[lpar.type].name)}</b>: si muove con lui.</div>`;
-      else if (R.LOCKABLE.includes(el.type) && el.type !== 'delta' && el.type !== 'box' && el.type !== 'person') main += `<div class="hint lockrow">🔓 Libero: lascialo cadere su un passo o vicino a una freccia per bloccarlo.</div>`;
+      if (lpar) main += `<div class="hint lockrow">⛓ Legato a <b>${esc(lpar.props.title || lpar.props.label || lpar.props.name || V.TYPES[lpar.type].name)}</b>: si muove con lui.</div>`;
+      else if (R.LOCKABLE.includes(el.type) && el.type !== 'delta' && el.type !== 'box' && el.type !== 'person') main += `<div class="hint lockrow">⛓ Libero: lascialo cadere su un passo o vicino a una freccia per legarlo.</div>`;
       const opts = mapOptions(map.id);
       adv += field('Collega a un\'altra mappa (dettaglio, turno, futuro)', `<select data-k="link"><option value="">— nessuna —</option>${opts.map(o => `<option value="${o.id}" ${p.link === o.id ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}<option value="__new__">+ nuova mappa di dettaglio…</option></select>`);
       if (p.link && V.doc.maps[p.link]) main += `<div class="actions"><button class="btn small primary" id="pop-openlink">Apri la mappa collegata ↗</button></div>`;
@@ -360,7 +360,7 @@
     { id: 'prima', t: 'La prima mappa', body: 'Sul foglio vuoto tocca i segnaposto ① Chi chiede? e ② Primo passo: è il modo più rapido per iniziare. Altrimenti scegli lo strumento nella barra in basso e tocca il punto del foglio dove vuoi l’elemento. Le mappe si salvano da sole, non c’è un tasto salva. Errore tipico: progettare tutto prima di disegnare — parti dal richiedente e segui il processo.' },
     { id: 'modifica', t: 'Modificare e collegare', body: 'Un tocco su un elemento apre le azioni rapide (+ Passo dopo, ← Richiesta…); un secondo tocco apre i dettagli. Per una freccia di flusso o di richiesta tieni premuto e trascina fino all’altro elemento. Un’estremità staccata è segnata in rosso tratteggiato: riagganciala, altrimenti resta fuori dalla timeline.' },
     { id: 'matita', t: 'Matita, coach, annulla', body: 'Con la Matita scrivi e disegni a mano libera (l’Apple Pencil scrive da sé, le dita muovono gli elementi). ✦ legge il foglio e propone modifiche: è un secondo parere, non un correttore — valuta prima di accettare. ↶ annulla l’ultima azione, tutte le volte che serve.' },
-    { id: 'foglio', t: 'Leggere il foglio', body: 'Sotto i passi la timeline: verde in basso il tempo a valore, rosso in alto le attese; il riepilogo in basso a destra fa i conti (VA, NVA, VA %, First Time Quality). Il lucchetto dice che un elemento è bloccato a un altro e si muove con lui («Blocca a…» / «Sblocca» nelle azioni rapide). Il badge ↗ apre la mappa collegata (dettaglio, turno, futuro). «Provvisoria» nell’intestazione in barra resta finché non cammini e validi il processo (vedi Cammina e valida).' }
+    { id: 'foglio', t: 'Leggere il foglio', body: 'Sotto i passi la timeline: verde in basso il tempo a valore, rosso in alto le attese; il riepilogo in basso a destra fa i conti (VA, NVA, VA %, First Time Quality). La catena ⛓ dice che un elemento è legato a un altro: spostando quello, si muove anche lui («Lega a…» / «Slega» nelle azioni rapide). Il lucchetto 🔒 invece inchioda un elemento al foglio: non si sposta finché non lo sblocchi («Blocca» / «Sblocca»). Il badge ↗ apre la mappa collegata (dettaglio, turno, futuro). «Provvisoria» nell’intestazione in barra resta finché non cammini e validi il processo (vedi Cammina e valida).' }
   ];
   const METODO = [
     { id: 'testata', t: 'Intestazione e scopo', body: 'Titolo, data e iniziali vivono in barra, in alto a sinistra: tocca l’intestazione per vederli e cambiarli (sul foglio A3 del libro stavano in alto a destra). Lo scopo in una frase: dalla richiesta X alla consegna Y. Una mappa = un processo solo: se cambia turno o unità, fai un’altra mappa, non una variante.', q: 'Cosa soddisfa esattamente questa mappa?', acts: [['title', 'Apri l’intestazione']] },
@@ -554,15 +554,17 @@
     legend: IC.legend,
     legendfull: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></svg>',
     straighten: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none"/><path d="M7 12h10"/></svg>',
-    lockto: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="6" y="11" width="12" height="9" rx="1.5"/><path d="M9 11V8a3 3 0 016 0v3"/></svg>',
-    unlock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="6" y="11" width="12" height="9" rx="1.5"/><path d="M9 11V8a3 3 0 015.6-1.5" stroke-linecap="round"/></svg>',
+    pin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="6" y="11" width="12" height="9" rx="1.5"/><path d="M9 11V8a3 3 0 016 0v3"/></svg>',
+    unpin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="6" y="11" width="12" height="9" rx="1.5"/><path d="M9 11V8a3 3 0 015.6-1.5" stroke-linecap="round"/></svg>',
+    lockto: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 14.5l5-5"/><path d="M8.5 11.5l-2.2 2.2a3.2 3.2 0 104.5 4.5l2.2-2.2"/><path d="M15.5 12.5l2.2-2.2a3.2 3.2 0 10-4.5-4.5L11 8"/></svg>',
+    unlock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 13.5l-1.2 1.2a3.2 3.2 0 104.5 4.5l1.2-1.2"/><path d="M16.5 10.5l1.2-1.2a3.2 3.2 0 10-4.5-4.5L12 6"/><path d="M10.2 10.2l.9.9M13 13l.9.9" stroke-width="1.4"/></svg>',
     selkids: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3 2"/><rect x="8.5" y="8.5" width="7" height="7" rx="1"/></svg>',
     sheetify: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>',
     del: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M10 7V5h4v2"/><path d="M7 7l1 13h8l1-13"/><path d="M10.5 11v5M13.5 11v5"/></svg>'
   };
   QICN.lockall = QICN.lockto; QICN.unlockall = QICN.unlock; QICN.unlockkids = QICN.unlock; QICN.dupall = QICN.dup;
   // etichette corte sotto l'icona (poche parole: la spiegazione intera resta nel title)
-  const QLBL = { next: 'Passo', delta: 'Attesa', deltaOn: 'Attesa', cloud: 'Problema', connect: 'Collega', request: 'Richiesta', reqtool: 'Richiesta', attach: 'Aggancia', invert: 'Inverti', shrink: 'Segnale', expand: 'Espandi', dup: 'Duplica', dupall: 'Duplica', legend: 'Apri', legendfull: 'Simboli', straighten: 'Raddrizza', lockto: 'Blocca', lockall: 'Blocca', unlock: 'Sblocca', unlockall: 'Sblocca', unlockkids: 'Libera', selkids: 'Gruppo', sheetify: 'Dettaglio', del: 'Elimina' };
+  const QLBL = { next: 'Passo', delta: 'Attesa', deltaOn: 'Attesa', cloud: 'Problema', connect: 'Collega', request: 'Richiesta', reqtool: 'Richiesta', attach: 'Aggancia', invert: 'Inverti', shrink: 'Segnale', expand: 'Espandi', dup: 'Duplica', dupall: 'Duplica', legend: 'Apri', legendfull: 'Simboli', straighten: 'Raddrizza', pin: 'Blocca', unpin: 'Sblocca', lockto: 'Lega', lockall: 'Lega', unlock: 'Slega', unlockall: 'Slega', unlockkids: 'Slega', selkids: 'Gruppo', sheetify: 'Dettaglio', del: 'Elimina' };
   const qBtn = (a, el) => {
     // due azioni cambiano verso con lo stato dell'elemento: l'icona e l'etichetta seguono
     let key = a.id;
@@ -610,8 +612,8 @@
       const els = ids.map(id => V.byId(id, map)).filter(Boolean); const lockable = els.filter(e => !V.isConnector(e) && R.LOCKABLE.includes(e.type)); const locked = els.filter(e => e.props && (e.props.lockTo || (e.type === 'delta' && e.props.attachedTo)));
       Q.el = ids[0];
       const acts = [];
-      if (lockable.length) acts.push({ id: 'lockall', label: 'Blocca tutti a…', title: 'Blocca gli elementi selezionati a un passo, persona, corsia o freccia che tocchi' });
-      if (locked.length) acts.push({ id: 'unlockall', label: 'Sblocca tutti', title: 'Sblocca tutti gli elementi selezionati' });
+      if (lockable.length) acts.push({ id: 'lockall', label: 'Lega tutti a…', title: 'Lega gli elementi selezionati a un passo, persona, corsia o freccia che tocchi: si muoveranno con lui' });
+      if (locked.length) acts.push({ id: 'unlockall', label: 'Slega tutti', title: 'Slega tutti gli elementi selezionati: smettono di seguire i loro genitori' });
       if (els.filter(e => !V.isConnector(e) && e.type !== 'lane').length >= 2) acts.push({ id: 'sheetify', label: 'In un sotto-foglio', title: 'Sposta il settore in una nuova mappa collegata: al suo posto resta un passo con ↗' });
       acts.push({ id: 'dupall', label: 'Duplica tutti', title: 'Duplica tutti gli elementi selezionati' });
       acts.push({ id: 'del', label: 'Elimina', title: 'Elimina gli elementi selezionati' });
@@ -643,10 +645,12 @@
       case 'legend': btn('legend', el.props.collapsed ? 'Apri' : 'Chiudi'); btn('legendfull', 'Tutti i simboli', 'Ogni simbolo con significato e varianti, nella Guida pratica'); break;
     }
     if (V.isConnector(el) && Array.isArray(el.props.via) && el.props.via.length) btn('straighten', '― Raddrizza', 'Toglie le pieghe fatte a mano: la freccia torna diretta');
+    // la CATENA lega due elementi (si muovono insieme); il LUCCHETTO inchioda l'elemento al foglio
     const locked = el.props && (el.props.lockTo || (el.type === 'delta' && el.props.attachedTo));
-    if (locked) { const par = V.byId(locked, map); btn('unlock', '🔓 Sblocca', 'Bloccato a ' + (par ? (par.props.title || par.props.label || par.props.name || V.TYPES[par.type].name) : '?') + ': smette di seguirlo'); }
-    else if (!V.isConnector(el) && R.LOCKABLE.includes(el.type) && el.type !== 'delta') btn('lockto', '🔒 Blocca a…', 'Si muove insieme all\'elemento che tocchi (passo, freccia, persona, corsia)');
-    const kids = R.children(el.id, map); if (kids.length) { btn('selkids', `⛶ Con i bloccati (${kids.length})`, 'Seleziona anche gli elementi bloccati a questo (per spostare, duplicare o eliminare tutto insieme)'); btn('unlockkids', '🔓 Sblocca i suoi', 'Libera tutti gli elementi bloccati a questo'); }
+    if (locked) { const par = V.byId(locked, map); btn('unlock', '⛓ Slega', 'Legato a ' + (par ? (par.props.title || par.props.label || par.props.name || V.TYPES[par.type].name) : '?') + ': smette di seguirlo'); }
+    else if (!V.isConnector(el) && R.LOCKABLE.includes(el.type) && el.type !== 'delta') btn('lockto', '⛓ Lega a…', 'Si muove insieme all\'elemento che tocchi (passo, freccia, persona, corsia)');
+    const kids = R.children(el.id, map); if (kids.length) { btn('selkids', `⛶ Con i legati (${kids.length})`, 'Seleziona anche gli elementi legati a questo (per spostare, duplicare o eliminare tutto insieme)'); btn('unlockkids', '⛓ Slega i suoi', 'Slega tutti gli elementi legati a questo'); }
+    if (!V.isConnector(el)) { if (el.props.pinned) btn('unpin', '🔓 Sblocca', 'Il lucchetto si apre: si può spostare e ridimensionare di nuovo'); else btn('pin', '🔒 Blocca', 'Inchioda l\'elemento al foglio: se lo trascini per sbaglio non si muove'); }
     btn('del', 'Elimina');
     return A;
   };
@@ -675,6 +679,8 @@
       }
       case 'lockto': I.startPickLock([id]); break;
       case 'unlock': I.unlock(id); break;
+      case 'pin': V.commit({ t: 'props', id, after: { pinned: true } }, 'blocca sul foglio'); I.select([id]); I.hint('Bloccato sul foglio \u{1F512}: trascinarlo non lo sposta più. «Sblocca» nelle azioni rapide per liberarlo.', 3500); break;
+      case 'unpin': V.commit({ t: 'props', id, after: { pinned: false } }, 'sblocca dal foglio'); I.select([id]); I.hint('Lucchetto aperto \u{1F513}: si può spostare di nuovo.', 2000); break;
       case 'lockall': I.startPickLock(I.selection.slice()); break;
       case 'unlockall': I.unlockMany(I.selection.slice()); break;
       case 'selkids': I.selectWithChildren(id); break;

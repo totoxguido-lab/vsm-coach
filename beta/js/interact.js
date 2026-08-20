@@ -148,7 +148,7 @@
       if (tgt && tgt !== pc.from) I.connectTo(pc.from, tgt, pc.ctype);
       gesture = { type: 'noop' }; return;
     }
-    if (I.pickLock) { const kids = I.pickLock; if (hit && !kids.includes(hit.id)) { I.cancelPickLock(); if (!I.lockMany(kids, hit.id)) I.hint('Non si può bloccare a questo elemento.', 2500); } else if (!hit) I.cancelPickLock(); gesture = { type: 'noop' }; return; }
+    if (I.pickLock) { const kids = I.pickLock; if (hit && !kids.includes(hit.id)) { I.cancelPickLock(); if (!I.lockMany(kids, hit.id)) I.hint('Non si può legare a questo elemento.', 2500); } else if (!hit) I.cancelPickLock(); gesture = { type: 'noop' }; return; }
     if (e.target.closest && e.target.closest('[data-toggle-legend]')) { gesture = { type: 'legend', id: e.target.closest('[data-toggle-legend]').dataset.toggleLegend }; return; }
     if (e.target.closest && e.target.closest('[data-place]')) { const g = e.target.closest('[data-place]'); gesture = { type: 'place', kind: g.dataset.place, x: +g.dataset.px, y: +g.dataset.py }; return; }
     if (t === 'whatis') { // modalita' «?»: il tocco spiega l'elemento invece di selezionarlo; sul vuoto si sposta il foglio.
@@ -160,7 +160,7 @@
     if ((t === 'select' || kind === 'create') && !frozen) {
       const ch = e.target.closest && e.target.closest('[data-chan-handle]'); if (ch) { const c = V.byId(ch.dataset.chanHandle, map); gesture = { type: 'chan', id: c.id, t0: c.props.t == null ? 0.5 : c.props.t, startClient: { x: e.clientX, y: e.clientY }, moved: false }; return; }
       const eh = e.target.closest && e.target.closest('[data-endhandle]'); if (eh) { gesture = { type: 'reconnect', id: eh.dataset.conn, end: eh.dataset.endhandle, moved: false }; V.ui.hideQuick && V.ui.hideQuick(); return; }
-      const rh = e.target.closest && e.target.closest('[data-handle]'); if (rh) { const el = V.byId(rh.dataset.handle, map); if (el) { gesture = { type: 'resize', id: el.id, start: w, w0: el.w, h0: el.h }; return; } }
+      const rh = e.target.closest && e.target.closest('[data-handle]'); if (rh) { const el = V.byId(rh.dataset.handle, map); if (el) { if (el.props.pinned) { I.hint('Bloccato sul foglio \u{1F512}: si sblocca dalle azioni rapide.', 2500); gesture = { type: 'noop' }; return; } gesture = { type: 'resize', id: el.id, start: w, w0: el.w, h0: el.h }; return; } }
     }
     if (t === 'pan' || (e.pointerType === 'touch' && I.fingerPans && (t === 'select' && !hit) )) { startPan(e); return; }
     if (t === 'area') { gesture = { type: 'lasso', start: w, startClient: { x: e.clientX, y: e.clientY }, shift: e.shiftKey, fromTool: true }; return; }
@@ -189,8 +189,9 @@
     if (hit) {
       const el = V.byId(hit.id, map); const wasSelected = I.selection.includes(hit.id);
       if (!wasSelected) I.select([hit.id], { keepPop: true });
-      const moving = frozen ? [] : I.selection.map(id => V.byId(id, map)).filter(x => x && !V.isConnector(x));
-      gesture = { type: 'drag', wasSelected, ids: moving.map(x => x.id), start: w, startClient: { x: e.clientX, y: e.clientY }, before: moving.map(x => (x.props.lockTo || (x.type === 'delta' && x.props.attachedTo)) && !moving.some(p => p.id === (x.props.lockTo || x.props.attachedTo)) ? { id: x.id, dx: x.props.dx || 0, dy: x.props.dy || 0, attached: true } : (x.props.lockTo || (x.type === 'delta' && x.props.attachedTo)) ? { id: x.id, skip: true } : { id: x.id, x: x.x, y: x.y }), moved: false, hitId: hit.id, isConn: V.isConnector(el) };
+      // gli elementi col lucchetto chiuso (pinned) non si trascinano: proteggono dagli spostamenti per sbaglio
+      const moving = frozen ? [] : I.selection.map(id => V.byId(id, map)).filter(x => x && !V.isConnector(x) && !x.props.pinned);
+      gesture = { type: 'drag', wasSelected, ids: moving.map(x => x.id), start: w, startClient: { x: e.clientX, y: e.clientY }, before: moving.map(x => (x.props.lockTo || (x.type === 'delta' && x.props.attachedTo)) && !moving.some(p => p.id === (x.props.lockTo || x.props.attachedTo)) ? { id: x.id, dx: x.props.dx || 0, dy: x.props.dy || 0, attached: true } : (x.props.lockTo || (x.type === 'delta' && x.props.attachedTo)) ? { id: x.id, skip: true } : { id: x.id, x: x.x, y: x.y }), moved: false, hitId: hit.id, isConn: V.isConnector(el), hitPinned: !!(el && el.props && el.props.pinned) };
       return;
     }
     gesture = { type: 'lasso', start: w, startClient: { x: e.clientX, y: e.clientY }, shift: e.shiftKey };
@@ -303,9 +304,11 @@
           break;
         }
         const ops = g.before.filter(b => !b.skip).map(b => { const el = V.byId(b.id, map); return b.attached ? { t: 'props', id: b.id, after: { dx: el.props.dx, dy: el.props.dy }, before: { dx: b.dx, dy: b.dy } } : { t: 'update', id: b.id, after: { x: el.x, y: el.y }, before: { x: b.x, y: b.y } }; });
-        // blocco smart: un solo elemento bloccabile e non bloccato lasciato sopra/vicino a un genitore
+        // legame smart: un solo elemento legabile e non legato lasciato sopra/vicino a un genitore
         if (g.before.length === 1 && !g.before[0].attached) { const el = V.byId(g.before[0].id, map); const lk = I.findLockTarget(el, map); if (lk) ops.push(...I.lockOps(el, lk, map)); }
-        if (ops.length) V.commit(ops, 'sposta'); break;
+        if (ops.length) V.commit(ops, 'sposta');
+        else if (g.hitPinned) I.hint('Bloccato sul foglio \u{1F512}: per spostarlo tocca «Sblocca» nelle azioni rapide.', 2500);
+        break;
       }
       case 'resize': { const el = V.byId(g.id, map); V.commit({ t: 'update', id: el.id, after: { w: el.w, h: el.h }, before: { w: g.w0, h: g.h0 } }, 'ridimensiona'); break; }
       case 'lasso': {
@@ -398,13 +401,13 @@
     const ops = []; const done = [];
     childIds.forEach(cid => { const el = V.byId(cid, map); if (!el || el.id === par.id || V.isConnector(el) || !R.LOCKABLE.includes(el.type)) return; if (el.props.lockTo === par.id || (el.type === 'delta' && el.props.attachedTo === par.id)) return; if (isAncestor(el.id, par, map)) return; const cur = el.props.lockTo || (el.type === 'delta' && el.props.attachedTo); if (cur) ops.push(...I.unlockOps(el, map)); const lo = I.lockOps(el, { id: par.id }, map); if (lo.length) { ops.push(...lo); done.push(el.id); } });
     if (!done.length) return false;
-    V.commit(ops, done.length > 1 ? 'blocca gruppo' : 'blocca'); I.select(done);
-    I.hint(done.length > 1 ? `${done.length} elementi bloccati a "${parName(par)}": spostando "${parName(par)}" si muovono con lui.` : `Bloccato: spostando "${parName(par)}" si muove anche lui (da solo resta trascinabile). Sblocca dalle azioni rapide.`, 4500); return true;
+    V.commit(ops, done.length > 1 ? 'lega gruppo' : 'lega'); I.select(done);
+    I.hint(done.length > 1 ? `${done.length} elementi legati a "${parName(par)}": spostando "${parName(par)}" si muovono con lui.` : `Legato \u26d3: spostando "${parName(par)}" si muove anche lui (da solo resta trascinabile). «Slega» nelle azioni rapide.`, 4500); return true;
   };
   const isAncestor = (id, el, map, depth = 0) => { if (!el || depth > 6) return false; const p = el.props && (el.props.lockTo || (el.type === 'delta' && el.props.attachedTo)); if (!p) return false; if (p === id) return true; return isAncestor(id, V.byId(p, map), map, depth + 1); };
   I.unlockOps = (el, map) => { const pos = R.elPos(el, map); const after = { lockTo: null, lockT: null, dx: 0, dy: 0 }; if (el.type === 'delta') after.attachedTo = null; return [{ t: 'update', id: el.id, after: { x: pos.x, y: pos.y } }, { t: 'props', id: el.id, after }]; };
   I.unlock = (id) => I.unlockMany([id]);
-  I.unlockMany = (ids) => { const map = V.map(); const ops = []; const done = []; ids.forEach(id => { const el = V.byId(id, map); if (!el || !(el.props.lockTo || (el.type === 'delta' && el.props.attachedTo))) return; ops.push(...I.unlockOps(el, map)); done.push(id); }); if (!done.length) return; V.commit(ops, done.length > 1 ? 'sblocca gruppo' : 'sblocca'); I.select(done); I.hint(done.length > 1 ? `${done.length} elementi sbloccati: restano dove sono e non seguono più nessuno.` : 'Sbloccato: resta dov’è e non segue più il suo genitore.', 3500); };
+  I.unlockMany = (ids) => { const map = V.map(); const ops = []; const done = []; ids.forEach(id => { const el = V.byId(id, map); if (!el || !(el.props.lockTo || (el.type === 'delta' && el.props.attachedTo))) return; ops.push(...I.unlockOps(el, map)); done.push(id); }); if (!done.length) return; V.commit(ops, done.length > 1 ? 'slega gruppo' : 'slega'); I.select(done); I.hint(done.length > 1 ? `${done.length} elementi slegati: restano dove sono e non seguono più nessuno.` : 'Slegato: resta dov’è e non segue più il suo genitore.', 3500); };
   /** sblocca tutti i figli di un genitore */
   I.unlockChildren = (parentId) => { const map = V.map(); I.unlockMany(R.children(parentId, map).map(k => k.id)); I.select([parentId]); };
   I.selectWithChildren = (parentId) => { const map = V.map(); const kids = R.children(parentId, map).map(k => k.id); I.select([parentId, ...kids]); };
@@ -464,7 +467,7 @@
     I.setTool('select'); I.select([el.id], { keepPop: true }); V.pop.open(el.id);
   };
 
-  I.startPickLock = (childIds) => { I.pickLock = Array.isArray(childIds) ? childIds : [childIds]; svg.classList.add('picking'); I.hint(I.pickLock.length > 1 ? `Tocca il passo, la persona, la corsia o la freccia a cui bloccare i ${I.pickLock.length} elementi (Esc per annullare).` : 'Tocca il passo, la persona, la corsia o la freccia a cui bloccarlo (Esc per annullare).', 0); };
+  I.startPickLock = (childIds) => { I.pickLock = Array.isArray(childIds) ? childIds : [childIds]; svg.classList.add('picking'); I.hint(I.pickLock.length > 1 ? `Tocca il passo, la persona, la corsia o la freccia a cui legare i ${I.pickLock.length} elementi (Esc per annullare).` : 'Tocca il passo, la persona, la corsia o la freccia a cui legarlo (Esc per annullare).', 0); };
   I.cancelPickLock = () => { I.pickLock = null; svg.classList.remove('picking'); I.hint(''); };
 
   // ---------- da selezione a sotto-foglio ----------
@@ -531,7 +534,8 @@
   I.duplicateMany = (ids) => {
     const map = V.map(); const uniq = Array.from(new Set(ids)).map(id => V.byId(id, map)).filter(el => el && !V.isConnector(el));
     if (!uniq.length) return;
-    const idMap = new Map(); const clones = uniq.map(el => { const c = clone(el); c.id = uid(); idMap.set(el.id, c.id); return c; });
+    // la copia nasce col lucchetto aperto: si duplica per metterla altrove, inchiodata non si potrebbe
+    const idMap = new Map(); const clones = uniq.map(el => { const c = clone(el); c.id = uid(); c.props.pinned = false; idMap.set(el.id, c.id); return c; });
     clones.forEach((c, i) => {
       const orig = uniq[i];
       const par = c.props.lockTo || (c.type === 'delta' && c.props.attachedTo);
@@ -565,7 +569,7 @@
       if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key) && I.selection.length) {
         e.preventDefault(); const step = e.shiftKey ? 20 : 4;
         const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0, dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
-        const map = V.map(); const movable = I.selection.map(id => V.byId(id, map)).filter(x => x && !V.isConnector(x));
+        const map = V.map(); const movable = I.selection.map(id => V.byId(id, map)).filter(x => x && !V.isConnector(x) && !x.props.pinned);
         if (!movable.length) return;
         const attached = (x) => x.props.lockTo || (x.type === 'delta' && x.props.attachedTo);
         const ids = movable.map(x => x.id).join(',');

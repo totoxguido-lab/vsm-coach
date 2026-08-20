@@ -716,8 +716,12 @@
   };
 
   // ---------- selezione / ui temporanea ----------
+  // due segni distinti: la CATENA lega due elementi (si muovono insieme), il LUCCHETTO inchioda
+  // un elemento al foglio (non si sposta trascinandolo). Stessa distinzione nelle azioni rapide.
   const lockGlyph = (x, y, sc = 1) => `<g transform="translate(${x} ${y}) scale(${sc})"><rect x="0" y="4" width="10" height="8" rx="1.5" fill="#1f4e79"/><path d="M2 4V3a3 3 0 016 0v1" fill="none" stroke="#1f4e79" stroke-width="1.5"/></g>`;
   R.lockGlyph = lockGlyph;
+  const chainGlyph = (x, y, sc = 1) => `<g transform="translate(${x} ${y}) scale(${sc})" fill="none" stroke="#1f4e79" stroke-width="1.5" stroke-linecap="round"><path d="M4.6 7.4l2.8-2.8"/><path d="M4.2 5.2L2.9 6.5a2.1 2.1 0 103 3l1.3-1.3"/><path d="M7.8 6.8l1.3-1.3a2.1 2.1 0 10-3-3L4.8 3.8"/></g>`;
+  R.chainGlyph = chainGlyph;
   /** punto di riferimento di un elemento per le linee di blocco: centro (o punto a lockT/mid sulle frecce) */
   const refPt = (el, map, t) => { if (V.isConnector(el)) { const P = R.connPath(el, map); return P.bez(t == null ? 0.5 : t); } const p = R.elPos(el, map); return { x: p.x + el.w / 2, y: p.y + el.h / 2 }; };
   /** legami di blocco visibili: figlio selezionato → linea al genitore; genitore selezionato → anelli sui figli */
@@ -726,10 +730,10 @@
     ids.forEach(id => {
       const el = V.byId(id, map); if (!el) return;
       const parId = el.props && (el.props.lockTo || (el.type === 'delta' && el.props.attachedTo)); const par = parId ? V.byId(parId, map) : null;
-      if (par && !ids.includes(par.id)) { const a = refPt(el, map), b = refPt(par, map, el.props.lockT); s += `<line class="lock-link" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`; if (V.isConnector(par)) { const P = R.connPath(par, map); s += `<path class="lock-parent" d="${P.d}"/>`; } else { const pp = R.elPos(par, map); s += `<rect class="lock-parent" x="${pp.x - 3}" y="${pp.y - 3}" width="${par.w + 6}" height="${par.h + 6}" rx="4"/>`; } s += lockGlyph((a.x + b.x) / 2 - 5, (a.y + b.y) / 2 - 8, 0.9); }
+      if (par && !ids.includes(par.id)) { const a = refPt(el, map), b = refPt(par, map, el.props.lockT); s += `<line class="lock-link" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`; if (V.isConnector(par)) { const P = R.connPath(par, map); s += `<path class="lock-parent" d="${P.d}"/>`; } else { const pp = R.elPos(par, map); s += `<rect class="lock-parent" x="${pp.x - 3}" y="${pp.y - 3}" width="${par.w + 6}" height="${par.h + 6}" rx="4"/>`; } s += chainGlyph((a.x + b.x) / 2 - 6, (a.y + b.y) / 2 - 10, 1.1); }
       const kids = R.children(el.id, map).filter(k => !ids.includes(k.id));
       kids.forEach(k => { if (shown.has(k.id)) return; shown.add(k.id); const kp = R.elPos(k, map); s += `<rect class="lock-child" x="${kp.x - 3}" y="${kp.y - 3}" width="${k.w + 6}" height="${k.h + 6}" rx="4"/>`; });
-      if (kids.length) { const a = refPt(el, map); const bx = V.isConnector(el) ? a.x - 12 : R.elPos(el, map).x - 6, by = V.isConnector(el) ? a.y - 30 : R.elPos(el, map).y - 24; s += `<g class="lock-count"><rect x="${bx}" y="${by}" width="${kids.length > 9 ? 36 : 30}" height="16" rx="8"/>${lockGlyph(bx + 4, by + 1, 0.9)}<text x="${bx + 24}" y="${by + 12}" text-anchor="middle">${kids.length}</text></g>`; }
+      if (kids.length) { const a = refPt(el, map); const bx = V.isConnector(el) ? a.x - 12 : R.elPos(el, map).x - 6, by = V.isConnector(el) ? a.y - 30 : R.elPos(el, map).y - 24; s += `<g class="lock-count"><rect x="${bx}" y="${by}" width="${kids.length > 9 ? 36 : 30}" height="16" rx="8"/>${chainGlyph(bx + 4, by + 2, 1)}<text x="${bx + 24}" y="${by + 12}" text-anchor="middle">${kids.length}</text></g>`; }
     });
     return s;
   };
@@ -771,8 +775,9 @@
       if (V.isConnector(el)) { const P = R.connPath(el, map); s += `<path class="sel-ring" d="${P.d}"/>`; if (ids.length === 1) { s += `<circle class="end-hit" data-endhandle="from" data-conn="${id}" cx="${P.a.x}" cy="${P.a.y}" r="18" fill="transparent"/><circle class="end-hit" data-endhandle="to" data-conn="${id}" cx="${P.b.x}" cy="${P.b.y}" r="18" fill="transparent"/><circle class="handle end" data-endhandle="from" data-conn="${id}" cx="${P.a.x}" cy="${P.a.y}" r="7"/><circle class="handle end" data-endhandle="to" data-conn="${id}" cx="${P.b.x}" cy="${P.b.y}" r="7"/>`; (el.props.via || []).forEach((v2) => { s += `<circle class="handle via" cx="${v2.x}" cy="${v2.y}" r="5"/>`; }); } return; }
       const pos = R.elPos(el, map); const pad = 6; const sz = R.elSize(el);
       s += `<rect class="sel-ring" x="${pos.x - pad}" y="${pos.y - pad}" width="${sz.w + pad * 2}" height="${sz.h + pad * 2}" rx="4"/>`;
-      if (el.props.lockTo || (el.type === 'delta' && el.props.attachedTo)) s += lockGlyph(pos.x - pad - 14, pos.y - pad - 2);
-      if (ids.length === 1 && ['box', 'lane', 'storm', 'fluffy', 'burst', 'text', 'legend'].includes(el.type)) s += `<circle data-handle="${id}" cx="${pos.x + sz.w + 5}" cy="${pos.y + sz.h + 5}" r="16" fill="transparent" style="cursor:nwse-resize"/><rect class="handle" data-handle="${id}" x="${pos.x + sz.w - 1}" y="${pos.y + sz.h - 1}" width="12" height="12" rx="2"/>`;
+      if (el.props.lockTo || (el.type === 'delta' && el.props.attachedTo)) s += chainGlyph(pos.x - pad - 15, pos.y - pad - 3, 1.15);
+      if (el.props.pinned) s += lockGlyph(pos.x + sz.w + pad + 4, pos.y - pad - 2);
+      if (ids.length === 1 && !el.props.pinned && ['box', 'lane', 'storm', 'fluffy', 'burst', 'text', 'legend'].includes(el.type)) s += `<circle data-handle="${id}" cx="${pos.x + sz.w + 5}" cy="${pos.y + sz.h + 5}" r="16" fill="transparent" style="cursor:nwse-resize"/><rect class="handle" data-handle="${id}" x="${pos.x + sz.w - 1}" y="${pos.y + sz.h - 1}" width="12" height="12" rx="2"/>`;
     });
     L.ui.innerHTML = s;
   };
