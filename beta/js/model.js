@@ -171,16 +171,26 @@ window.VSM = window.VSM || {};
         if (Object.keys(o).length) p.override = o; else delete p.override;
       }
     });
-    // anelli di legami: due elementi legati l'uno all'altro si disegnerebbero a vicenda senza fine.
-    // L'ultimo legame che chiude l'anello viene sciolto, l'elemento resta dov'e' disegnato.
-    const parentOf = (el) => el.props.lockTo || (el.type === 'delta' ? el.props.attachedTo : null);
+    // Anelli di legami: due elementi legati l'uno all'altro si disegnerebbero a vicenda senza fine.
+    // Il legame che chiude l'anello viene sciolto, l'elemento resta dov'e' disegnato.
+    // Fra i «genitori» contano anche i CAPI di una freccia: una freccia sta dove la mettono gli
+    // elementi che collega. Senza questo, legare un elemento alla freccia che ARRIVA su di lui
+    // chiudeva un anello che la guardia non vedeva — e il disegno si contraddiceva: la freccia
+    // finiva nel vuoto e l'elemento pendeva di lato appeso alla catenella (video di Gt, 2026-08-21).
+    // L'attesa appesa a una freccia (attachedTo) non e' un anello: l'attesa non e' un capo.
+    const trova = (id) => m.elements.find(x => x.id === id);
+    const genitori = (el) => (V.isConnector(el)
+      ? [el.from && el.from.el, el.to && el.to.el]
+      : [el.props.lockTo || (el.type === 'delta' ? el.props.attachedTo : null)]).filter(Boolean);
+    const dipendeDa = (id, el, visti) => {
+      if (!el || visti.has(el.id)) return false;
+      visti.add(el.id);
+      return genitori(el).some(p => p === id || dipendeDa(id, trova(p), visti));
+    };
     m.elements.forEach(el => {
-      const visti = new Set([el.id]); let cur = el;
-      for (;;) {
-        const p = parentOf(cur); if (!p) break;
-        if (visti.has(p)) { delete cur.props.lockTo; if (cur.type === 'delta') delete cur.props.attachedTo; break; }
-        visti.add(p); const next = m.elements.find(x => x.id === p); if (!next) break; cur = next;
-      }
+      const p = el.props.lockTo || (el.type === 'delta' ? el.props.attachedTo : null);
+      if (!p) return;
+      if (dipendeDa(el.id, trova(p), new Set([el.id]))) { delete el.props.lockTo; if (el.type === 'delta') delete el.props.attachedTo; }
     });
     const sLive = new Set();
     m.strokes = m.strokes.filter(s => s && typeof s === 'object' && Array.isArray(s.points)).map(s => {

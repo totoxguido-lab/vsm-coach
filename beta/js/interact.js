@@ -448,9 +448,13 @@
     // 1) dentro un genitore (box, persona, scorta) — le corsie solo esplicitamente
     const inside = map.elements.filter(p => ['box', 'person', 'inventory'].includes(p.type) && p.id !== el.id && !p.props.lockTo).find(p => { const pp = R.elPos(p, map); const m = 24; return cx >= pp.x - m && cx <= pp.x + p.w + m && cy >= pp.y - m && cy <= pp.y + p.h + 60; });
     if (inside) return { id: inside.id };
-    // 2) vicino a una freccia (entro 36 px a schermo)
+    // 2) vicino a una freccia (entro 36 px a schermo) — ma MAI a una freccia che dipende gia' da lui:
+    // una freccia che parte o arriva su questo elemento sta dove sta lui, e legarcelo chiudeva un
+    // anello. A schermo il risultato era che la freccia finiva nel vuoto e l'elemento pendeva di
+    // lato appeso alla catenella, pur essendo il capo di quella stessa freccia (video di Gt).
+    // Il collegamento c'e' gia' ed e' piu' forte del legame: non serve incollarcelo sopra.
     let best = null, bd = 36 / I.view.k;
-    map.elements.filter(c => V.isConnector(c)).forEach(c => { const P = R.connPath(c, map); for (let k = 0; k <= 30; k++) { const q = P.bez(k / 30); const d = Math.hypot(q.x - cx, q.y - cy); if (d < bd) { bd = d; best = { id: c.id, t: k / 30 }; } } });
+    map.elements.filter(c => V.isConnector(c) && !I.chiudeAnello(el, c, map)).forEach(c => { const P = R.connPath(c, map); for (let k = 0; k <= 30; k++) { const q = P.bez(k / 30); const d = Math.hypot(q.x - cx, q.y - cy); if (d < bd) { bd = d; best = { id: c.id, t: k / 30 }; } } });
     return best;
   };
   I.lockOps = (el, lk, map) => {
@@ -466,24 +470,34 @@
   I.lockMany = (childIds, parentId) => {
     const map = V.map(); const par = V.byId(parentId, map); if (!par) return false;
     if (!R.LOCK_PARENTS.includes(par.type)) return false;
-    const ops = []; const done = [];
-    childIds.forEach(cid => { const el = V.byId(cid, map); if (!el || el.id === par.id || V.isConnector(el) || !R.LOCKABLE.includes(el.type)) return; if (el.props.lockTo === par.id || (el.type === 'delta' && el.props.attachedTo === par.id)) return; if (isAncestor(el.id, par, map)) return; const cur = el.props.lockTo || (el.type === 'delta' && el.props.attachedTo); if (cur) ops.push(...I.unlockOps(el, map)); const lo = I.lockOps(el, { id: par.id }, map); if (lo.length) { ops.push(...lo); done.push(el.id); } });
-    if (!done.length) return false;
+    const ops = []; const done = []; let rifiutati = 0;
+    childIds.forEach(cid => { const el = V.byId(cid, map); if (!el || el.id === par.id || V.isConnector(el) || !R.LOCKABLE.includes(el.type)) return; if (el.props.lockTo === par.id || (el.type === 'delta' && el.props.attachedTo === par.id)) return; if (I.chiudeAnello(el, par, map)) { rifiutati++; return; } const cur = el.props.lockTo || (el.type === 'delta' && el.props.attachedTo); if (cur) ops.push(...I.unlockOps(el, map)); const lo = I.lockOps(el, { id: par.id }, map); if (lo.length) { ops.push(...lo); done.push(el.id); } });
+    if (!done.length) {
+      // detto, non taciuto: prima il tocco su una freccia legata all'elemento non faceva nulla e basta
+      if (rifiutati) I.hint('Qui non si lega: questa freccia sta gia\u2019 dove sta lui (\u00e8 un suo capo, o ci arriva passando da lui).', 3500);
+      return false;
+    }
     V.commit(ops, done.length > 1 ? 'lega gruppo' : 'lega'); I.select(done);
     I.hint(done.length > 1 ? `${done.length} elementi legati a "${parName(par)}": spostando "${parName(par)}" si muovono con lui.` : `Legato \u26d3: spostando "${parName(par)}" si muove anche lui (da solo resta trascinabile). «Slega» nelle azioni rapide.`, 4500); return true;
   };
-  /** risale la catena dei legami: serve a non chiudere un anello (A legato a B e B legato ad A).
+  /** Da chi dipende la posizione di questo elemento: la catena dei legami e, per una FRECCIA, i suoi
+   *  due capi — una freccia sta dove la mettono gli elementi che collega. Contare anche i capi e' cio'
+   *  che chiude il buco del 2026-08-21: legare un elemento alla freccia che arriva su di lui e' un
+   *  anello, ma la vecchia risalita si fermava alla freccia e non lo vedeva. */
+  const genitoriDi = (el, map) => (V.isConnector(el)
+    ? [el.from && el.from.el, el.to && el.to.el]
+    : [el.props && (el.props.lockTo || (el.type === 'delta' && el.props.attachedTo))]).filter(Boolean);
+  /** risale i legami: serve a non chiudere un anello (A legato a B e B legato ad A).
    *  Si sale fino in cima segnando i passaggi: fermarsi al sesto anello lasciava passare una catena
    *  piu' lunga, e l'anello che ne usciva mandava in tilt il disegno durante il trascinamento. */
   const isAncestor = (id, el, map, seen) => {
     seen = seen || new Set();
     if (!el || seen.has(el.id)) return false;
     seen.add(el.id);
-    const p = el.props && (el.props.lockTo || (el.type === 'delta' && el.props.attachedTo));
-    if (!p) return false;
-    if (p === id) return true;
-    return isAncestor(id, V.byId(p, map), map, seen);
+    return genitoriDi(el, map).some(p => p === id || isAncestor(id, V.byId(p, map), map, seen));
   };
+  /** legare `el` a `par` chiuderebbe un anello? (usata sia dal legame automatico sia da «Lega a…») */
+  I.chiudeAnello = (el, par, map) => !!el && !!par && (el.id === par.id || isAncestor(el.id, par, map));
   I.unlockOps = (el, map) => { const pos = R.elPos(el, map); const after = { lockTo: null, lockT: null, dx: 0, dy: 0 }; if (el.type === 'delta') after.attachedTo = null; return [{ t: 'update', id: el.id, after: { x: pos.x, y: pos.y } }, { t: 'props', id: el.id, after }]; };
   I.unlock = (id) => I.unlockMany([id]);
   I.unlockMany = (ids) => { const map = V.map(); const ops = []; const done = []; ids.forEach(id => { const el = V.byId(id, map); if (!el || !(el.props.lockTo || (el.type === 'delta' && el.props.attachedTo))) return; ops.push(...I.unlockOps(el, map)); done.push(id); }); if (!done.length) return; V.commit(ops, done.length > 1 ? 'slega gruppo' : 'slega'); I.select(done); I.hint(done.length > 1 ? `${done.length} elementi slegati: restano dove sono e non seguono più nessuno.` : 'Slegato: resta dov’è e non segue più il suo genitore.', 3500); };
