@@ -10,7 +10,7 @@ const FAMILY = 'vsm-coach-beta';
 // dispositivi continuavano a servire dalla cache la build precedente. publish_beta.py controlla che i
 // due timbri coincidano, cosi' non possono separarsi.
 importScripts('./js/version.js');
-const BUILD = '20260821-1735';
+const BUILD = '20260821-1754';
 const CACHE = FAMILY + '-v' + self.VSM_VERSION + '-' + BUILD;
 const FILES = ['./', './index.html', './app.css', './prompt.js', './js/version.js', './js/model.js', './js/render.js', './js/interact.js', './js/panels.js', './js/legend.js', './js/coach.js', './js/main.js', './manifest.webmanifest', './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
 // Install atomico, di proposito: se un file manca, l'install FALLISCE e restano in servizio il service

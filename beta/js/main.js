@@ -152,7 +152,7 @@
     });
     // il menu resta aperto (si chiude toccando fuori): cosi' si spuntano piu' opzioni di fila.
     // Fa eccezione cio' che apre un'altra superficie in alto a destra (guida, legenda, dialoghi) o chiude la mappa.
-    const CLOSE_ON = ['legend', 'guide', 'maps', 'help', 'settings', 'coach', 'delete', 'exit', 'giri', 'lock', 'info'];
+    const CLOSE_ON = ['legend', 'guide', 'maps', 'help', 'settings', 'coach', 'delete', 'reset', 'exit', 'giri', 'lock', 'info'];
     $$('#menu [data-m]').forEach(b => b.onclick = () => { if (CLOSE_ON.includes(b.dataset.m)) menu.classList.add('hidden'); menuAction(b.dataset.m); });
     UI.loadExample = () => { UI.toggleGuide(false); menuAction('example'); };
     $('#file-open').addEventListener('change', (e) => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => { try { const n = V.importMaps(JSON.parse(r.result)); I.restoreView(); UI.toast(n + ' mappe importate.'); } catch (err) { UI.toast('File non valido: ' + err.message); } }; r.readAsText(f); e.target.value = ''; });
@@ -205,6 +205,17 @@
       case 'coach': UI.showTab('coach'); break;
       case 'settings': C.openSettings(); break;
       case 'clear-ink': if (map.strokes.length && confirm('Cancellare tutti i tratti a matita di questa mappa?')) V.commit({ t: 'strokes_set', after: [] }, 'cancella inchiostro'); break;
+      case 'reset': {
+        // Doppio controllo, e il secondo dice quanto si perde: azzerare non si annulla, e chi lo tocca
+        // per sbaglio deve avere due occasioni di fermarsi. Poi la pagina si ricarica: il documento in
+        // memoria non vale piu' niente, e ripartire da zero e' il senso stesso della voce.
+        const n = Object.keys(V.doc.maps).length;
+        if (!confirm(`Azzerare la copia di prova?\n\nSi cancellano TUTTE le mappe di questa copia (${n}) e la sua cache. Non si può annullare.\n\nL'app installata (quella stabile) non viene toccata.`)) break;
+        if (!confirm('Ultimo controllo: le mappe che vuoi tenere le hai salvate in JSON (⋯ → File e stampa → «Salva JSON»)?\n\nOK = azzera adesso.')) break;
+        UI.toast('Azzero…');
+        V.azzeraSpazio().then(() => location.reload()).catch(() => location.reload());
+        break;
+      }
       case 'delete': if (confirm(`Eliminare la mappa "${map.title || 'senza titolo'}"? Non si può annullare.`)) { const r = deleteMapAsked(map); if (r.ok) { I.restoreView(); V.saveNow(); UI.toast(r.withPair ? 'Attuale e Ideale eliminati.' : 'Mappa eliminata.'); } } break;
       case 'exit': { // nell'app Android chiude davvero; nel browser/PWA la scheda non si puo' chiudere da codice
         const cap = window.Capacitor;
@@ -241,6 +252,9 @@
       UI.setToolsLeft(tools === '1'); if (chrome === '0') UI.setChrome(false, { hint: false }); }
     try { if (localStorage.getItem('vsm.paletteHidden') === '1') UI.setPaletteHidden(true, { quiet: true }); } catch (e) { /* storage bloccato */ }
     fullRender(); I.restoreView();
+    // «Azzera la copia di prova» esiste solo dove ha senso: sull'app stabile la voce non compare,
+    // cosi' nessuno puo' cancellare per sbaglio le mappe vere cercando di ripulire una prova
+    if ((V.storage().canale || 'sviluppo') === 'stabile') $$('.prova-only').forEach(n => n.classList.add('hidden'));
     avvisoLavoriInCorso();
     if (!V.map().elements.length && Object.keys(V.doc.maps).length === 1) I.hint('Foglio nuovo: tocca il titolo in alto a destra, poi metti il richiedente e i process box. La Guida pratica (menu ⋯) ti accompagna se vuoi.', 6000);
     // Il foglio si scrive con un attimo di ritardo (V.save): ogni volta che l'app puo' sparire da sotto

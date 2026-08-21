@@ -500,6 +500,10 @@ window.VSM = window.VSM || {};
   const SUFFIX = CHANNEL === 'stabile' ? '' : CHANNEL;
   const DB = 'vsm-coach' + (SUFFIX ? '-' + SUFFIX : ''), STORE = 'kv';
   const LS_DOC = 'vsm.doc' + (SUFFIX ? '.' + SUFFIX : '');
+  /** «questo spazio e' stato svuotato apposta»: sopravvive all'azzeramento, e impedisce che la
+   *  prima apertura successiva ricopi il documento dallo spazio di origine (v. V.load) */
+  const SEGNO_AZZERATO = 'vsm.azzerato' + (SUFFIX ? '.' + SUFFIX : '');
+  const giaAzzerato = () => { try { return localStorage.getItem(SEGNO_AZZERATO) === '1'; } catch (e) { return false; } };
   /** dove questa installazione tiene le mappe: serve alla schermata di diagnosi e alle prove */
   V.storage = () => ({ canale: CHANNEL, db: DB, chiave: LS_DOC });
   let idb = null;
@@ -523,14 +527,43 @@ window.VSM = window.VSM || {};
     });
     return chain;
   };
+  /** Azzera lo spazio di QUESTA installazione: via le mappe, via il salvataggio in sospeso, via le
+   *  cache del service worker della sua famiglia. Serve a rimettere la copia di prova come appena
+   *  installata, per provare qualcosa senza i fogli di ieri fra i piedi. Sull'app STABILE non si
+   *  chiama mai: la voce di menu non c'e' proprio (V.storage().canale). Chi chiama ricarica la
+   *  pagina subito dopo: da qui in poi il documento in memoria non vale piu' niente, e infatti il
+   *  salvataggio resta zittito per sempre — senza, il timer in sospeso riscriveva tutto un attimo
+   *  dopo aver cancellato. */
+  let azzerato = false;
+  V.azzeraSpazio = async () => {
+    azzerato = true;
+    try { localStorage.setItem(SEGNO_AZZERATO, '1'); } catch (e) { /* storage bloccato */ }
+    clearTimeout(saveTimer); saveTimer = null; dirtyAt = 0;
+    // Via TUTTO quello che l'app potrebbe rileggere al prossimo avvio, non solo il documento: senza
+    // togliere anche il vecchio formato v1, la prima apertura dopo l'azzeramento lo migrava di nuovo
+    // e il foglio «azzerato» ricompariva con le mappe di un anno fa (visto eseguendo).
+    try { [LS_DOC, LS_DOC + '.meta', 'vsm.state', 'vsm.state.v1backup'].forEach(k => localStorage.removeItem(k)); } catch (e) { /* storage bloccato */ }
+    if (idb) { try { idb.close(); } catch (e) { /* gia' chiuso */ } idb = null; }
+    await new Promise((res) => {
+      if (!('indexedDB' in window)) return res();
+      const r = indexedDB.deleteDatabase(DB);
+      r.onsuccess = r.onerror = r.onblocked = () => res();
+      setTimeout(res, 1500); // se un'altra scheda tiene il database aperto non si resta appesi
+    });
+    if (typeof caches !== 'undefined') {
+      try { const ks = await caches.keys(); await Promise.all(ks.filter(k => k.startsWith('vsm-coach')).map(k => caches.delete(k))); } catch (e) { /* niente cache */ }
+    }
+    return true;
+  };
   V.save = () => {
+    if (azzerato) return;
     if (!dirtyAt) dirtyAt = Date.now();
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => { dirtyAt = 0; writeNow(); }, Math.max(0, Math.min(400, dirtyAt + 1200 - Date.now())));
   };
   /** scrive subito e restituisce la promessa: prima di un ricaricamento, quando l'app va in sottofondo,
    *  e dopo ogni operazione che l'utente considera conclusa (eliminazioni, cambio foglio) */
-  V.saveNow = () => { clearTimeout(saveTimer); dirtyAt = 0; return writeNow(); };
+  V.saveNow = () => { if (azzerato) return Promise.resolve(); clearTimeout(saveTimer); dirtyAt = 0; return writeNow(); };
   V.saveIdle = () => chain;
   /** quando il documento e' stato scritto l'ultima volta (per la schermata di diagnosi) */
   V.lastSaved = () => { try { return JSON.parse(localStorage.getItem(LS_DOC + '.meta') || '{}').at || null; } catch (e) { return null; } };
@@ -555,7 +588,11 @@ window.VSM = window.VSM || {};
     let s = await idbGet('doc'); if (!s) { try { s = localStorage.getItem(LS_DOC); } catch (e) { } }
     // prima apertura di un'installazione con spazio proprio (la beta): si riparte dal documento che
     // c'era, invece di trovarsi davanti un foglio vuoto
-    if (!s && SUFFIX) { s = await travasoDaOrigine(); }
+    // Il travaso vale per la PRIMA apertura di un canale, non dopo un azzeramento chiesto a mano:
+    // senza questo controllo, «Azzera la copia di prova» cancellava tutto e alla riapertura l'app
+    // ricopiava allegramente il documento dallo spazio di origine — il foglio azzerato ricompariva
+    // con le mappe di prima (visto eseguendo).
+    if (!s && SUFFIX && !giaAzzerato()) { s = await travasoDaOrigine(); }
     if (s) {
       try {
         const d = JSON.parse(s);

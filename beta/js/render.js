@@ -851,11 +851,20 @@
     // intero, perche' e' quello che si stampa.
     const vb = opts.crop ? R.contentBox(map) : { x: 0, y: 0, w, h };
     const vw = Math.round(vb.w), vh = Math.round(vb.h);
-    const css = Array.from(document.styleSheets).flatMap(ss => { try { return Array.from(ss.cssRules); } catch (e) { return []; } }).filter(r => r.selectorText && r.selectorText.startsWith('svg ')).map(r => r.cssText.replace(/^svg /, '')).join('\n');
-    const vars = `:root{--paper:#fbf8f0;--pencil:#2b2b2b;--pencil-2:#5a5a5a;--paper-line:#c9c2b0;--delta:#c8321e;--cloud:#5b6472;--sage:#3f7d5a;--sel:#1f4e79;--accent:#1f4e79;--hand:"Chalkboard SE","Marker Felt","Segoe Print","Bradley Hand","Comic Neue","Patrick Hand",cursive}`;
+    // Le regole del foglio, RINCHIUSE dentro questo svg. Lo <style> di un svg NON e' isolato: quando
+    // l'anteprima finisce dentro la pagina (l'occhio, il pannellino «Sbircia»), il suo <style> diventa
+    // un foglio di stile del documento come gli altri. Finche' le regole perdevano il prefisso — «svg
+    // .ghost» che diventava «.ghost» — spegnevano ogni «.ghost» della pagina: i bottoni «.btn.ghost»,
+    // ✕ della scheda dell'occhio compreso, restavano disegnati ma non si potevano piu' toccare
+    // (pointer-events: none). Stessa storia per le variabili, dichiarate su «:root».
+    // Ora tutto e' agganciato alla classe della radice: dentro l'svg vale, fuori non tocca niente.
+    // Nel file esportato funziona uguale, perche' la classe sta proprio sull'svg che si esporta.
+    const AMBITO = 'vsm-foglio';
+    const css = Array.from(document.styleSheets).flatMap(ss => { try { return Array.from(ss.cssRules); } catch (e) { return []; } }).filter(r => r.selectorText && r.selectorText.startsWith('svg ')).map(r => r.cssText.replace(/^svg /, '.' + AMBITO + ' ')).join('\n');
+    const vars = `.${AMBITO}{--paper:#fbf8f0;--pencil:#2b2b2b;--pencil-2:#5a5a5a;--paper-line:#c9c2b0;--delta:#c8321e;--cloud:#5b6472;--sage:#3f7d5a;--sel:#1f4e79;--accent:#1f4e79;--hand:"Chalkboard SE","Marker Felt","Segoe Print","Bradley Hand","Comic Neue","Patrick Hand",cursive}`;
     const defs = svg.querySelector('defs').outerHTML;
     const layers = ['paper', 'lanes', 'ink', 'conn', 'el', 'hand', 'overlay'].map(k => L[k].outerHTML).join('');
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${Math.round(vb.x)} ${Math.round(vb.y)} ${vw} ${vh}" width="${vw}" height="${vh}"><style>${vars}\n${css}</style>${defs}${layers}</svg>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" class="${AMBITO}" viewBox="${Math.round(vb.x)} ${Math.round(vb.y)} ${vw} ${vh}" width="${vw}" height="${vh}"><style>${vars}\n${css}</style>${defs}${layers}</svg>`;
   };
 
   /** L'immagine dell'occhio: lo stesso identico disegno del foglio, ma di UN'ALTRA mappa (exportSVG
