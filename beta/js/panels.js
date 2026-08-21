@@ -63,28 +63,58 @@
     if (hints[t]) I.hint(hints[t], 0); else I.hint('');
     UI.hideSuggestIfTool(t);
   };
-  /** Livelli: le mappe collegate viste come piani di lavoro. L'icona a destra compare quando i piani
-   *  sono almeno due; il pannello elenca le mappe madri con i loro sotto-fogli rientrati. Gli stati
-   *  futuri non compaiono: hanno gia' il loro interruttore Attuale/Futuro in testata. */
-  UI.renderLevels = () => {
-    const ctl = $('#levelsctl'); if (!ctl) return;
-    const maps = Object.values(V.doc.maps).filter(m => m.kind !== 'future');
-    if (maps.length < 2) { ctl.classList.add('hidden'); $('#levels-list').classList.add('hidden'); return; }
-    ctl.classList.remove('hidden');
-    const list = $('#levels-list');
-    const cur = V.doc.activeMapId;
-    const kids = (id) => maps.filter(m => m.parentId === id);
-    const row = (m, sub) => `<button data-lv="${m.id}" class="${sub ? 'sub' : ''}" aria-current="${m.id === cur}">${sub ? '\u21b3 ' : ''}${esc(m.title || 'senza titolo')}</button>`;
-    let h = '';
-    maps.filter(m => !m.parentId || !V.doc.maps[m.parentId]).forEach(m => { h += row(m, false); kids(m.id).forEach(k => { h += row(k, true); kids(k.id).forEach(k2 => h += row(k2, true)); }); });
-    list.innerHTML = h;
-    $$('[data-lv]', list).forEach(b => b.onclick = () => { list.classList.add('hidden'); if (b.dataset.lv !== cur) UI.openMap(b.dataset.lv); });
+  /** La cartina del progetto: l'albero dei fogli con il loro indirizzo, la mappa aperta evidenziata,
+   *  la catena verso l'alto sempre visibile. È la risposta a «dove sono»: prima c'era un elenco piatto
+   *  di due livelli che non lo diceva mai. I riusi (⇉) compaiono come righe sottili sotto il passo che
+   *  li richiama, così si vede che rimandano altrove senza far credere che stiano lì.
+   *  La gerarchia si LEGGE: i figli stanno in un contenitore (.cart-kids) con una linea verticale lungo
+   *  il rientro che li collega al padre — prima il rientro era solo padding (14 px per livello), troppo
+   *  timido per dire «questo sta dentro quello» senza contare i pixel. */
+  UI.renderCartina = () => {
+    const box = $('#cartina'); if (!box) return;
+    const mia = V.map(); if (!mia) return;
+    const prog = V.project();
+    const maps = V.mapsOfProject(mia.projectId).filter(m => m.kind !== 'future');
+    // gli indirizzi si calcolano UNA volta per foglio: mapAddress risale la catena dei padri (e
+    // rinumera i passi di ciascuna madre) a ogni chiamata — a farlo per riga e per confronto
+    // dell'ordinamento, su iPad la cartina si aprirebbe con un ritardo visibile
+    const ind = new Map(maps.map(m => [m.id, V.mapAddress(m)]));
+    const indDi = (m) => ind.has(m.id) ? ind.get(m.id) : V.mapAddress(m); // un riferimento può puntare a un progetto collegato, fuori dalla mappa
+    // numeric: gli indirizzi sono numeri a tratti («2.1» sta fra «2» e «10»), non parole
+    const figlie = (id) => maps.filter(m => m.parentId === id).sort((a, b) => (ind.get(a.id) || '').localeCompare(ind.get(b.id) || '', undefined, { numeric: true }));
+    const riga = (m) => {
+      const i = ind.get(m.id);
+      const qui = m.id === mia.id;
+      let h = `<button data-lv="${m.id}" class="cart-row${qui ? ' qui' : ''}" aria-current="${qui}" title="${esc(i || '')}">${i ? `<span class="ind">${esc(V.shortAddress(i))}</span>` : ''}<span class="t">${esc(m.title || 'senza titolo')}</span>${qui ? '<span class="cart-here">sei qui</span>' : ''}</button>`;
+      // i riferimenti partiti da questo foglio: dicono dove mandano, non fingono di stare qui.
+      // Subito dopo la riga del foglio che li richiama: stampati in fondo (dopo le figlie)
+      // sembravano appartenere ai nipoti
+      m.elements.filter(e => e.type === 'box' && V.linkKind(e, m) === 'riferimento').forEach(e => {
+        const t = V.doc.maps[e.props.link]; if (!t) return;
+        const ti = indDi(t);
+        h += `<button data-lv="${t.id}" class="cart-row cart-ref" title="${esc(ti || '')}">⇉ ${ti ? `<span class="ind">${esc(V.shortAddress(ti))}</span>` : ''}<span class="t">${esc(t.title || 'senza titolo')}</span></button>`;
+      });
+      const kids = figlie(m.id);
+      if (kids.length) h += `<div class="cart-kids">${kids.map(riga).join('')}</div>`;
+      return h;
+    };
+    const radici = maps.filter(m => !m.parentId || !V.doc.maps[m.parentId]);
+    const altri = Object.values(V.doc.projects).filter(p => !prog || p.id !== prog.id);
+    box.innerHTML = `<div class="cart-head">${esc((prog || {}).name || 'progetto')}</div>`
+      + radici.map(riga).join('')
+      + (altri.length ? `<div class="cart-sep">altri progetti</div>` + altri.map(p => `<button data-pj="${p.id}" class="cart-row cart-prj">${esc(p.name)}</button>`).join('') : '');
+    $$('[data-lv]', box).forEach(b => b.onclick = () => { box.classList.add('hidden'); if (b.dataset.lv !== mia.id) UI.openMap(b.dataset.lv); });
+    $$('[data-pj]', box).forEach(b => b.onclick = () => {
+      box.classList.add('hidden');
+      const prima = V.mapsOfProject(b.dataset.pj)[0];
+      if (prima) UI.openMap(prima.id); else UI.toast('Quel progetto non ha ancora nessuna mappa.');
+    });
   };
-  UI.bindLevels = () => {
+  UI.bindCartina = () => {
     const btn = $('#levels-btn'); if (!btn) return;
-    btn.onclick = () => { const list = $('#levels-list'); UI.renderLevels(); list.classList.toggle('hidden'); };
+    btn.onclick = () => { const box = $('#cartina'); UI.renderCartina(); box.classList.toggle('hidden'); };
     // un tocco altrove chiude il pannello
-    document.addEventListener('pointerdown', (ev) => { const list = $('#levels-list'); if (!list || list.classList.contains('hidden')) return; if (!ev.target.closest || !ev.target.closest('#levelsctl')) list.classList.add('hidden'); }, true);
+    document.addEventListener('pointerdown', (ev) => { const box = $('#cartina'); if (!box || box.classList.contains('hidden')) return; if (!ev.target.closest || !ev.target.closest('#levelsctl')) box.classList.add('hidden'); }, true);
   };
 
   /** Trascinato un flusso o una richiesta nel vuoto: invece di far sparire il gesto, si propone qui
@@ -128,6 +158,17 @@
 
   // ---------- popover degli elementi ----------
   const P = V.pop = {};
+  /** il pannellino aperto dentro il pannello del passo (tint/link/peek/setup), null = nessuno:
+   *  sopravvive ai ridisegni del pannello sullo stesso elemento, si chiude col pannello */
+  P._mini = null;
+  // icone dei tondi del pannello del passo: il vocabolario resta quello dei menu rotondi (.pm-btn)
+  const RIC = {
+    tint: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3.5c3 4.6 5.5 7.7 5.5 10.7a5.5 5.5 0 01-11 0c0-3 2.5-6.1 5.5-10.7z"/></svg>',
+    link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9.5 7H17v7.5"/></svg>',
+    setup: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M21.6 18.1l-8.6-8.6c.8-2.1.3-4.6-1.5-6.4-1.8-1.8-4.5-2.3-6.8-1.4l3.9 3.9-2.7 2.7-3.9-3.9c-.9 2.3-.4 5 1.4 6.8 1.8 1.8 4.3 2.3 6.4 1.5l8.6 8.6c.4.4 1 .4 1.4 0l1.8-1.8c.4-.4.4-1 0-1.4z"/></svg>',
+    valid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5l5 5L19.5 7"/></svg>',
+    close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>'
+  };
   let fid = 0;
   const field = (label, html, hint) => { const id = 'f' + (++fid); html = html.replace(/^<(input|select|textarea)\b/, `<$1 id="${id}"`); return `<div class="field"><label for="${id}">${label}</label>${html}${hint ? `<span class="hint">${hint}</span>` : ''}</div>`; };
   const inp = (k, v, attrs = '') => `<input data-k="${k}" value="${esc(v)}" autocomplete="off" ${attrs}>`;
@@ -153,10 +194,40 @@
   const facePicker = (cur) => `<div class="picker faces" role="radiogroup" aria-label="Espressione">${V.MOODS.map(m => `<button type="button" class="pick ${m === cur ? 'on' : ''}" data-pick="mood" data-v="${esc(m)}" role="radio" aria-checked="${m === cur}" title="${esc(V.MOOD_MEANING[m] || m)}"><svg viewBox="0 0 30 30" aria-hidden="true"><g class="pencil">${R.face(m, 15, 15, 12)}</g></svg><span>${esc(m)}</span></button>`).join('')}</div><div class="hint" data-mood-mean>${esc(V.MOOD_MEANING[cur] || '')}</div>`;
   /** griglia di icone per gruppo */
   const iconPicker = (cur) => Object.entries(R.ICONS).map(([g, icons]) => `<div class="pick-group">${esc(g)}</div><div class="picker icons">${Object.keys(icons).map(n => `<button type="button" class="pick ${n === cur ? 'on' : ''}" data-pick="icon" data-v="${esc(n)}" title="${esc(n)}" aria-pressed="${n === cur}"><svg viewBox="0 0 24 24" aria-hidden="true">${R.iconSVG(n, 12, 12, 0.85)}</svg><span>${esc(n)}</span></button>`).join('')}</div>`).join('');
+  /** la palette del passo: pastiglie di colore, non parole (il nome resta nel title, per chi legge
+   *  lo schermo). La prima è «nessuna»: il ripiego, disegnata come pastiglia vuota barrata. La
+   *  pastiglia mostra la tinta com'e' davvero (riempimento 38%/95.5%, bordo 26%/64%): quello che
+   *  si sceglie e' quello che finisce sul foglio, senza sorprese. */
+  const tintPicker = (cur) => `<div class="picker tints" role="radiogroup" aria-label="Colore del passo">${V.TINTS.map(t => {
+    const on = (t.id == null && cur == null) || t.id === cur;
+    const dot = t.id == null ? '<span class="sw none" aria-hidden="true"></span>' : `<span class="sw" style="background:hsl(${t.id} 38% 95.5%);border-color:hsl(${t.id} 26% 64%)" aria-hidden="true"></span>`;
+    return `<button type="button" class="pick ${on ? 'on' : ''}" data-pick="tint" data-v="${t.id == null ? '' : t.id}" role="radio" aria-checked="${on}" title="${esc(t.name)}" aria-label="Colore: ${esc(t.name)}">${dot}</button>`;
+  }).join('')}</div>`;
   const dataRow = (p) => `<div class="row3">${field('Hi', inp('hi', p.hi, 'inputmode="decimal" placeholder="max"'))}${field('Lo', inp('lo', p.lo, 'inputmode="decimal" placeholder="min"'))}${field('Avg', inp('avg', p.avg, 'inputmode="decimal" placeholder="media"'))}</div>`;
-  const mapOptions = (excludeId) => Object.values(V.doc.maps).filter(m => m.id !== excludeId).map(m => ({ id: m.id, label: (m.title || 'senza titolo') + ' · ' + m.kind }));
+  /** Le mappe che si possono scegliere: quelle del progetto corrente, più quelle dei progetti che vi
+   *  sono stati collegati a mano. Prima c'erano TUTTE quelle del documento, esempio del libro compreso,
+   *  etichettate con le parole grezze del codice (current/future/detail): un elenco in cui perdersi.
+   *  L'indirizzo davanti dice dove sta ciascuna, così si sceglie sapendo. Gli indirizzi si calcolano
+   *  UNA volta per mappa: mapAddress risale la catena dei padri a ogni chiamata, e dentro un
+   *  comparatore di ordinamento verrebbe richiamata decine di volte per mappa. */
+  const mapOptions = (excludeId) => {
+    const mia = V.map(); const p = V.project();
+    const visibili = p ? [p.id].concat(p.links || []) : [];
+    return Object.values(V.doc.maps)
+      .filter(m => m.id !== excludeId && (visibili.includes(m.projectId) || (mia && m.projectId === mia.projectId)))
+      .map(m => ({ m, ind: V.mapAddress(m) }))
+      .sort((a, b) => (a.ind || '~').localeCompare(b.ind || '~', undefined, { numeric: true }))
+      .map(({ m, ind }) => {
+        const prog = (mia && m.projectId !== mia.projectId) ? ' · ' + ((V.doc.projects[m.projectId] || {}).name || 'altro progetto') : '';
+        // «libera» deve promettere solo ciò che avverrà: l'adozione (V.linkMap) richiede anche lo
+        // STESSO progetto della mappa aperta — una mappa di un progetto collegato resta dov'è
+        // e viene solo richiamata (⇉), e il menu non deve dire «diventa sotto-foglio» per poi smentirsi
+        const libera = !m.parentId && mia && m.projectId === mia.projectId;
+        return { id: m.id, label: (ind ? V.shortAddress(ind) + ' ' : '') + (m.title || 'senza titolo') + ' · ' + V.kindLabel(m) + prog, libera, ind };
+      });
+  };
 
-  P.close = () => { const pop = $('#pop'); const was = !pop.classList.contains('hidden'); pop.classList.add('hidden'); pop.classList.remove('sheet'); P.current = null; if (was && I.selection.length && UI.onSelection) UI.onSelection(I.selection); };
+  P.close = () => { const pop = $('#pop'); const was = !pop.classList.contains('hidden'); pop.classList.add('hidden'); pop.classList.remove('sheet'); pop.classList.remove('step'); P.current = null; P._mini = null; if (was && I.selection.length && UI.onSelection) UI.onSelection(I.selection); };
   /** rettangolo a schermo dell'elemento, allargato a maniglie e badge (px dello stage) */
   const elScreenRect = (el, map) => {
     if (V.isConnector(el)) { const Pc = R.connPath(el, map); const m = I.toScreen(Pc.mid.x, Pc.mid.y); return { x1: m.x - 34, y1: m.y - 34, x2: m.x + 34, y2: m.y + 44 }; } // attorno all'icona/punto centrale (la linea è sottile)
@@ -215,14 +286,87 @@
       default: return (p.text || p.what || '').slice(0, 60);
     }
   };
+  /** La ✓ verde si toglie solo confermando: un tocco per sbaglio non deve riaprire un passo già
+   *  mappato — è la differenza col lucchetto (pinned), che costa un tocco solo. Riusa #gpcard,
+   *  si apre al tocco sul tondo (gesto finito), mai a metà di un trascinamento. */
+  const confermaRiapriPasso = (onOk) => {
+    UI.closeGuideCard(); UI.hideQuick();
+    const c = document.createElement('div'); c.id = 'gpcard';
+    c.innerHTML = `<div class="gpc-head"><b>Riaprire il passo?</b><span class="spacer"></span><button class="btn small ghost" id="gpc-x" aria-label="Chiudi">✕</button></div>`
+      + `<div class="gpc-body">Questo passo era stato validato: mappato, con attività e tempi. Riaprendolo torna modificabile — la ✓ si può rimettere quando vuoi.</div>`
+      + `<div class="actions"><button class="btn small primary" data-rp-ok>Riapri</button><button class="btn small ghost" data-rp-no>Annulla</button></div>`;
+    document.body.appendChild(c);
+    const chW = c.offsetWidth, chH = c.offsetHeight;
+    c.style.left = Math.round(Math.max(8, (window.innerWidth - chW) / 2)) + 'px';
+    c.style.top = Math.round(Math.max(58, Math.min(window.innerHeight - chH - 10, 120))) + 'px';
+    const no = () => UI.closeGuideCard();
+    $('#gpc-x', c).onclick = no; $('[data-rp-no]', c).onclick = no;
+    $('[data-rp-ok]', c).onclick = () => { UI.closeGuideCard(); onOk(); };
+  };
   P.open = (id) => {
-    const map = V.map(); const el = V.byId(id, map); if (!el) return; P.current = id;
+    const map = V.map(); const el = V.byId(id, map); if (!el) return;
+    if (P.current !== id) P._mini = null; // elemento cambiato: i pannellini ripartono chiusi
+    P.current = id;
     const T = V.TYPES[el.type]; const p = el.props;
-    let h = `<div class="pop-head">${preview(el, map)}<div class="pop-title"><b>${T.name}</b><div class="pop-sub">${esc(subtitleOf(el, map))}</div></div><button class="btn small ghost" id="pop-why" title="Perché / cos'è (dal libro)" aria-label="Spiegazione dal libro" aria-expanded="false">?</button><button class="btn small ghost" id="pop-x" aria-label="Chiudi">✕</button></div><div class="why hidden" id="pop-whytext">${esc(T.why)}</div>`;
-    let main = '', adv = '';
+    const isBox = el.type === 'box';
+    // ✓ accesa: il contenuto del passo si legge, non si scrive (la guardia vera è in V.commit)
+    const roStep = (isBox && p.validated) ? ' disabled' : '';
+    let h;
+    if (isBox) {
+      // Il pannello del passo (variante B, spec 2026-08-21): una fila di tondi in cima — gli stessi
+      // .pm-btn del menu rotondo — con dietro ciò che si tocca di rado; in vista resta ciò che si
+      // compila sempre (titolo, attività, tempi). Il tondo del colore indossa la tinta attuale.
+      const tinta = V.tintHue(p.tint);
+      const rb = (k, icon, lab, tit) => `<button class="pm-btn" data-round="${k}" title="${esc(tit)}" aria-label="${esc(tit)}" aria-pressed="false">${icon}<span>${esc(lab)}</span></button>`;
+      h = `<div class="pop-rounds">`
+        + `<button class="pm-btn" data-round="tint" title="Colore del passo: il sotto-foglio ↗ lo ripete come sfondo" aria-label="Colore del passo" aria-pressed="false"${tinta != null ? ` style="background:hsl(${tinta} 38% 95.5%);border-color:hsl(${tinta} 26% 64%)"` : ''}>${RIC.tint}<span>Colore</span></button>`
+        + rb('link', RIC.link, 'Fogli', 'Collega a un\'altra mappa: sotto-foglio ↗ o richiamo ⇉')
+        + (p.link && V.doc.maps[p.link] ? rb('peek', QICN.peek, 'Sbircia', 'Sbircia il foglio collegato senza entrarci') : '')
+        + rb('setup', RIC.setup, 'Extra', 'Correct & Complete, chi/reparto e legami')
+        + `<button class="pm-btn a-destra" id="pop-why" title="Perché / cos'è (dal libro)" aria-label="Spiegazione dal libro" aria-expanded="false">${IC.whatis}<span>Perché</span></button>`
+        + `<button class="pm-btn${p.validated ? ' validata' : ''}" data-valid title="${p.validated ? 'Validato: tocca per riaprirlo alle modifiche (con conferma)' : 'Segna come validato: mappato, con attività e tempi'}" aria-label="Valida il passo" aria-pressed="${p.validated ? 'true' : 'false'}">${RIC.valid}<span>${p.validated ? 'Validato' : 'Valida'}</span></button>`
+        + `<button class="pm-btn" id="pop-x" title="Chiudi il pannello" aria-label="Chiudi">${RIC.close}<span>Chiudi</span></button>`
+        + `</div><div class="why hidden" id="pop-whytext">${esc(T.why)}</div>`;
+    } else {
+      h = `<div class="pop-head">${preview(el, map)}<div class="pop-title"><b>${T.name}</b><div class="pop-sub">${esc(subtitleOf(el, map))}</div></div><button class="btn small ghost" id="pop-why" title="Perché / cos'è (dal libro)" aria-label="Spiegazione dal libro" aria-expanded="false">?</button><button class="btn small ghost" id="pop-x" aria-label="Chiudi">✕</button></div><div class="why hidden" id="pop-whytext">${esc(T.why)}</div>`;
+    }
+    let main = '', adv = '', minis = '';
     switch (el.type) {
-      case 'box': main += field('Titolo del passo', inp('title', p.title, 'placeholder="es. Accettazione" autofocus')) + `<div class="hint" style="margin:-4px 0 6px">Tempi (${esc(map.unit)}) dalla prima all'ultima attività</div>` + dataRow(p) + field('Attività dentro il box (una per riga, in ordine)', ta('activities', (p.activities || []).join('\n'), 'data-lines placeholder="prima attività (apre la porta)\n…\nultima attività (chiude la porta)"'));
-        adv += `<div class="row">${field('Correct & Complete %', inp('cc', p.cc, 'inputmode="decimal" placeholder="es. 90"'))}${field('Chi / reparto', inp('owner', p.owner))}</div>`; break;
+      // Il pannello del passo (variante B, spec 2026-08-21): in vista ciò che si compila sempre —
+      // titolo, attività numerate, tempi a riquadri (inputmode decimal: su iPad esce la tastiera
+      // numerica). Colore, collegamenti, sbircia ed extra stanno dietro i tondi, in pannellini che
+      // si aprono DENTRO il pannello, sopra il contenuto: nessuna finestra sopra un'altra finestra.
+      case 'box': {
+        main += `<input class="pop-ptitle" data-k="title" value="${esc(p.title)}" placeholder="Nome del passo (es. Accettazione)" autocomplete="off" autofocus${roStep}>`;
+        main += `<div class="pop-sec">Attività, una per riga</div><div class="acts" data-acts></div>`;
+        main += `<div class="pop-sec">Tempi (${esc(map.unit)}) · dalla prima all'ultima attività</div><div class="times">`
+          + [['hi', 'max'], ['lo', 'min'], ['avg', 'media']].map(([k, lab]) => `<label class="tbox"><span>${lab}</span><input data-k="${k}" value="${esc(p[k])}" inputmode="decimal" autocomplete="off"${roStep}></label>`).join('') + `</div>`;
+        if (p.validated) main += `<div class="hint lockrow">✓ Passo validato: il contenuto è in sola lettura. Si sposta, si colora e si collega come prima — per modificarlo tocca la ✓ in alto.</div>`;
+        // il colore è il filo fra il passo e il suo sotto-foglio: area e bordo qui, sfondo di là
+        // (V.setTint li cambia insieme, in una sola voce di annulla). Nessuna scritta: pastiglie.
+        minis += `<div class="pop-mini hidden" data-mini="tint"><h4>Colore del passo</h4>${tintPicker(V.tintHue(p.tint))}<div class="hint">${V.linkKind(el, map) === 'figlia' ? 'Il sotto-foglio ↗ ripete questo colore come sfondo.' : 'Se un giorno il passo avrà un sotto-foglio, ne diventerà lo sfondo.'}</div></div>`;
+        // «Sbircia» dentro il pannello: la stessa anteprima della scheda flottante (UI.showPeek),
+        // ma il contenuto del pannello resta visibile sotto in trasparenza
+        const tgt = p.link ? V.doc.maps[p.link] : null;
+        if (tgt) {
+          const auto = V.describeMap(tgt);
+          const custom = typeof p.summary === 'string' && p.summary.trim() ? p.summary : '';
+          const ind = V.mapAddress(tgt);
+          const strip = V.flowStrip(tgt);
+          const striscia = strip.length ? `<div class="peek-strip">${strip.map(t => {
+            if (t.kind === 'box') return `<span class="ps-box"><b>${esc(t.n)}</b> ${esc(t.title || 'passo')}</span>`;
+            if (t.kind === 'delta') return `<span class="ps-delta" title="attesa fra i due passi">▼${t.avg != null ? esc(fmt(t.avg)) : ''}</span>`;
+            return `<span class="ps-fork" title="Il flusso si divide qui (dal passo ${esc(t.n)})">⑂${esc(t.n)}</span>`;
+          }).join('<span class="ps-sep">→</span>')}</div>` : '';
+          const anteprima = tgt.elements.length ? `<div class="peek-view">${R.peekSVG(tgt)}</div>`
+            : `<div class="peek-view peek-empty">Foglio ancora vuoto: appena ci disegni qualcosa, qui vedi l'anteprima.</div>`;
+          minis += `<div class="pop-mini hidden" data-mini="peek"><h4>${ind ? `<span class="ind" title="${esc(ind)}">${esc(V.shortAddress(ind))}</span> ` : ''}${esc(tgt.title || 'senza titolo')}</h4>${striscia}${anteprima}`
+            + field('Che cosa contiene', `<textarea data-peek-sum rows="2">${esc(custom || auto)}</textarea>`)
+            + `<div class="hint">${custom ? 'Riscritta da te: non si aggiorna più da sola. ↻ la riporta a quella del foglio.' : 'Generata dal foglio: resta vera da sola finché non la riscrivi.'}</div>`
+            + `<div class="actions"><button class="btn small ghost" data-peek-regen title="Rigenera la descrizione dal foglio" aria-label="Rigenera la descrizione">↻</button><span style="flex:1"></span><button class="btn small primary" data-peek-open>Apri il foglio ↗</button></div></div>`;
+        }
+        break;
+      }
       case 'delta': { const c = p.attachedTo ? V.byId(p.attachedTo, map) : null; if (!c) main += `<div class="hint" style="margin-bottom:6px">Non agganciato a una freccia: conta nel totale NVA ma non nella timeline. Trascinalo vicino a una freccia o usa "Aggancia".</div>`; main += `<div class="hint" style="margin:0 0 6px">Attesa (${esc(map.unit)}) per differenza: fine box precedente → inizio successivo</div>` + dataRow(p) + field('Dove / perché sta ferma', inp('note', p.note, 'placeholder="richiesta nel vassoio; attesa del trasportatore…"')); adv += field('Tipo di attesa (cambia il glifo)', sel('kind', p.kind, V.DELTA_KINDS)); break; }
       // «chi è» e «ruolo» stanno tutti e due in vista: l'omino nasce senza etichetta, e la prima cosa
       // da fare è dire chi è. Prima «Ruolo» era sepolto sotto «Altre opzioni» e non lo trovava nessuno.
@@ -247,30 +391,50 @@
     // stato di blocco (sempre visibile, una riga)
     if (!V.isConnector(el)) {
       const lk = el.props.lockTo || (el.type === 'delta' && el.props.attachedTo); const lpar = lk ? V.byId(lk, map) : null;
-      if (lpar) main += `<div class="hint lockrow">⛓ Legato a <b>${esc(lpar.props.title || lpar.props.label || lpar.props.name || V.TYPES[lpar.type].name)}</b>: si muove con lui.</div>`;
-      else if (R.LOCKABLE.includes(el.type) && el.type !== 'delta' && el.type !== 'box' && el.type !== 'person') main += `<div class="hint lockrow">⛓ Libero: lascialo cadere su un passo o vicino a una freccia per legarlo.</div>`;
+      let lockHint = '';
+      if (lpar) lockHint = `<div class="hint lockrow">⛓ Legato a <b>${esc(lpar.props.title || lpar.props.label || lpar.props.name || V.TYPES[lpar.type].name)}</b>: si muove con lui.</div>`;
+      else if (R.LOCKABLE.includes(el.type) && el.type !== 'delta' && el.type !== 'box' && el.type !== 'person') lockHint = `<div class="hint lockrow">⛓ Libero: lascialo cadere su un passo o vicino a una freccia per legarlo.</div>`;
       const opts = mapOptions(map.id);
-      adv += field('Collega a un\'altra mappa (dettaglio, turno, futuro)', `<select data-k="link"><option value="">— nessuna —</option>${opts.map(o => `<option value="${o.id}" ${p.link === o.id ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}<option value="__new__">+ nuova mappa di dettaglio…</option></select>`);
-      if (p.link && V.doc.maps[p.link]) main += `<div class="actions"><button class="btn small primary" id="pop-openlink">Apri la mappa collegata ↗</button></div>`;
+      // Il menu dice PRIMA che cosa succederà: una mappa senza posto diventa il sotto-foglio di questo
+      // passo (↗); una che un posto ce l'ha già resta dov'è e viene solo richiamata (⇉). Il foglio che
+      // sta già sotto QUESTO passo è il suo sotto-foglio e basta: dirgli «richiamata ⇉» smentiva il
+      // badge ↗ che il passo porta sul foglio.
+      const suffisso = (o) => { const m2 = V.doc.maps[o.id]; if (m2 && m2.parentStepId === el.id) return ' — sotto-foglio ↗'; return o.libera ? ' — diventa sotto-foglio ↗' : ' — richiamata ⇉'; };
+      const linkSel = `<select data-k="link"><option value="">— nessuna —</option><option value="__new__">+ nuovo sotto-foglio di questo passo…</option>${opts.map(o => `<option value="${o.id}" title="${esc(o.ind || '')}" ${p.link === o.id ? 'selected' : ''}>${esc(o.label)}${suffisso(o)}</option>`).join('')}</select>`;
+      const linkHint = 'Una mappa che non sta ancora sotto nessun passo diventa il sotto-foglio di questo. Una che ha già il suo posto resta dov\'è: qui viene solo richiamata.';
+      const openLink = (p.link && V.doc.maps[p.link]) ? `<div class="actions"><button class="btn small primary" id="pop-openlink">Apri la mappa collegata ↗</button></div>` : '';
+      if (isBox) {
+        // Per il passo il collegamento sta dietro il tondo ↗ in cima al pannello (variante B della
+        // spec 2026-08-21): NON sepolto in «Altre opzioni» — la richiesta di Gt («non deve stare in
+        // altre opzioni») resta onorata, il tondo è in vista quanto il campo di prima.
+        minis += `<div class="pop-mini hidden" data-mini="link"><h4>Collega a un'altra mappa</h4><div class="field">${linkSel}<span class="hint">${linkHint}</span></div>${openLink}</div>`;
+        minis += `<div class="pop-mini hidden" data-mini="setup"><h4>Extra del passo</h4><div class="row">${field('Correct & Complete %', inp('cc', p.cc, 'inputmode="decimal" placeholder="es. 90"' + roStep))}${field('Chi / reparto', inp('owner', p.owner, roStep))}</div>${lockHint}</div>`;
+      } else {
+        main += lockHint;
+        main += field('Collega a un\'altra mappa', linkSel, linkHint);
+        main += openLink;
+      }
     }
     const CONVERT = { storm: ['fluffy', 'burst', 'text'], fluffy: ['storm', 'burst', 'text'], burst: ['storm', 'fluffy', 'text'], text: ['storm', 'fluffy', 'burst'], inbox: ['delta', 'inventory'], inventory: ['inbox'] };
     if (CONVERT[el.type]) adv += field('Trasforma in…', `<select data-convert><option value="">— tipo attuale: ${T.name} —</option>${CONVERT[el.type].map(t => `<option value="${t}">${V.TYPES[t].name}</option>`).join('')}</select>`, 'Il testo e la posizione restano; cambia il disegno.');
     h += main;
     if (adv) h += `<details class="adv"><summary>Altre opzioni</summary>${adv}</details>`;
-    // azioni: le stesse della barra rapida (senza "Dettagli"), più quelle proprie del pop-up
-    const acts = UI.actionList(el, map);
+    // azioni: le stesse della barra rapida (senza "Dettagli"), più quelle proprie del pop-up.
+    // Per il passo «Sbircia» non si ripete in coda: è il tondo 👁 in cima.
+    const acts = UI.actionList(el, map).filter(a => !(isBox && a.id === 'peek'));
     let extra = ''; if (el.type === 'burst') extra += '<button class="btn small" id="pop-toplan">→ Aggiungi al piano</button>'; if (el.type === 'legend') extra += '<button class="btn small" id="pop-legendfull">Legenda completa</button>';
     h += `<div class="actions pop-actions">${extra}${acts.map(a => `<button class="btn small ${a.id === 'del' ? 'danger' : ''}" data-pa="${a.id}" title="${esc(a.title)}">${a.label}</button>`).join('')}</div>`;
+    h += minis; // i pannellini del passo: posizionati sopra il contenuto dal CSS, nascosti finché un tondo li chiama
     UI.hideQuick(); // il pop-up contiene le stesse azioni della barra rapida
-    const pop = $('#pop'); pop.innerHTML = h; pop.classList.remove('hidden'); P.place(el);
+    const pop = $('#pop'); pop.innerHTML = h; pop.classList.remove('hidden'); pop.classList.toggle('step', isBox); P.place(el);
     $('#pop-x').onclick = P.close; $('#pop-why').onclick = () => { const w = $('#pop-whytext'); w.classList.toggle('hidden'); $('#pop-why').setAttribute('aria-expanded', !w.classList.contains('hidden')); };
-    $$('[data-pa]', pop).forEach(b => b.onclick = () => { const a = b.dataset.pa; if (['dup', 'del', 'connect', 'lockto', 'lockall'].includes(a)) P.close(); UI.quickAction(a, id); if (['invert', 'attach', 'unlock', 'legend'].includes(a) && V.byId(id)) P.open(id); });
+    $$('[data-pa]', pop).forEach(b => b.onclick = () => { const a = b.dataset.pa; if (['dup', 'del', 'connect', 'lockto', 'lockall', 'peek'].includes(a)) P.close(); UI.quickAction(a, id); if (['invert', 'attach', 'unlock', 'legend'].includes(a) && V.byId(id)) P.open(id); });
     // Ideale validato: il pop-up serve a leggere, i campi e le azioni restano spenti (la modifica riapre dal lucchetto)
     if (map.validated) $$('input,textarea,select,button', pop).forEach(x => { if (x.id !== 'pop-x' && x.id !== 'pop-why') x.disabled = true; });
     const tp = $('#pop-toplan'); if (tp) tp.onclick = () => { const plan = clone(map.plan); plan.push({ id: uid(), what: p.text || 'kaizen', who: p.owner || '', when: '', outcome: '', a3: true }); V.commit({ t: 'plan_set', after: plan }, 'piano'); UI.toast('Aggiunto al piano.'); UI.renderPlan(); };
     const ol = $('#pop-openlink'); if (ol) ol.onclick = () => UI.openMap(p.link);
     const lf = $('#pop-legendfull'); if (lf) lf.onclick = () => UI.toggleGuide(true, 'simboli');
-    const cv = $('[data-convert]', pop); if (cv) cv.onchange = () => { const t = cv.value; if (!t) return; const before = clone(el); const T2 = V.TYPES[t]; const text = p.text || p.what || p.note || ''; const nprops = Object.assign(clone(T2.props), t === 'text' || t === 'storm' || t === 'fluffy' || t === 'burst' ? { text } : t === 'inventory' ? { what: text } : t === 'delta' ? { note: text, avg: p.avg || '' } : {}); if (p.link) nprops.link = p.link; const after = { type: t, w: T2.w, h: T2.h, props: nprops }; V.commit({ t: 'update', id, after, before: { type: before.type, w: before.w, h: before.h, props: before.props } }, 'trasforma'); P.open(id); };
+    const cv = $('[data-convert]', pop); if (cv) cv.onchange = () => { const t = cv.value; if (!t) return; const before = clone(el); const T2 = V.TYPES[t]; const text = p.text || p.what || p.note || ''; const nprops = Object.assign(clone(T2.props), t === 'text' || t === 'storm' || t === 'fluffy' || t === 'burst' ? { text } : t === 'inventory' ? { what: text } : t === 'delta' ? { note: text, avg: p.avg || '' } : {}); if (p.link) nprops.link = p.link; const after = { type: t, w: T2.w, h: T2.h, props: nprops }; if ((t === 'storm' || t === 'fluffy') && text) after.h = Math.max(after.h, R.cloudFit(T2.w, text)); V.commit({ t: 'update', id, after, before: { type: before.type, w: before.w, h: before.h, props: before.props } }, 'trasforma'); P.open(id); };
     // aspetto forzato a mano: si scrive tutto insieme in props.override (assente = derivato dal significato)
     const applyOv = (o) => {
       const before = clone(V.byId(id).props.override) || null;
@@ -289,7 +453,32 @@
       const val = () => { let v; if (inpEl.type === 'checkbox') v = inpEl.checked; else if (inpEl.dataset.lines != null) v = inpEl.value.split('\n').map(s => s.trim()).filter(Boolean); else v = inpEl.value; if (k === 'size') v = +v; return v; };
       const handler = (final) => {
         const v = val();
-        if (k === 'link' && v === '__new__') { const d = V.createDetail(map, (p.title || p.text || 'dettaglio')); V.commit({ t: 'props', id, after: { link: d.id } }, 'collega mappa'); UI.toast('Mappa di dettaglio creata: apri con ↗'); P.open(id); return; }
+        if (k === 'link' && v === '__new__') {
+          // il nome del sotto-foglio si CHIEDE, col titolo del passo già scritto nel campo: un tocco
+          // per confermare, due secondi per riscriverlo. Prima nasceva «dettaglio» in automatico e la
+          // cartina diventava un elenco di rami tutti uguali. Il pop si chiude e si riapre alla fine:
+          // se si tocca fuori dalla scheda, il select non resta fermo su una voce mai successa.
+          P.close();
+          UI.askNomeSottoFoglio(nomeProposto(map, el), (nome, indici) => {
+            // l'elenco delle spunte c'era solo se il passo ha attività: in quel caso il foglio
+            // nasce già con un passo per ogni spunta; altrimenti la creazione resta quella di sempre
+            const d = indici ? V.buildDetailFromActivities(el, map, { nome, indici }) : V.createDetail(map, nome, id);
+            V.commit({ t: 'props', id, after: { link: d.id } }, 'collega mappa');
+            const nPassi = d.elements.filter(e => e.type === 'box').length;
+            UI.toast(nPassi ? `Sotto-foglio creato con ${nPassi} ${nPassi === 1 ? 'passo' : 'passi'} già in fila: apri con ↗` : 'Sotto-foglio creato: apri con ↗');
+            P.open(id);
+          }, () => P.open(id), p.activities);
+          return;
+        }
+        // scegliendo una mappa che non sta ancora sotto nessun passo, questo passo ne diventa il posto:
+        // altrimenti l'albero avrebbe un ramo staccato e la cartina non saprebbe dove metterla.
+        // Link e adozione stanno nella STESSA voce di annulla (V.linkMap): un annulla solo li riporta
+        // indietro insieme, altrimenti la mappa restava appesa e il badge mentiva.
+        if (k === 'link' && v) {
+          V.linkMap(id, v);
+          if (UI.renderCartina) UI.renderCartina();
+          P.open(id); return;
+        }
         const cur = V.byId(id); if (!cur) return;
         // chi «si reca» ci va quasi sempre di persona: il canale si mette da sé, in una sola voce di
         // undo, e resta cambiabile (c'è chi si reca in ambulanza). Il pop-up si ridisegna per mostrarlo.
@@ -314,7 +503,86 @@
       if (inpEl.tagName === 'SELECT' || inpEl.type === 'checkbox') inpEl.addEventListener('change', () => handler(true));
       else { inpEl.addEventListener('input', () => handler(false)); inpEl.addEventListener('change', () => handler(true)); }
     });
-    $$('[data-pick]', pop).forEach(b => b.onclick = () => { const k = b.dataset.pick, v = b.dataset.v; const cur = V.byId(id); if (!cur || cur.props[k] === v) return; V.commit({ t: 'props', id, after: { [k]: v } }, k === 'mood' ? 'espressione' : 'icona'); $$(`[data-pick="${k}"]`, pop).forEach(x => { const on = x.dataset.v === v; x.classList.toggle('on', on); x.setAttribute(x.hasAttribute('role') ? 'aria-checked' : 'aria-pressed', on); }); const mm = $('[data-mood-mean]', pop); if (mm && k === 'mood') mm.textContent = V.MOOD_MEANING[v] || ''; });
+    $$('[data-pick]', pop).forEach(b => b.onclick = () => { const k = b.dataset.pick, v = b.dataset.v; const cur = V.byId(id); if (!cur) return;
+      // la tinta non è una prop qualunque: V.setTint colora anche lo sfondo del sotto-foglio,
+      // nella stessa voce di annulla — passare dal commit generico la lascerebbe a metà
+      if (k === 'tint') {
+        const hue = v === '' ? null : +v;
+        if (V.tintHue(cur.props.tint) === hue) return;
+        V.setTint(id, hue);
+        $$('[data-pick="tint"]', pop).forEach(x => { const on = x.dataset.v === v; x.classList.toggle('on', on); x.setAttribute('aria-checked', on); });
+        P.refresh(id);
+        const rb = $('[data-round="tint"]', pop); // il tondo del colore indossa la tinta scelta
+        if (rb) { if (hue == null) rb.removeAttribute('style'); else rb.style.cssText = `background:hsl(${hue} 38% 95.5%);border-color:hsl(${hue} 26% 64%)`; }
+        return;
+      }
+      if (cur.props[k] === v) return; V.commit({ t: 'props', id, after: { [k]: v } }, k === 'mood' ? 'espressione' : 'icona'); $$(`[data-pick="${k}"]`, pop).forEach(x => { const on = x.dataset.v === v; x.classList.toggle('on', on); x.setAttribute(x.hasAttribute('role') ? 'aria-checked' : 'aria-pressed', on); }); const mm = $('[data-mood-mean]', pop); if (mm && k === 'mood') mm.textContent = V.MOOD_MEANING[v] || ''; });
+    if (isBox) {
+      // attività numerate, una riga ciascuna: svuotare una riga la toglie (come cancellare una riga
+      // del vecchio testo unico). Una voce di annulla per riga, dal focus al cambio.
+      const actsBox = $('[data-acts]', pop);
+      const paintActs = (list, focusLast) => {
+        const roA = (p.validated || map.validated) ? ' disabled' : '';
+        actsBox.innerHTML = list.map((a, i) => `<div class="act-row"><span class="act-n">${i + 1}</span><input data-act-i="${i}" value="${esc(a)}" autocomplete="off" placeholder="${i === 0 ? 'prima attività (apre la porta)' : i === list.length - 1 && list.length > 1 ? 'ultima attività (chiude la porta)' : '…'}"${roA}></div>`).join('')
+          + (roA ? '' : `<button class="btn small ghost act-add" data-act-add>+ aggiungi</button>`);
+        $$('input[data-act-i]', actsBox).forEach(inpA => {
+          let before;
+          inpA.addEventListener('focus', () => { const cur = V.byId(id); before = cur ? clone(cur.props.activities || []) : []; });
+          inpA.addEventListener('change', () => {
+            const after = $$('input[data-act-i]', actsBox).map(x => x.value.trim()).filter(Boolean);
+            V.commit({ t: 'props', id, after: { activities: after }, before: { activities: before } }, 'attività');
+            // si ridisegna dal modello, non dai campi: una modifica rifiutata (✓ accesa) torna com'era
+            const ora = V.byId(id); paintActs(ora ? (ora.props.activities || []).slice() : [], false);
+          });
+        });
+        const add = $('[data-act-add]', actsBox);
+        if (add) add.onclick = () => { const list2 = $$('input[data-act-i]', actsBox).map(x => x.value); list2.push(''); paintActs(list2, true); };
+        if (focusLast) { const ins = $$('input[data-act-i]', actsBox); if (ins.length) ins[ins.length - 1].focus(); }
+      };
+      paintActs((p.activities || []).slice(), false);
+      // i pannellini si aprono DENTRO il pannello, sotto la fila dei tondi e sopra il contenuto;
+      // secondo tocco sullo stesso tondo richiude
+      const paintMini = (name) => {
+        $$('.pop-mini', pop).forEach(mn => mn.classList.toggle('hidden', mn.dataset.mini !== name));
+        $$('[data-round]', pop).forEach(b => { const on = !!name && b.dataset.round === name; b.classList.toggle('aperto', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+        if (name) {
+          const rr = $('.pop-rounds', pop), mn = $(`.pop-mini[data-mini="${name}"]`, pop);
+          if (rr && mn) mn.style.top = (rr.offsetTop + rr.offsetHeight + 6) + 'px';
+        }
+      };
+      $$('[data-round]', pop).forEach(b => b.onclick = () => { P._mini = (P._mini === b.dataset.round) ? null : b.dataset.round; paintMini(P._mini); });
+      if (P._mini && $(`.pop-mini[data-mini="${P._mini}"]`, pop)) paintMini(P._mini); else P._mini = null;
+      // la ✓: validare costa un tocco; riaprire costa un tocco + conferma (è metodo, non interfaccia)
+      const vb = $('[data-valid]', pop);
+      if (vb) vb.onclick = () => {
+        const cur = V.byId(id); if (!cur) return;
+        if (cur.props.validated) confermaRiapriPasso(() => { V.setStepValidated(id, false); UI.toast('Passo riaperto: titolo, attività e tempi si modificano di nuovo.'); P.open(id); });
+        else { V.setStepValidated(id, true); P._mini = null; P.open(id); UI.toast('Passo validato ✓: contenuto in sola lettura. Si sposta, si colora e si collega come prima.'); }
+      };
+      // «Sbircia» nel pannellino: stessa descrizione riscrivibile della scheda flottante — una voce
+      // di annulla per riscrittura; vuota o uguale a quella automatica = chiave tolta, si ricalcola
+      const sumMini = $('[data-peek-sum]', pop);
+      if (sumMini) {
+        const tgt = V.doc.maps[p.link]; const auto = V.describeMap(tgt);
+        let beforeSum;
+        sumMini.addEventListener('focus', () => { const cur = V.byId(id); beforeSum = cur && cur.props.summary; });
+        sumMini.addEventListener('change', () => {
+          const cur = V.byId(id); if (!cur) return;
+          const v = sumMini.value.trim(); const after = (!v || v === auto) ? undefined : v;
+          if (after === cur.props.summary || (after === undefined && cur.props.summary == null)) return;
+          V.commit({ t: 'props', id, after: { summary: after }, before: { summary: beforeSum } }, 'descrizione del sotto-foglio');
+        });
+        const rg = $('[data-peek-regen]', pop);
+        if (rg) rg.onclick = () => {
+          const cur = V.byId(id); if (!cur) return;
+          if (cur.props.summary == null) { sumMini.value = auto; return; }
+          V.commit({ t: 'props', id, after: { summary: undefined }, before: { summary: cur.props.summary } }, 'descrizione del sotto-foglio');
+          sumMini.value = auto;
+        };
+        const opk = $('[data-peek-open]', pop);
+        if (opk) opk.onclick = () => UI.openMap(p.link);
+      }
+    }
     const af = pop.querySelector('[autofocus]'); if (af && !('ontouchstart' in window)) af.focus();
   };
   /** aggiorna anteprima e sottotitolo del pop-up aperto (dopo una modifica ai campi) */
@@ -323,7 +591,7 @@
     const map = V.map(); const pop = $('#pop'); P.current = '__title__';
     pop.innerHTML = `<div class="pop-head"><b>Titolo, data, autori</b><button class="btn small ghost" id="pop-x" aria-label="Chiudi">✕</button></div><div class="why">L'intestazione vive qui in barra: sul foglio digitale occupava solo spazio. Titolo, data e iniziali di chi ha disegnato restano salvati con la mappa.</div>
       ${field('Titolo', `<input data-m="title" value="${esc(map.title)}" autofocus>`)}<div class="row">${field('Data', `<input data-m="date" type="date" value="${esc(map.date)}">`)}${field('Iniziali autori', `<input data-m="authors" value="${esc(map.authors)}">`)}</div>${field('Reparto / unità', `<input data-m="unitName" value="${esc(map.unitName)}">`)}${field('Scopo in una frase', `<textarea data-m="scope" placeholder="Dalla richiesta di … alla consegna di …">${esc(map.scope)}</textarea>`)}<div class="row">${field('Unità di misura (unica)', `<select data-m="unit">${['secondi', 'minuti', 'ore', 'giorni'].map(u => `<option ${u === map.unit ? 'selected' : ''}>${u}</option>`).join('')}</select>`)}${field('N. misure', `<input data-m="samples" inputmode="numeric" value="${esc(map.samples)}">`)}</div>${field('Responsabile unico del disegno', `<input data-tdrawer value="${esc(map.prep.drawer || '')}" autocomplete="off">`)}`;
-    pop.classList.remove('hidden'); const st = $('#stage').getBoundingClientRect(); const hr = $('#map-head').getBoundingClientRect(); pop.style.left = Math.max(10, Math.min(st.width - 340, hr.left - st.left)) + 'px'; pop.style.top = '10px';
+    pop.classList.remove('hidden'); pop.classList.remove('step'); const st = $('#stage').getBoundingClientRect(); const hr = $('#map-head').getBoundingClientRect(); pop.style.left = Math.max(10, Math.min(st.width - 340, hr.left - st.left)) + 'px'; pop.style.top = '10px';
     $('#pop-x').onclick = P.close;
     const td = $('[data-tdrawer]', pop); td.addEventListener('input', () => { const after = Object.assign(clone(V.map().prep), { drawer: td.value }); V.commit({ t: 'meta', after: { prep: after } }, 'intestazione', { silent: true }); });
     $$('[data-m]', pop).forEach(e => {
@@ -340,6 +608,15 @@
   UI.openMap = (id) => {
     // niente modalita' appese sulla mappa nuova: il primo tocco li' deve funzionare
     if (I.pickConn) I.cancelPickConnect(); if (I.pickLock) I.cancelPickLock(); UI.closePlaceMenu(); if (!V.doc.maps[id]) { UI.toast('Mappa non trovata.'); return; } P.close(); I.select([]); V.switchMap(id); I.restoreView(); };
+  /** Sale al foglio che contiene questo. Se il passo che lo conteneva esiste ancora, lo seleziona:
+   *  tornando su ci si ritrova dove si era scesi, invece che in mezzo al foglio. */
+  UI.goUp = () => {
+    const map = V.map(); const par = map && map.parentId && V.doc.maps[map.parentId];
+    if (!par) { UI.toast('Questo foglio è già in cima al progetto.'); return; }
+    const stepId = map.parentStepId;
+    UI.openMap(par.id);
+    if (stepId && V.byId(stepId)) I.select([stepId]);
+  };
   UI.renderHeader = () => {
     const map = V.map();
     $('#mh-title').textContent = map.title || '';
@@ -352,16 +629,40 @@
     const ideal = V.idealOf(map);
     $('#ideal-state').classList.toggle('hidden', !(ideal && ideal.validated));
     const lk = $('#tab-lock'); lk.classList.toggle('hidden', map.kind !== 'future'); lk.textContent = map.validated ? '\u{1F512}' : '\u{1F513}';
-    const crumbs = []; let m = map; let guard = 0; while (m && m.parentId && V.doc.maps[m.parentId] && guard++ < 6) { m = V.doc.maps[m.parentId]; crumbs.unshift(m); }
-    $('#crumbs').innerHTML = crumbs.map(c => `<button data-open="${c.id}">${esc(c.title || 'mappa')}</button><span>›</span>`).join('');
+    // Le briciole rispondono a «dove sono»: solo la strada percorsa (la catena verso l'alto con gli
+    // indirizzi). Il foglio aperto NON si ripete qui: stava scritto due volte, nelle briciole e nel
+    // titolo accanto — il suo indirizzo invece serve, e sta davanti al titolo in #map-head.
+    // La catena si raccoglie intera (la guardia è quella di mapAddress: solo contro gli anelli),
+    // poi V.visibleCrumbs decide che cosa entra in barra: oltre i 4 anelli restano il primo,
+    // un'ellissi e gli ultimi due — prima la barra affogava in una collana di «1.1.1.1…».
+    const crumbs = []; let m = map; let guard = 0; while (m && m.parentId && V.doc.maps[m.parentId] && guard++ < 40) { m = V.doc.maps[m.parentId]; crumbs.unshift(m); }
+    const briciola = (c) => { const i = V.mapAddress(c); return `<button data-open="${c.id}" title="${esc((i ? i + ' · ' : '') + (c.title || 'mappa'))}">${i ? '<span class="ind">' + esc(V.shortAddress(i)) + '</span>' : ''}${esc(c.title || 'mappa')}</button>`; };
+    $('#crumbs').innerHTML = V.visibleCrumbs(crumbs).map(c => c ? briciola(c) : '<span class="crumb-gap" title="Anelli di mezzo nascosti: la strada intera è nella cartina">…</span>').join('<span>›</span>');
+    // l'indirizzo davanti al titolo si mostra corto; quello vero resta nel title= (export e prove)
+    const indEl = $('#mh-ind'); if (indEl) { const pieno = V.mapAddress(map); indEl.textContent = V.shortAddress(pieno); indEl.title = pieno; }
     $$('#crumbs [data-open]').forEach(b => b.onclick = () => UI.openMap(b.dataset.open));
+    const su = $('#btn-up'); if (su) { su.classList.toggle('hidden', !crumbs.length); su.onclick = () => UI.goUp(); }
+    // Le sottoschede rispondono a «che cosa c'è SOTTO di me»: i figli diretti del foglio aperto, con
+    // l'indirizzo davanti. Servono a ridiscendere senza aprire la cartina — prima le briciole e ↑
+    // portavano solo verso l'alto. Senza figli la riga resta vuota e non occupa un pixel (#subtabs:empty
+    // è display:none). I riusi ⇉ restano fuori: sono fogli che stanno altrove, non sotto questo.
+    const st = $('#subtabs');
+    if (st) {
+      const figli = V.mapsOfProject(map.projectId).filter(x => x.parentId === map.id && x.kind !== 'future')
+        .sort((a, b) => V.mapAddress(a).localeCompare(V.mapAddress(b), undefined, { numeric: true }));
+      st.innerHTML = figli.length ? '<span class="st-lead" aria-hidden="true">⤷</span>' + figli.map(f => { const i = V.mapAddress(f); return `<button data-open="${f.id}" title="${esc(i)}"><span class="ind">${esc(V.shortAddress(i))}</span>${esc(f.title || 'senza titolo')}</button>`; }).join('') : '';
+      $$('#subtabs [data-open]').forEach(b => b.onclick = () => UI.openMap(b.dataset.open));
+    }
     $('#btn-undo').disabled = !V.canUndo(); $('#btn-redo').disabled = !V.canRedo();
     if (UI.menuCheck) UI.menuCheck('#btn-overlays', map.overlays !== false);
     if (UI.linkModeLabel) UI.linkModeLabel();
   };
   UI.renderMaps = () => {
-    const list = $('#maplist'); const maps = Object.values(V.doc.maps).sort((a, b) => (b.updated || 0) - (a.updated || 0));
-    list.innerHTML = maps.map(m => `<div class="maprow"><b>${esc(m.title || 'senza titolo')}<br><span class="k">${esc(V.kindLabel(m))}${m.kind === 'future' && m.validated ? ' \u{1F512}' : ''}${m.parentId ? ' · dettaglio' : ''} · ${new Date(m.updated || m.created).toLocaleDateString('it-CH')} · ${m.elements.filter(e => e.type === 'box').length} box</span></b><button class="btn small primary" data-open="${m.id}">Apri</button></div>`).join('') || '<p class="hint">Nessuna mappa.</p>';
+    const list = $('#maplist'); const mia = V.map();
+    // la libreria è la libreria DI QUESTO progetto: gli altri si raggiungono dalla cartina
+    const maps = V.mapsOfProject(mia ? mia.projectId : V.doc.activeProjectId).sort((a, b) => (b.updated || 0) - (a.updated || 0));
+    const nome = (V.project() || {}).name || 'progetto';
+    list.innerHTML = `<p class="hint">Progetto: <b>${esc(nome)}</b></p>` + (maps.map(m => { const ind = V.mapAddress(m); return `<div class="maprow"><b>${ind ? '<span class="ind" title="' + esc(ind) + '">' + esc(V.shortAddress(ind)) + '</span> ' : ''}${esc(m.title || 'senza titolo')}<br><span class="k">${esc(V.kindLabel(m))}${m.kind === 'future' && m.validated ? ' \u{1F512}' : ''} · ${new Date(m.updated || m.created).toLocaleDateString('it-CH')} · ${m.elements.filter(e => e.type === 'box').length} box</span></b><button class="btn small primary" data-open="${m.id}">Apri</button></div>`; }).join('') || '<p class="hint">Nessuna mappa in questo progetto.</p>');
     $$('#maplist [data-open]').forEach(b => b.onclick = () => { $('#dlg-maps').close(); UI.openMap(b.dataset.open); });
   };
 
@@ -434,6 +735,140 @@
       c.style.top = Math.round(Math.max(58, Math.min(window.innerHeight - chH - 10, cy - 24))) + 'px';
       $('#gpc-x').onclick = UI.closeGuideCard;
     }, 0);
+  };
+  /** Il pop-up dell'occhio: si sbircia il foglio dietro il link senza entrarci. Dentro ci sono
+   *  l'anteprima in piccolo (R.peekSVG: un'immagine ferma, non un canvas vivo — un canvas dentro un
+   *  canvas è una trappola di gesti), la riga che dice che cosa contiene e il pulsante per aprire
+   *  davvero. La riga nasce da V.describeMap e si ricalcola a ogni apertura; se qualcuno la riscrive
+   *  diventa props.summary del passo e da quel momento è sua (↻ la rigenera). Si apre al RILASCIO
+   *  del tocco (gesto 'peek'): mai interfaccia nuova sotto il dito a metà gesto. Riusa #gpcard,
+   *  quindi si chiude toccando fuori come la scheda di «Cos'è?». */
+  UI.showPeek = (boxId, cx, cy) => {
+    const map = V.map(); const box = V.byId(boxId, map);
+    const target = box && box.props.link && V.doc.maps[box.props.link];
+    if (!target) { UI.toast('Mappa non trovata.'); return; }
+    UI.closeGuideCard();
+    const auto = V.describeMap(target);
+    const custom = typeof box.props.summary === 'string' && box.props.summary.trim() ? box.props.summary : '';
+    const ind = V.mapAddress(target);
+    const c = document.createElement('div'); c.id = 'gpcard'; c.classList.add('peek');
+    // la striscia del flusso (scelta di Gt: striscia sopra, disegno sotto): la catena del foglio
+    // in una riga — passi numerati, ▼ col tempo dell'attesa fra l'uno e l'altro, ⑂ dove si divide.
+    // Scorre di lato se è lunga. Senza frecce non c'è striscia: resta solo il disegno.
+    const strip = V.flowStrip(target);
+    const striscia = strip.length ? `<div class="peek-strip">${strip.map(t => {
+      if (t.kind === 'box') return `<span class="ps-box"><b>${esc(t.n)}</b> ${esc(t.title || 'passo')}</span>`;
+      if (t.kind === 'delta') return `<span class="ps-delta" title="attesa fra i due passi">▼${t.avg != null ? esc(fmt(t.avg)) : ''}</span>`;
+      return `<span class="ps-fork" title="Il flusso si divide qui (dal passo ${esc(t.n)})">⑂${esc(t.n)}</span>`;
+    }).join('<span class="ps-sep">→</span>')}</div>` : '';
+    // foglio senza elementi: niente immagine del nulla, lo si dice a parole
+    const anteprima = target.elements.length ? `<div class="peek-view">${R.peekSVG(target)}</div>`
+      : `<div class="peek-view peek-empty">Foglio ancora vuoto: appena ci disegni qualcosa, qui vedi l'anteprima.</div>`;
+    c.innerHTML = `<div class="gpc-head"><b>${ind ? `<span class="ind" title="${esc(ind)}">${esc(V.shortAddress(ind))}</span> ` : ''}${esc(target.title || 'senza titolo')}</b><span class="spacer"></span><button class="btn small ghost" id="gpc-x" aria-label="Chiudi">✕</button></div>`
+      + striscia
+      + anteprima
+      + `<div class="field"><label for="peek-sum">Che cosa contiene</label><textarea id="peek-sum" rows="2">${esc(custom || auto)}</textarea></div>`
+      + `<div class="hint">${custom ? 'Riscritta da te: non si aggiorna più da sola. ↻ la riporta a quella del foglio.' : 'Generata dal foglio: resta vera da sola finché non la riscrivi.'}</div>`
+      + `<div class="actions"><button class="btn small ghost" id="peek-regen" title="Rigenera la descrizione dal foglio" aria-label="Rigenera la descrizione">↻</button><span style="flex:1"></span><button class="btn small primary" id="peek-open">Apri il foglio ↗</button></div>`;
+    document.body.appendChild(c);
+    const chW = c.offsetWidth, chH = c.offsetHeight;
+    c.style.left = Math.round(Math.max(8, Math.min(window.innerWidth - chW - 8, (cx == null ? window.innerWidth / 2 : cx) + 16))) + 'px';
+    c.style.top = Math.round(Math.max(58, Math.min(window.innerHeight - chH - 10, (cy == null ? 120 : cy) - 24))) + 'px';
+    $('#gpc-x', c).onclick = UI.closeGuideCard;
+    $('#peek-open', c).onclick = () => { UI.closeGuideCard(); UI.openMap(box.props.link); };
+    const sum = $('#peek-sum', c), regen = $('#peek-regen', c);
+    if (map.validated) { sum.disabled = true; regen.disabled = true; } // lucchetto chiuso: si guarda, non si scrive
+    // una voce di annulla per riscrittura (dal focus al cambio), come i campi del pop-up. Vuota o
+    // uguale a quella automatica = chiave tolta: la descrizione torna a ricalcolarsi a ogni sguardo,
+    // perché una descrizione scritta a mano invecchia quando il foglio sotto cambia.
+    let before;
+    sum.addEventListener('focus', () => { before = box.props.summary; });
+    sum.addEventListener('change', () => {
+      const v = sum.value.trim();
+      const after = (!v || v === auto) ? undefined : v;
+      if (after === box.props.summary || (after === undefined && box.props.summary == null)) return;
+      V.commit({ t: 'props', id: boxId, after: { summary: after }, before: { summary: before } }, 'descrizione del sotto-foglio');
+    });
+    regen.onclick = () => {
+      if (box.props.summary == null) { sum.value = auto; return; }
+      V.commit({ t: 'props', id: boxId, after: { summary: undefined }, before: { summary: box.props.summary } }, 'descrizione del sotto-foglio');
+      sum.value = auto;
+    };
+  };
+  /** Il nome proposto per un sotto-foglio: il titolo del passo, se c'è. Un passo appena disegnato il
+   *  titolo non ce l'ha quasi mai, e «dettaglio» ripetuto rendeva la cartina un elenco di rami tutti
+   *  uguali: al suo posto va l'indirizzo che V.stepNumbers calcola già («Dentro il passo 2»). */
+  const nomeProposto = (map, box) => {
+    const p = (box && box.props) || {};
+    const t = String(p.title || p.text || '').trim();
+    if (t) return t;
+    const n = V.stepNumbers(map).get(box && box.id);
+    return n ? `Dentro il passo ${n}` : 'Sotto-foglio';
+  };
+  /** Scheda che chiede il nome di un sotto-foglio prima di crearlo: il campo contiene già il nome
+   *  proposto, selezionato — un tocco su «Crea» conferma, riscrivere cancella e sostituisce.
+   *  Se il passo ha attività, sotto il nome compaiono con una spunta ciascuna (tutte spuntate):
+   *  ogni spunta diventa un passo del foglio nuovo, in fila e già collegato (spec 2026-08-21 —
+   *  le attività sono la scaletta del sotto-foglio). Nessuna spunta = foglio vuoto, come oggi.
+   *  Gli indici degli spuntati vanno al chiamante come secondo argomento: null se l'elenco non
+   *  c'era (passo senza attività → creazione identica a prima).
+   *  Riusa #gpcard (si chiude anche toccando fuori). Si apre alla scelta di una voce di menu o di un
+   *  pulsante (gesto finito), mai a metà di un trascinamento sul canvas. */
+  UI.askNomeSottoFoglio = (proposto, onOk, onNo, attivita) => {
+    UI.closeGuideCard(); UI.hideQuick();
+    // lo stesso elenco pulito su cui conta V.buildDetailFromActivities: indici allineati
+    const acts = (attivita || []).map(a => String(a).trim()).filter(Boolean);
+    const c = document.createElement('div'); c.id = 'gpcard';
+    c.innerHTML = `<div class="gpc-head"><b>Nome del sotto-foglio</b><span class="spacer"></span><button class="btn small ghost" id="gpc-x" aria-label="Chiudi">✕</button></div>`
+      + `<div class="gpc-body">È il nome che si leggerà nella cartina e nelle sottoschede. Quello del passo è già scritto: confermalo, o riscrivilo.</div>`
+      + `<div class="field"><label>Nome</label><input data-dn value="${esc(proposto)}" autocomplete="off"></div>`
+      + (acts.length ? `<div class="field"><label>Dentro ci metto un passo per ogni attività:</label><div class="dn-acts">${acts.map((a, i) => `<label class="check"><input type="checkbox" data-act="${i}" checked><span>${i + 1}. ${esc(a)}</span></label>`).join('')}</div></div>` : '')
+      + `<div class="actions"><button class="btn small primary" id="dn-ok">Crea ↗</button><button class="btn small ghost" id="dn-no">Annulla</button></div>`;
+    document.body.appendChild(c);
+    const chW = c.offsetWidth, chH = c.offsetHeight;
+    c.style.left = Math.round(Math.max(8, (window.innerWidth - chW) / 2)) + 'px';
+    c.style.top = Math.round(Math.max(58, Math.min(window.innerHeight - chH - 10, 120))) + 'px';
+    const inp = c.querySelector('[data-dn]');
+    // su touch niente focus automatico: la tastiera coprirebbe la scheda prima ancora di leggerla
+    if (!('ontouchstart' in window)) { inp.focus(); inp.select(); }
+    const no = () => { UI.closeGuideCard(); if (onNo) onNo(); };
+    $('#gpc-x', c).onclick = no;
+    $('#dn-no', c).onclick = no;
+    const ok = () => {
+      const v = inp.value.trim() || proposto;
+      const indici = acts.length ? $$('input[data-act]', c).filter(x => x.checked).map(x => +x.dataset.act) : null;
+      UI.closeGuideCard(); onOk(v, indici);
+    };
+    $('#dn-ok', c).onclick = ok;
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); ok(); } });
+  };
+  /** «In un sotto-foglio» sposta davvero: gli elementi spariscono dal foglio e al loro posto resta
+   *  un passo con ↗. Prima di farlo lo si dice a parole, con la via d'uscita («Annulla» qui,
+   *  ↩ dopo). Riusa #gpcard: si chiude anche toccando fuori, come la scheda di «Cos'è?».
+   *  Si apre al clic sulla voce del menu (gesto finito), mai a metà di un trascinamento. */
+  UI.confirmSheetify = (ids) => {
+    const map = V.map();
+    const n = ids.filter(id => { const el = V.byId(id, map); return el && !V.isConnector(el) && el.type !== 'lane'; }).length;
+    UI.closeGuideCard(); UI.hideQuick();
+    // il nome proposto è quello del primo passo della selezione (per indirizzo): è lui che il passo
+    // riassuntivo andrà a sostituire nella catena, quindi è il suo nome che la cartina deve ereditare
+    const nums = V.stepNumbers(map);
+    const prima = ids.map(x => V.byId(x, map)).filter(e => e && e.type === 'box')
+      .sort((a, b) => (nums.get(a.id) || '999').localeCompare(nums.get(b.id) || '999', undefined, { numeric: true }))[0];
+    const c = document.createElement('div'); c.id = 'gpcard';
+    c.innerHTML = `<div class="gpc-head"><b>In un sotto-foglio</b><span class="spacer"></span><button class="btn small ghost" id="gpc-x" aria-label="Chiudi">✕</button></div>`
+      + `<div class="gpc-body">${n} elementi si spostano in un nuovo foglio di dettaglio. Al loro posto, su questo foglio, resta un passo con ↗ che porta lì. Se non era quello che volevi: «Annulla» qui, o ↩ dopo lo spostamento.</div>`
+      + `<div class="field"><label>Nome del sotto-foglio (e del passo che resta)</label><input data-shf-nome value="${esc(nomeProposto(map, prima))}" autocomplete="off"></div>`
+      + `<div class="actions"><button class="btn small primary" id="shf-ok">Sposta ↗</button><button class="btn small ghost" id="shf-no">Annulla</button></div>`;
+    document.body.appendChild(c);
+    const chW = c.offsetWidth, chH = c.offsetHeight;
+    c.style.left = Math.round(Math.max(8, (window.innerWidth - chW) / 2)) + 'px';
+    c.style.top = Math.round(Math.max(58, Math.min(window.innerHeight - chH - 10, 120))) + 'px';
+    // chiudere senza spostare riporta il menu del gruppo: la selezione non si è mossa
+    const chiudi = () => { UI.closeGuideCard(); UI.onSelection(I.selection); };
+    $('#gpc-x', c).onclick = chiudi;
+    $('#shf-no', c).onclick = chiudi;
+    $('#shf-ok', c).onclick = () => { const nome = c.querySelector('[data-shf-nome]').value; UI.closeGuideCard(); I.groupToDetail(ids, nome); };
   };
   UI.openGuideCard = (sec, id, anchor) => {
     UI.closeGuideCard();
@@ -576,17 +1011,17 @@
     unlock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 13.5l-1.2 1.2a3.2 3.2 0 104.5 4.5l1.2-1.2"/><path d="M16.5 10.5l1.2-1.2a3.2 3.2 0 10-4.5-4.5L12 6"/><path d="M10.2 10.2l.9.9M13 13l.9.9" stroke-width="1.4"/></svg>',
     selkids: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3 2"/><rect x="8.5" y="8.5" width="7" height="7" rx="1"/></svg>',
     sheetify: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>',
-    del: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M10 7V5h4v2"/><path d="M7 7l1 13h8l1-13"/><path d="M10.5 11v5M13.5 11v5"/></svg>'
+    del: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M10 7V5h4v2"/><path d="M7 7l1 13h8l1-13"/><path d="M10.5 11v5M13.5 11v5"/></svg>',
+    peek: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M2.5 12Q12 4.8 21.5 12Q12 19.2 2.5 12Z"/><circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/></svg>'
   };
   QICN.lockall = QICN.lockto; QICN.unlockall = QICN.unlock; QICN.unlockkids = QICN.unlock; QICN.dupall = QICN.dup;
   // voci del menu di «Collega» (secondo arco): i verbi dell'omino e i bersagli
   QICN['cx-chiede'] = IC.request; QICN['cx-sireca'] = IC.person;
   QICN['cx-box'] = IC.box; QICN['cx-inventory'] = IC.inventory; QICN['cx-inbox'] = IC.inbox;
-  QICN['cx-sheet'] = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="6" width="16" height="12" rx="1.5" stroke-dasharray="3 2"/><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/></svg>';
   QICN['cx-back'] = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12H5M10 7l-5 5 5 5"/></svg>';
   // etichette corte sotto l'icona (poche parole: la spiegazione intera resta nel title)
-  const QLBL = { next: 'Passo', delta: 'Attesa', deltaOn: 'Attesa', cloud: 'Problema', connect: 'Collega', request: 'Richiesta', attach: 'Aggancia', invert: 'Inverti', shrink: 'Segnale', expand: 'Espandi', dup: 'Duplica', dupall: 'Duplica', legend: 'Apri', legendfull: 'Simboli', straighten: 'Raddrizza', pin: 'Blocca', unpin: 'Sblocca', lockto: 'Lega', lockall: 'Lega', unlock: 'Slega', unlockall: 'Slega', unlockkids: 'Slega', selkids: 'Gruppo', sheetify: 'Dettaglio', del: 'Elimina',
-    'cx-chiede': 'Chiede', 'cx-sireca': 'Si reca', 'cx-box': 'Passo', 'cx-inventory': 'Scorta', 'cx-inbox': 'In-box', 'cx-sheet': 'Sul foglio', 'cx-back': 'Indietro' };
+  const QLBL = { next: 'Passo', delta: 'Attesa', deltaOn: 'Attesa', cloud: 'Problema', connect: 'Collega', request: 'Richiesta', attach: 'Aggancia', invert: 'Inverti', shrink: 'Segnale', expand: 'Espandi', dup: 'Duplica', dupall: 'Duplica', legend: 'Apri', legendfull: 'Simboli', straighten: 'Raddrizza', pin: 'Blocca', unpin: 'Sblocca', lockto: 'Lega', lockall: 'Lega', unlock: 'Slega', unlockall: 'Slega', unlockkids: 'Slega', selkids: 'Gruppo', sheetify: 'Dettaglio', peek: 'Sbircia', del: 'Elimina',
+    'cx-chiede': 'Chiede', 'cx-sireca': 'Si reca', 'cx-box': 'Passo', 'cx-inventory': 'Scorta', 'cx-inbox': 'In-box', 'cx-back': 'Indietro' };
   const qBtn = (a, el) => {
     // due azioni cambiano verso con lo stato dell'elemento: l'icona e l'etichetta seguono
     let key = a.id;
@@ -638,7 +1073,9 @@
   /** Il menu di «Collega». Non è mai vuoto: «Passo» c'è sempre, anche quando sul foglio non c'è nessun
    *  altro bersaglio da toccare — era il caso del passo unico, in cui «Collega» accendeva la modalità di
    *  puntamento e non restava niente da puntare. Per l'omino il primo arco sono i verbi: da lui parte
-   *  una via che «chiede» oppure una in cui la persona «si reca», e sono due segni diversi sul foglio. */
+   *  una via che «chiede» oppure una in cui la persona «si reca», e sono due segni diversi sul foglio.
+   *  «Sul foglio» non è più una voce: se c'è qualcosa da toccare la scelta è GIÀ armata all'apertura
+   *  (armSheetPick), e il menu resta lì per le altre strade — toccare un elemento collega e basta. */
   UI.connectMenu = (el, map, bersagli) => {
     const A = []; const btn = (id, label, title) => A.push({ id, label, title: title || label });
     if (el.type === 'person' && !bersagli) {
@@ -646,13 +1083,21 @@
       return A;
     }
     const ctype = el.type === 'person' ? 'request' : 'flow';
-    const kinds = I.CONN_TARGETS[ctype] || ['box'];
+    const kinds = I.connTargetsFrom(ctype, el.type); // da scorta/in-box ha senso solo il passo
     kinds.forEach(k => btn('cx-' + k, PLACE_LBL[k] || V.TYPES[k].name, V.TYPES[k].name + ' nuovo, che nasce già collegato'));
-    if (map.elements.some(x => !V.isConnector(x) && x.id !== el.id && kinds.includes(x.type)))
-      btn('cx-sheet', 'Sul foglio', 'Tocca l’elemento già disegnato a cui collegarlo');
     btn('cx-back', 'Indietro', el.type === 'person' ? 'Torna alla scelta del verbo' : 'Torna alle azioni di questo elemento');
     return A;
   };
+  /** Arma la scelta sul foglio senza chiudere il menu: il menu sta in un elemento HTML sopra
+   *  l'svg, quindi i suoi bottoni restano toccabili e non si confondono con un tocco «sul foglio». */
+  const armSheetPick = (el, map, ctype, intent) => {
+    const kinds = I.connTargetsFrom(ctype, el.type);
+    const some = map.elements.some(x => !V.isConnector(x) && x.id !== el.id && kinds.includes(x.type));
+    if (some) I.startPickConnect(el.id, ctype, { intent, keepMenu: true });
+  };
+  /** la scelta sul foglio si spegne (tocco sul vuoto, Esc, cambio strumento): il giro «Collega»
+   *  è finito e si torna alle azioni dell'elemento, come con «Indietro» */
+  UI.onPickCancel = () => { if (!Q.menu) return; Q.menu = null; UI.onSelection(I.selection); };
   UI.onSelection = (ids) => {
     const q = $('#quick'); if (!q) return; Q.menu = null; if (!ids.length) { q.classList.add('hidden'); Q.el = null; return; }
     // col pop-up dei dettagli aperto il menu resta chiuso: sono le stesse azioni, e sovrapposte sono un caos.
@@ -694,6 +1139,9 @@
       // ogni persona può collegare, non solo il richiedente: il paziente che si reca al passo 2 è una
       // persona qualunque del foglio. Il verbo si sceglie nel menu che si apre.
       case 'person': btn('connect', 'Collega →', 'Da qui parte una via: «chiede a…» oppure «si reca a…»'); break;
+      // scorta e in-box collegano come i passi: la freccia va da loro al passo che alimentano,
+      // senza dover tirare la freccia a mano con lo strumento Flusso
+      case 'inbox': case 'inventory': btn('connect', 'Collega →', 'Fai partire una freccia di flusso da qui verso un passo'); break;
       case 'delta': if (!el.props.attachedTo) btn('attach', 'Aggancia alla freccia'); break;
       case 'flow': btn('deltaOn', '+ Attesa qui'); btn('invert', 'Inverti'); break;
       case 'storm': btn('shrink', el.props.collapsed ? '▽ Espandi' : '⚠ Riduci a segnale', el.props.collapsed ? 'Torna nuvola con il testo visibile' : 'Diventa un triangolo di allerta: il foglio resta pulito, il testo si legge toccandolo'); btn('dup', 'Duplica'); break;
@@ -702,13 +1150,18 @@
       case 'legend': btn('legend', el.props.collapsed ? 'Apri' : 'Chiudi'); btn('legendfull', 'Tutti i simboli', 'Ogni simbolo con significato e varianti, nella Guida pratica'); break;
     }
     if (V.isConnector(el) && Array.isArray(el.props.via) && el.props.via.length) btn('straighten', '― Raddrizza', 'Toglie le pieghe fatte a mano: la freccia torna diretta');
+    // «Sbircia» e' la stessa anteprima dell'occhio disegnato sul passo, ma col bersaglio grande del
+    // menu: i due dischetti sul disegno restano la via corta, questa la strada per chi non li azzecca
+    if (el.props.link && V.doc.maps[el.props.link]) btn('peek', '👁 Sbircia', 'Sbircia il foglio collegato senza entrarci: anteprima e descrizione');
     // la CATENA lega due elementi (si muovono insieme); il LUCCHETTO inchioda l'elemento al foglio
     const locked = el.props && (el.props.lockTo || (el.type === 'delta' && el.props.attachedTo));
     if (locked) { const par = V.byId(locked, map); btn('unlock', '⛓ Slega', 'Legato a ' + (par ? (par.props.title || par.props.label || par.props.name || V.TYPES[par.type].name) : '?') + ': smette di seguirlo'); }
     else if (!V.isConnector(el) && R.LOCKABLE.includes(el.type) && el.type !== 'delta') btn('lockto', '⛓ Lega a…', 'Si muove insieme all\'elemento che tocchi (passo, freccia, persona, corsia)');
     const kids = R.children(el.id, map); if (kids.length) { btn('selkids', `⛶ Con i legati (${kids.length})`, 'Seleziona anche gli elementi legati a questo (per spostare, duplicare o eliminare tutto insieme)'); btn('unlockkids', '⛓ Slega i suoi', 'Slega tutti gli elementi legati a questo'); }
     if (!V.isConnector(el)) { if (el.props.pinned) btn('unpin', '🔓 Sblocca', 'Il lucchetto si apre: si può spostare e ridimensionare di nuovo'); else btn('pin', '🔒 Blocca', 'Inchioda l\'elemento al foglio: se lo trascini per sbaglio non si muove'); }
-    btn('del', 'Elimina');
+    // un passo validato (✓) non offre «Elimina» fra le azioni: prima si riapre dal tondo ✓, poi si
+    // elimina. Offrirla inviterebbe al tocco sbagliato — e il modello la rifiuterebbe comunque.
+    if (!(el.props && el.props.validated)) btn('del', 'Elimina');
     return A;
   };
   UI.quickAction = (a, id) => {
@@ -717,20 +1170,25 @@
       case 'next': { const nx = Math.min(el.x + el.w + 90, V.paperOf(map).w - V.TYPES.box.w - 20); const nb = V.newElement('box', nx, el.y, {}); const f = V.newConnector('flow', { el: el.id }, { el: nb.id }); const d = V.newElement('delta', 0, 0, {}); d.props.attachedTo = f.id; d.props.dx = 0; d.props.dy = 0; V.commit([{ t: 'add', el: nb }, { t: 'add', el: f }, { t: 'add', el: d }], 'passo successivo'); I.select([nb.id], { keepPop: true }); V.pop.open(nb.id); UI.toast('Passo aggiunto con freccia e attesa: tocca il delta per i tempi.'); break; }
       case 'delta': { const f = map.elements.find(c => c.type === 'flow' && c.from.el === el.id); if (!f) return; const d = V.newElement('delta', 0, 0, {}); d.props.attachedTo = f.id; d.props.dx = 0; d.props.dy = 0; V.commit({ t: 'add', el: d }, 'attesa'); I.select([d.id], { keepPop: true }); V.pop.open(d.id); break; }
       case 'cloud': { const s = V.newElement('storm', el.x + el.w - 60, el.y - 62, {}); V.commit({ t: 'add', el: s }, 'nuvola'); I.select([s.id], { keepPop: true }); V.pop.open(s.id); break; }
-      // «Collega» non entra più subito in modalità puntamento: apre il suo arco, al posto del precedente
-      case 'connect': { Q.menu = { bersagli: el.type !== 'person', intent: null }; UI.showQuick(el, UI.connectMenu(el, map, Q.menu.bersagli)); break; }
-      case 'cx-chiede': case 'cx-sireca': { Q.menu = { bersagli: true, intent: a === 'cx-sireca' ? 'si reca' : 'chiede' }; UI.showQuick(el, UI.connectMenu(el, map, true)); break; }
+      // «Collega» apre il suo arco al posto del precedente e, se c'è qualcosa da toccare,
+      // arma subito la scelta sul foglio: toccare un elemento collega senza altri passaggi
+      case 'connect': { Q.menu = { bersagli: el.type !== 'person', intent: null }; UI.showQuick(el, UI.connectMenu(el, map, Q.menu.bersagli)); if (Q.menu.bersagli) armSheetPick(el, map, 'flow', null); break; }
+      case 'cx-chiede': case 'cx-sireca': { Q.menu = { bersagli: true, intent: a === 'cx-sireca' ? 'si reca' : 'chiede' }; UI.showQuick(el, UI.connectMenu(el, map, true)); armSheetPick(el, map, 'request', Q.menu.intent); break; }
       case 'cx-back': {
-        // dai bersagli si torna ai verbi (omino) o alle azioni normali dell'elemento
-        if (el.type === 'person' && Q.menu && Q.menu.bersagli) { Q.menu = { bersagli: false, intent: null }; UI.showQuick(el, UI.connectMenu(el, map, false)); break; }
+        // dai bersagli si torna ai verbi (omino) o alle azioni normali dell'elemento;
+        // la scelta sul foglio si spegne in silenzio: a ridisegnare ci pensa questo ramo
+        const m = Q.menu; if (I.pickConn) I.cancelPickConnect({ quiet: true });
+        if (el.type === 'person' && m && m.bersagli) { Q.menu = { bersagli: false, intent: null }; UI.showQuick(el, UI.connectMenu(el, map, false)); break; }
         Q.menu = null; UI.onSelection(I.selection); break;
       }
-      case 'cx-sheet': { const it = Q.menu && Q.menu.intent; Q.menu = null; I.select([id], { keepPop: true }); I.startPickConnect(id, el.type === 'person' ? 'request' : 'flow', { intent: it }); break; }
       case 'cx-box': case 'cx-inventory': case 'cx-inbox': {
         const kind = a.slice(3), it = Q.menu && Q.menu.intent; Q.menu = null;
+        // la strada scelta dal menu sostituisce la scelta sul foglio: niente anelli rimasti appesi
+        if (I.pickConn) I.cancelPickConnect({ quiet: true });
         // da un passo a un passo è esattamente «+ Passo dopo»: stesso pulsante, stesso risultato
-        // (passo, freccia e attesa in una voce sola), invece di una seconda strada che diverge
-        if (el.type !== 'person' && kind === 'box') { UI.quickAction('next', id); break; }
+        // (passo, freccia e attesa in una voce sola), invece di una seconda strada che diverge.
+        // Da scorta/in-box no: un'attesa appiccicata alla loro freccia non avrebbe senso.
+        if (el.type === 'box' && kind === 'box') { UI.quickAction('next', id); break; }
         const T = V.TYPES[kind], pos = R.elPos(el, map);
         // l'omino sta in alto a destra: quello che nasce da lui va verso la fascia dei passi, non oltre il bordo
         const w = el.type === 'person' ? { x: pos.x - 200, y: pos.y + 200 } : { x: pos.x + el.w + 90 + T.w / 2, y: pos.y + T.h / 2 };
@@ -743,6 +1201,8 @@
       case 'invert': V.commit({ t: 'update', id, after: { from: clone(el.to), to: clone(el.from) }, before: { from: clone(el.from), to: clone(el.to) } }, 'inverti'); I.select([id]); break;
       case 'legend': { const collapsed = !el.props.collapsed; V.commit([{ t: 'props', id, after: { collapsed } }, { t: 'update', id, after: { w: collapsed ? 74 : 170, h: collapsed ? 18 : 104 } }], 'legenda'); I.select([id]); break; }
       case 'edit': V.pop.open(id); break;
+      // sbirciare non chiede una posizione: senza coordinate il pop-up si apre al centro-alto
+      case 'peek': UI.hideQuick(); UI.showPeek(id); break;
       case 'legendfull': UI.toggleGuide(true, 'simboli'); break;
       case 'shrink': {
         const T = V.TYPES.storm; const collapsed = !el.props.collapsed;
@@ -762,7 +1222,7 @@
       case 'unlockkids': I.unlockChildren(id); break;
       case 'dup': I.duplicate(id); break;
       case 'dupall': I.duplicateMany(I.selection.slice()); break;
-      case 'sheetify': I.groupToDetail(I.selection.slice()); break;
+      case 'sheetify': UI.confirmSheetify(I.selection.slice()); break;
       case 'straighten': { const c = V.byId(id); if (!c) break; V.commit({ t: 'props', id, after: { via: null }, before: { via: clone(c.props.via) || null } }, 'raddrizza'); I.select([id]); break; }
       case 'del': if (I.selection.length <= 1) I.select([id], { keepPop: true }); I.deleteSelection(); break;
     }

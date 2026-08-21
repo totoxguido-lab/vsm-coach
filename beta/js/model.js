@@ -70,7 +70,7 @@ window.VSM = window.VSM || {};
 
   // ---------- tipi di elemento: default e spiegazioni (dal libro, parole nostre) ----------
   V.TYPES = {
-    box: { name: 'Process box', w: 150, h: 170, props: { title: '', activities: [], hi: '', lo: '', avg: '', cc: '', owner: '', gateIn: '', gateOut: '' },
+    box: { name: 'Process box', w: 150, h: 170, props: { title: '', activities: [], hi: '', lo: '', avg: '', cc: '', owner: '', gateIn: '', gateOut: '', validated: false },
       why: 'Un rettangolo verticale per ogni passo maggiore dell\'erogazione, con il titolo in alto e, se serve, le attività in ordine. Chiediti: che attività "apre la porta" del box e quale "la chiude"? Nel CSM le attività necessarie ora contano come valore. Più di 4-5 box: la complessità è necessaria o servono due mappe?' },
     delta: { name: 'Delta (attesa)', w: 30, h: 26, props: { note: '', kind: 'attesa', hi: '', lo: '', avg: '' },
       why: 'Il triangolo rovesciato rosso segna il tempo in cui nulla avanza (richiesta nel vassoio, campione in coda, viaggio, paziente in sala d\'attesa): è spreco reso visibile. Il tempo si ottiene per differenza tra la fine del box precedente e l\'inizio del successivo, non si cronometra. Aggancialo a una freccia di flusso per entrare nella timeline.' },
@@ -116,7 +116,7 @@ window.VSM = window.VSM || {};
   V.linkModeOf = (map) => { const m = map && map.links && map.links.mode; return V.LINK_MODES.some(x => x.id === m) ? m : 'dritta'; };
 
   V.CONNECTOR_TYPES = ['flow', 'request'];
-  V.isConnector = (el) => V.CONNECTOR_TYPES.includes(el.type);
+  V.isConnector = (el) => !!el && V.CONNECTOR_TYPES.includes(el.type);
 
   // ---------- igiene di cio' che arriva da fuori (JSON aperto, patch del coach) ----------
   /** Un id non nasce solo da uid(): arriva anche dal JSON che si apre e dalle patch del coach, e finisce
@@ -158,6 +158,11 @@ window.VSM = window.VSM || {};
       if (p.link != null && !V.idOk(p.link)) delete p.link;
       // l'intento e' un segno dichiarato in legenda, non testo libero: fuori elenco si torna a «chiede»
       if (p.intent != null && !V.INTENTS.some(x => x.id === p.intent)) delete p.intent;
+      // la tinta finisce dentro un attributo di stile del disegno: solo un numero la puo' scrivere,
+      // normalizzato al giro 0-360. La descrizione finisce nel pop-up: solo testo, e mai vuoto
+      // (vuota vorrebbe dire «ricalcola», che e' proprio il ripiego della chiave assente).
+      if (p.tint != null) { const H = V.tintHue(p.tint); if (H == null) delete p.tint; else p.tint = H; }
+      if (p.summary != null && (typeof p.summary !== 'string' || !p.summary.trim())) delete p.summary;
       if (p.override && typeof p.override === 'object') {
         const o = {};
         if (okInk(p.override.stroke)) o.stroke = p.override.stroke;
@@ -197,7 +202,7 @@ window.VSM = window.VSM || {};
   V.newConnector = (type, from, to, props = {}) => ({ id: uid(), type, from, to, props: Object.assign(clone(V.TYPES[type].props), props) });
 
   V.newMap = (o = {}) => Object.assign({
-    id: uid(), title: '', date: today(), authors: '', unitName: '', kind: 'current', pairId: null, parentId: null,
+    id: uid(), title: '', date: today(), authors: '', unitName: '', kind: 'current', pairId: null, parentId: null, parentStepId: null, projectId: null,
     // giri dell'attuale: verOf = versione precedente, verName = nome del giro; l'Ideale (kind 'future')
     // e' uno solo per catena e porta il lucchetto di validazione (validated). tint = tinta dello sfondo.
     verOf: null, verName: 'mappa iniziale', validated: false, tint: Math.floor(Math.random() * 360),
@@ -212,9 +217,34 @@ window.VSM = window.VSM || {};
     guidePhase: 0, view: null, overlays: true, paper: clone(V.PAPER), links: { mode: 'dritta' }, created: Date.now(), updated: Date.now()
   }, o);
 
+  // ---------- progetti: ogni gruppo di mappe sta dentro il suo ----------
+  /** Il progetto è il contenitore delle mappe che parlano dello stesso lavoro. Serve a una cosa sola,
+   *  ma importante: gli elenchi (libreria, «collega a un'altra mappa», cartina) mostrano soltanto il
+   *  progetto corrente. Senza, l'esempio del libro e i fogli di reparti diversi finivano in ogni menu
+   *  e chi sceglieva si perdeva. Due progetti si parlano solo dopo essere stati collegati a mano. */
+  V.newProject = (o = {}) => Object.assign({ id: uid(), name: 'Progetto', links: [], sample: false, created: Date.now() }, o);
+  // sample: true marca il progetto degli esempi: da lì non si eredita mai il progetto attivo,
+  // perché un foglio nuovo aperto mentre si guarda l'esempio del libro è lavoro vero
+
+  /** Il progetto di lavoro di ripiego: «Progetto 1», riusato se c'è già, creato se manca.
+   *  È l'unico rifugio delle mappe senza progetto (spec: «ogni mappa senza progetto valido finisce
+   *  in "Progetto 1", creato se manca»): un progetto qualsiasi già esistente — «Esempi», nel caso
+   *  tipico — fonderebbe le orfane con un lavoro che non c'entra, ed è successo davvero con i file
+   *  importati. */
+  const progettoDiRipiego = () => {
+    if (!V.doc.projects || typeof V.doc.projects !== 'object') V.doc.projects = {};
+    let p = Object.values(V.doc.projects).find(x => x.name === 'Progetto 1' && !x.sample);
+    if (!p) { p = V.newProject({ name: 'Progetto 1' }); V.doc.projects[p.id] = p; }
+    return p;
+  };
+
   // ---------- documento ----------
-  V.doc = { version: 2, activeMapId: null, maps: {} };
+  V.doc = { version: 2, activeMapId: null, activeProjectId: null, projects: {}, maps: {} };
   V.map = () => V.doc.maps[V.doc.activeMapId];
+  /** il progetto attivo NON è uno stato a parte: è quello della mappa aperta, così non può disallinearsi */
+  V.project = () => { const m = V.map(); return (m && V.doc.projects[m.projectId]) || V.doc.projects[V.doc.activeProjectId] || null; };
+  V.mapsOfProject = (pid) => Object.values(V.doc.maps).filter(m => m.projectId === pid);
+  V.addProject = (name) => { const p = V.newProject({ name: name || 'Progetto' }); V.doc.projects[p.id] = p; V.save(); return p; };
   V.byId = (id, map = V.map()) => map.elements.find(e => e.id === id);
 
   // ---------- undo a comandi ----------
@@ -228,7 +258,12 @@ window.VSM = window.VSM || {};
       case 'add': map.elements.push(clone(op.el)); break;
       case 'remove': { const i = map.elements.findIndex(e => e.id === op.el.id); if (i >= 0) map.elements.splice(i, 1); break; }
       case 'update': { const el = map.elements.find(e => e.id === op.id); if (el) Object.assign(el, clone(op.after)); break; }
-      case 'props': { const el = map.elements.find(e => e.id === op.id); if (el) Object.assign(el.props, clone(op.after)); break; }
+      // undefined vuol dire «questa chiave non c'era»: il clone JSON la farebbe sparire dal before
+      // e l'annulla non toglierebbe il valore (succedeva annullando il primo collegamento di un passo)
+      case 'props': { const el = map.elements.find(e => e.id === op.id); if (el) Object.keys(op.after).forEach(k => { if (op.after[k] === undefined) delete el.props[k]; else el.props[k] = clone(op.after[k]); }); break; }
+      // un campo di una mappa QUALUNQUE (per es. parentId di una mappa adottata): la voce di annulla
+      // vive nella mappa attiva, ma l'operazione risolve da sé la mappa destinataria
+      case 'mapfield': { const t = V.doc.maps[op.mapId]; if (t) t[op.key] = clone(op.after); break; }
       case 'stroke_add': map.strokes.push(op.s); break;
       case 'stroke_remove': { const i = map.strokes.findIndex(s => s.id === op.s.id); if (i >= 0) map.strokes.splice(i, 1); break; }
       case 'strokes_set': map.strokes = clone(op.after); break;
@@ -242,6 +277,7 @@ window.VSM = window.VSM || {};
       case 'remove': return { t: 'add', el: op.el };
       case 'update': return { t: 'update', id: op.id, after: op.before, before: op.after };
       case 'props': return { t: 'props', id: op.id, after: op.before, before: op.after };
+      case 'mapfield': return { t: 'mapfield', mapId: op.mapId, key: op.key, after: op.before, before: op.after };
       case 'stroke_add': return { t: 'stroke_remove', s: op.s };
       case 'stroke_remove': return { t: 'stroke_add', s: op.s };
       case 'strokes_set': return { t: 'strokes_set', after: op.before, before: op.after };
@@ -252,16 +288,36 @@ window.VSM = window.VSM || {};
   /** commit(ops, label): applica le operazioni al modello, registra l'inversa, salva, notifica.
    *  Ritorna true se le operazioni sono passate, false se il lucchetto le ha rifiutate: chi chiama non
    *  deve annunciare (ne' dare per scontato) una modifica prima di aver letto l'esito. */
+  // Passo validato (✓, props.validated): il contenuto del passo non si tocca — titolo, attività,
+  // tempi, C&C e chi/reparto sono «ciò che il passo dice». Restano liberi posizione, colore, legami
+  // e collegamento a un foglio: quelli dicono DOVE sta il passo, non CHE COSA dice. Stessa idea del
+  // lucchetto dell'Ideale (map.validated, qui sotto) ma sul singolo elemento, e nello stesso posto:
+  // un solo punto di guardia per tutte le vie di modifica (gesti, pop-up, azioni rapide, coach).
+  // La ✓ stessa non passa da qui: V.setStepValidated la tocca direttamente, come V.setValidated.
+  const STEP_FREE = { props: ['tint', 'link', 'summary', 'pinned', 'validated', 'lockTo', 'lockT', 'dx', 'dy'], update: ['x', 'y'] };
+  const toccaValidato = (map, op) => {
+    if (op.t === 'remove') { const el = map.elements.find(e => e.id === op.el.id); return !!(el && el.props && el.props.validated); }
+    if (op.t === 'props' || op.t === 'update') {
+      const el = map.elements.find(e => e.id === op.id);
+      if (!el || !el.props || !el.props.validated) return false;
+      return Object.keys(op.after).some(k => !STEP_FREE[op.t].includes(k));
+    }
+    return false;
+  };
+  const toastValidato = () => { V.ui && V.ui.toast && V.ui.toast('Passo validato ✓: tocca la ✓ nel suo pannello per riaprirlo.'); };
   V.commit = (ops, label = '', opts = {}) => {
     const map = opts.map || V.map(); if (!map) return false;
     // Ideale validato = lucchetto chiuso: nessuna modifica passa. Un solo posto di guardia per tutte
     // le vie di modifica (gesti, pop-up, azioni rapide, coach). Il lucchetto stesso non passa da qui.
     if (map.validated) { V.ui && V.ui.toast && V.ui.toast('Ideale validato \u{1F512}: apri il lucchetto in alto per modificarlo.'); return false; }
     ops = Array.isArray(ops) ? ops : [ops];
+    if (ops.some(op => toccaValidato(map, op))) { toastValidato(); return false; }
     // fill "before" for update/props ops
     ops.forEach(op => {
       if ((op.t === 'update' || op.t === 'props') && !op.before) { const el = map.elements.find(e => e.id === op.id); if (el) { op.before = {}; Object.keys(op.after).forEach(k => { op.before[k] = clone(op.t === 'props' ? el.props[k] : el[k]); }); } }
       if (op.t === 'meta' && !op.before) { op.before = {}; Object.keys(op.after).forEach(k => op.before[k] = clone(map[k])); }
+      // before === undefined, non falsy: un parentId che era null va ricordato come null
+      if (op.t === 'mapfield' && op.before === undefined) { const t = V.doc.maps[op.mapId]; op.before = t ? clone(t[op.key]) : undefined; }
       if (op.t === 'plan_set' && !op.before) op.before = clone(map.plan);
       if (op.t === 'strokes_set' && !op.before) op.before = clone(map.strokes);
     });
@@ -274,15 +330,23 @@ window.VSM = window.VSM || {};
   };
   // anche annulla/ripeti rispettano il lucchetto: la voce resta in cima, si riprova dopo lo sblocco
   const lockedEntry = (e) => { const m = V.doc.maps[e.mapId]; if (m && m.validated) { V.ui && V.ui.toast && V.ui.toast('Ideale validato \u{1F512}: apri il lucchetto per annullare o ripetere lì.'); return true; } return false; };
-  V.undo = () => { let e; while ((e = undoStack.pop())) { const map = V.doc.maps[e.mapId]; if (!map) continue; if (lockedEntry(e)) { undoStack.push(e); return false; } if (V.doc.activeMapId !== e.mapId) V.switchMap(e.mapId); e.ops.forEach(op => applyOp(op, map)); redoStack.push(e); V.save(); emit({ undo: true, label: e.label }); return true; } return false; };
-  V.redo = () => { let e; while ((e = redoStack.pop())) { const map = V.doc.maps[e.mapId]; if (!map) continue; if (lockedEntry(e)) { redoStack.push(e); return false; } if (V.doc.activeMapId !== e.mapId) V.switchMap(e.mapId); e.redo.forEach(op => applyOp(op, map)); undoStack.push(e); V.save(); emit({ redo: true, label: e.label }); return true; } return false; };
+  V.undo = () => { let e; while ((e = undoStack.pop())) { const map = V.doc.maps[e.mapId]; if (!map) continue; if (lockedEntry(e)) { undoStack.push(e); return false; } if (e.ops.some(op => toccaValidato(map, op))) { toastValidato(); undoStack.push(e); return false; } if (V.doc.activeMapId !== e.mapId) V.switchMap(e.mapId); e.ops.forEach(op => applyOp(op, map)); redoStack.push(e); V.save(); emit({ undo: true, label: e.label }); return true; } return false; };
+  V.redo = () => { let e; while ((e = redoStack.pop())) { const map = V.doc.maps[e.mapId]; if (!map) continue; if (lockedEntry(e)) { redoStack.push(e); return false; } if (e.redo.some(op => toccaValidato(map, op))) { toastValidato(); redoStack.push(e); return false; } if (V.doc.activeMapId !== e.mapId) V.switchMap(e.mapId); e.redo.forEach(op => applyOp(op, map)); undoStack.push(e); V.save(); emit({ redo: true, label: e.label }); return true; } return false; };
   V.canUndo = () => undoStack.length > 0; V.canRedo = () => redoStack.length > 0;
 
   // ---------- mappe: crea, cambia, elimina ----------
   /** le nuvole si alzano quanto serve al loro testo (stesse costanti del disegno): senza, il testo sforava */
   const fitClouds = (m) => { const R2 = V.render; if (!m || !Array.isArray(m.elements) || !R2 || !R2.cloudFit) return m; m.elements.forEach(el => { if ((el.type === 'storm' || el.type === 'fluffy') && !el.props.collapsed && el.props.text) el.h = Math.max(el.h, R2.cloudFit(el.w, el.props.text)); }); return m; };
-  V.addMap = (map) => { V.doc.maps[map.id] = fitClouds(map); return map; };
-  V.switchMap = (id) => { if (!V.doc.maps[id]) return; V.doc.activeMapId = id; V.save(); emit({ switched: true }); };
+  V.addMap = (map) => {
+    if (!map.projectId) {
+      // da un progetto di esempio non si eredita mai: un foglio nuovo aperto mentre si guarda
+      // l'esempio del libro andrebbe mescolato agli esempi per sempre — va in «Progetto 1»
+      const attivo = V.doc.projects && V.doc.projects[V.doc.activeProjectId];
+      map.projectId = (attivo && !attivo.sample) ? attivo.id : progettoDiRipiego().id;
+    }
+    V.doc.maps[map.id] = fitClouds(map); return map;
+  };
+  V.switchMap = (id) => { if (!V.doc.maps[id]) return; V.doc.activeMapId = id; V.doc.activeProjectId = V.doc.maps[id].projectId || V.doc.activeProjectId; V.save(); emit({ switched: true }); };
   /** Elimina una mappa e ritorna l'esito: { ok, reason }. Chi chiama non deve annunciare l'eliminazione
    *  prima di averlo letto — a lucchetto chiuso, o quando andrebbe perso l'ultimo Attuale di un Ideale,
    *  qui non si elimina niente. Con { withPair: true } si eliminano Attuale e Ideale insieme. */
@@ -353,9 +417,64 @@ window.VSM = window.VSM || {};
   };
   /** lucchetto dell'Ideale: non passa da commit (che a lucchetto chiuso rifiuta tutto) */
   V.setValidated = (map, on) => { map.validated = !!on; map.updated = Date.now(); V.save(); emit({ label: on ? 'validata' : 's-validata', mapId: map.id, ops: [] }); };
+  /** la ✓ di un passo: come il lucchetto dell'Ideale non passa da commit — che su un passo validato
+   *  rifiuterebbe perfino la modifica che lo riapre. Nessuna voce di annulla: la conferma chiesta
+   *  dal pannello è la sua protezione, non ↩. */
+  V.setStepValidated = (id, on, map = V.map()) => {
+    const el = map && V.byId(id, map); if (!el) return false;
+    el.props.validated = !!on; map.updated = Date.now(); V.save();
+    emit({ label: on ? 'passo validato' : 'passo riaperto', mapId: map.id, ops: [] });
+    return true;
+  };
   /** etichetta leggibile del tipo di mappa (per testata, elenchi e sfondo del foglio) */
   V.kindLabel = (m) => m.kind === 'future' ? 'ideale' : m.kind === 'detail' ? 'dettaglio' : (m.verName || 'attuale');
-  V.createDetail = (parent, title) => { const d = V.newMap({ kind: 'detail', parentId: parent.id, title: title || ('Dettaglio di ' + (parent.title || 'mappa')), unit: parent.unit, authors: parent.authors }); V.addMap(d); V.save(); return d; };
+  /** Nuovo sotto-foglio. Non basta sapere da quale MAPPA nasce: serve da quale PASSO, perché è il passo
+   *  a dargli l'indirizzo (il sotto-foglio del passo 2 è il 2.1, 2.2, …). Senza, la cartina saprebbe
+   *  dire «sta sotto questa mappa» ma non «sta sotto questo passo», che è quello che chi mappa cerca. */
+  /** Il sotto-foglio nasce con il COLORE del suo passo: il pannello del colore promette «il
+   *  sotto-foglio ↗ ripete questo colore come sfondo», e finora la promessa valeva solo se il
+   *  colore si sceglieva DOPO aver collegato (V.setTint lo propaga); creando il foglio da un passo
+   *  gia' colorato usciva invece la tinta a caso di ogni mappa nuova. Un passo senza colore la
+   *  tinta a caso se la tiene: serve a capire a colpo d'occhio su quale foglio si sta lavorando. */
+  V.createDetail = (parent, title, stepId) => { const passo = stepId ? V.byId(stepId, parent) : null; const H = passo && passo.props ? V.tintHue(passo.props.tint) : null; const d = V.newMap(Object.assign({ kind: 'detail', parentId: parent.id, parentStepId: stepId || null, projectId: parent.projectId, title: title || ('Dettaglio di ' + (parent.title || 'mappa')), unit: parent.unit, authors: parent.authors }, H == null ? {} : { tint: H })); V.addMap(d); V.save(); return d; };
+  /** Il ponte macro→micro: le attività elencate nel passo sono già la scaletta del suo sotto-foglio.
+   *  Crea il foglio (come createDetail) e dentro un passo per ogni attività scelta, in fila e già
+   *  collegati da frecce di flusso nell'ordine dell'elenco. Regole (spec 2026-08-21): i tempi del
+   *  padre NON si spalmano sui figli — sono misure del padre, e inventare una divisione sarebbe un
+   *  dato falso, quindi i figli nascono senza tempi; le attività RESTANO nel padre, perché sono la
+   *  sua descrizione, non si spostano. `indici` vuoto = nessuna spunta = foglio vuoto, come crearlo
+   *  a mano; `indici` omesso = tutte (uso da modello, senza pop-up). Gli indici contano sull'elenco
+   *  già pulito (righe vuote tolte): lo stesso elenco che il pop-up mostra. I passi nascono mutati
+   *  direttamente nella mappa nuova, senza commit: il foglio non esisteva un attimo fa, non c'è
+   *  niente da annullare — la voce di annulla è quella del link, come per createDetail. */
+  V.buildDetailFromActivities = (box, parent, { nome, indici } = {}) => {
+    const d = V.createDetail(parent, nome, box && box.id);
+    const acts = (((box && box.props.activities) || []).map(a => String(a).trim()).filter(Boolean));
+    const scelti = (indici == null ? acts.map((_, i) => i) : indici).filter(i => acts[i] != null).sort((a, b) => a - b);
+    const T = V.TYPES.box, gapX = 110; // fra un passo e il prossimo resta lo spazio per l'attesa (▼) che chi mappa aggiungerà
+    let prec = null;
+    scelti.forEach((ai, i) => {
+      const b = V.newElement('box', 140 + i * (T.w + gapX), 300, { title: acts[ai] });
+      d.elements.push(b);
+      if (prec) d.elements.push(V.newConnector('flow', { el: prec.id }, { el: b.id }));
+      prec = b;
+    });
+    if (scelti.length) V.save(); // createDetail ha già salvato il foglio: risalva solo se c'è contenuto
+    return d;
+  };
+  /** Collega un passo a una mappa esistente. Se la mappa non ha ancora un posto nell'albero e sta
+   *  nello STESSO progetto, questo passo ne diventa il posto (adozione) — e l'adozione entra nella
+   *  STESSA voce di annulla del link: prima avveniva fuori dal commit, e un annulla riportava
+   *  indietro il link ma lasciava la mappa appesa, facendo mentire il badge (difetto 1 del 2026-08-21). */
+  V.linkMap = (boxId, targetId, map = V.map()) => {
+    const t = V.doc.maps[targetId];
+    const ops = [{ t: 'props', id: boxId, after: { link: targetId } }];
+    if (t && !t.parentId && map && t.projectId === map.projectId && t.id !== map.id) {
+      ops.push({ t: 'mapfield', mapId: t.id, key: 'parentId', after: map.id });
+      ops.push({ t: 'mapfield', mapId: t.id, key: 'parentStepId', after: boxId });
+    }
+    return V.commit(ops, 'collega mappa');
+  };
 
   // ---------- storage: IndexedDB con fallback localStorage ----------
   V.VERSION = (typeof self !== 'undefined' && self.VSM_VERSION) || '0.9';
@@ -465,6 +584,38 @@ window.VSM = window.VSM || {};
    *  due Ideali sulla stessa catena. Ritorna l'elenco di cio' che ha corretto, cosi' i test lo leggono. */
   V.repairDoc = () => {
     const maps = V.doc.maps, fixes = [];
+    // Ogni mappa sta in un progetto. Una mappa senza progetto valido — un documento salvato prima
+    // che i progetti esistessero, un file importato da fuori — finisce in «Progetto 1», riusato se
+    // c'è già e creato se manca (così le orfane restano TUTTE INSIEME, come stavano). Mai in un
+    // progetto qualsiasi già esistente: quello fonderebbe le orfane con un lavoro che non c'entra.
+    if (!V.doc.projects || typeof V.doc.projects !== 'object') V.doc.projects = {};
+    Object.keys(V.doc.projects).forEach(k => { const p = V.doc.projects[k]; if (!p || typeof p !== 'object') { delete V.doc.projects[k]; return; } if (p.id !== k) p.id = k; if (!Array.isArray(p.links)) p.links = []; });
+    // anche gli id dei progetti finiscono dentro attributi del DOM senza virgolettatura (le
+    // briciole già scrivono data-open="..." così, gli elenchi e la cartina faranno lo stesso):
+    // stessa regola degli id delle mappe qui sotto. Un id fuori alfabeto va rinominato, non
+    // buttato — dentro il progetto ci sono mappe vere — e tutti i riferimenti lo seguono:
+    // le mappe che ci abitano, i collegamenti fra progetti, il progetto attivo.
+    const projRename = new Map();
+    Object.keys(V.doc.projects).forEach(k => { if (!V.idOk(k)) projRename.set(k, uid()); });
+    if (projRename.size) {
+      projRename.forEach((nuovo, vecchio) => { const p = V.doc.projects[vecchio]; delete V.doc.projects[vecchio]; p.id = nuovo; V.doc.projects[nuovo] = p; });
+      const rp = (v) => (v && projRename.has(v)) ? projRename.get(v) : v;
+      Object.values(maps).forEach(m => { if (m && typeof m === 'object') m.projectId = rp(m.projectId); });
+      Object.values(V.doc.projects).forEach(p => { p.links = p.links.map(rp); });
+      V.doc.activeProjectId = rp(V.doc.activeProjectId);
+      fixes.push('id di progetto fuori alfabeto');
+    }
+    const senzaProgetto = Object.values(maps).filter(m => !m.projectId || !V.doc.projects[m.projectId]);
+    if (senzaProgetto.length) {
+      const rifugio = progettoDiRipiego();
+      senzaProgetto.forEach(m => { m.projectId = rifugio.id; });
+      fixes.push('mappe adottate dal progetto ' + rifugio.name);
+    }
+    // un collegamento fra progetti vale nei due sensi e mai verso sé stessi
+    Object.values(V.doc.projects).forEach(p => {
+      p.links = Array.from(new Set(p.links)).filter(id => id !== p.id && V.doc.projects[id]);
+      p.links.forEach(id => { const q = V.doc.projects[id]; if (!q.links.includes(p.id)) q.links.push(p.id); });
+    });
     // anche gli id delle mappe finiscono dentro attributi (l'elenco, le briciole, il badge verso un
     // sotto-foglio): stessa regola degli elementi, e chi non la rispetta viene rinominato con i suoi
     // riferimenti al seguito
@@ -480,11 +631,18 @@ window.VSM = window.VSM || {};
     const all = Object.values(maps);
     all.forEach(m => {
       if (m.verOf && (m.verOf === m.id || !maps[m.verOf] || maps[m.verOf].kind !== 'current')) { m.verOf = null; fixes.push('verOf ' + m.id); }
-      if (m.parentId && (m.parentId === m.id || !maps[m.parentId])) { m.parentId = null; fixes.push('parentId ' + m.id); }
+      // la gerarchia non attraversa i progetti: fra progetti diversi ci sono i collegamenti, non i padri
+      if (m.parentId && (m.parentId === m.id || !maps[m.parentId] || maps[m.parentId].projectId !== m.projectId)) { m.parentId = null; m.parentStepId = null; fixes.push('parentId ' + m.id); }
+      // il passo che conteneva la mappa può essere stato eliminato: la mappa resta figlia (eredita
+      // l'indirizzo della madre) invece di staccarsi e sparire dall'albero
+      if (m.parentStepId) { const par = maps[m.parentId]; const vivo = par && par.elements.some(e => e.id === m.parentStepId && e.type === 'box'); if (!vivo) { m.parentStepId = null; fixes.push('parentStepId ' + m.id); } }
       if (m.pairId && !maps[m.pairId]) { m.pairId = null; fixes.push('pairId assente ' + m.id); }
     });
     // catene: nessun anello, altrimenti versionsOf girerebbe a vuoto
     all.forEach(m => { const seen = new Set([m.id]); let p = m.verOf; while (p && maps[p]) { if (seen.has(p)) { m.verOf = null; fixes.push('anello di giri ' + m.id); break; } seen.add(p); p = maps[p].verOf; } });
+    // anelli di padri: una mappa figlia di sé stessa, anche per vie traverse, farebbe girare a vuoto
+    // le briciole e la cartina
+    all.forEach(m => { const visti = new Set([m.id]); let p = m.parentId; while (p && maps[p]) { if (visti.has(p)) { m.parentId = null; m.parentStepId = null; fixes.push('anello di padri ' + m.id); break; } visti.add(p); p = maps[p].parentId; } });
     // un solo Ideale per catena, e il legame vale nei due sensi: dall'Attuale si apre l'Ideale e viceversa
     const roots = all.filter(m => m.kind === 'current' && !m.verOf);
     const claimed = new Set();
@@ -513,6 +671,9 @@ window.VSM = window.VSM || {};
       if (f.validated) { f.validated = false; fixes.push('lucchetto aperto su Ideale orfano ' + f.id); }
     });
     if (!maps[V.doc.activeMapId]) { V.doc.activeMapId = Object.keys(maps)[0] || null; fixes.push('mappa attiva'); }
+    // l'Ideale abita col suo Attuale: un Ideale in un altro progetto sparirebbe dagli elenchi del suo
+    Object.values(maps).forEach(m => { if (m.kind === 'future' && m.pairId && maps[m.pairId] && m.projectId !== maps[m.pairId].projectId) { m.projectId = maps[m.pairId].projectId; fixes.push('Ideale riportato nel progetto del suo Attuale ' + m.id); } });
+    if (!V.doc.projects[V.doc.activeProjectId]) { const am = maps[V.doc.activeMapId]; V.doc.activeProjectId = (am && am.projectId) || Object.keys(V.doc.projects)[0] || null; }
     return fixes;
   };
   V.replaceDoc = (d) => { if (!d || d.version !== 2 || !d.maps) throw new Error('Formato non riconosciuto (serve un JSON di VSM Coach v2)'); V.doc = d; Object.values(V.doc.maps).forEach(m => { keepLook(m); Object.assign(m, Object.assign(V.newMap(), m)); }); V.repairDoc(); if (!V.doc.maps[V.doc.activeMapId]) V.doc.activeMapId = Object.keys(V.doc.maps)[0]; undoStack.length = 0; redoStack.length = 0; V.save(); emit({ switched: true }); };
@@ -520,6 +681,42 @@ window.VSM = window.VSM || {};
     if (d.version === 2 && d.maps) {
       const idRemap = new Map();
       Object.keys(d.maps).forEach(id => { if (V.doc.maps[id]) idRemap.set(id, uid()); });
+      // Anche i progetti del file entrano, con la stessa tecnica del remap delle mappe: un id del
+      // file non deve schiacciare un progetto di casa. Senza questo passaggio le mappe importate
+      // arrivavano con un projectId sconosciuto e repairDoc le rifugiava nel primo progetto che
+      // capitava («Esempi», nel caso tipico): mappe che non c'entravano niente, mescolate.
+      // Entrano SOLO i progetti di cui arriva almeno una mappa: gli altri non servono a nessuno
+      // e resterebbero negli elenchi come spazzatura. Fanno eccezione quelli collegati a un
+      // progetto importato: senza di loro i collegamenti fra progetti non sopravviverebbero
+      // al viaggio.
+      const progettiDelFile = (d.projects && typeof d.projects === 'object') ? d.projects : {};
+      const usati = new Set(Object.values(d.maps).map(m => m && m.projectId).filter(id => progettiDelFile[id]));
+      const tenuti = new Set(usati);
+      usati.forEach(id => { const p = progettiDelFile[id]; (Array.isArray(p.links) ? p.links : []).forEach(l => { if (progettiDelFile[l]) tenuti.add(l); }); });
+      const projRemap = new Map();
+      tenuti.forEach(id => {
+        const p = progettiDelFile[id]; if (!p || typeof p !== 'object') return;
+        // il progetto di esempio del file non si duplica: le sue mappe entrano in quello di
+        // casa. Vale solo per gli esempi — due progetti di lavoro con lo stesso nome sono due
+        // lavori diversi e restano separati.
+        const casa = p.sample && Object.values(V.doc.projects).find(x => x.sample);
+        const nuovo = casa ? casa.id : (V.doc.projects[id] ? uid() : id);
+        projRemap.set(id, nuovo);
+        if (casa) casa.links = casa.links.concat(Array.isArray(p.links) ? p.links : []);
+        else V.doc.projects[nuovo] = Object.assign(clone(p), { id: nuovo });
+      });
+      // i collegamenti fra progetti puntano agli id del file: vanno rinominati insieme agli id,
+      // altrimenti resterebbero appesi a progetti che qui non esistono
+      projRemap.forEach(nuovo => { const p = V.doc.projects[nuovo]; p.links = (Array.isArray(p.links) ? p.links : []).map(x => projRemap.get(x) || x); });
+      // Una mappa importata senza progetto valido NEL FILE non finisce in un progetto di casa:
+      // sta in un progetto nuovo (uno solo per tutte, così restano insieme), con il nome che sta
+      // nel file se c'è, altrimenti «Mappe importate».
+      let progettoImportate = null;
+      const progettoPer = (m) => {
+        if (m.projectId && projRemap.has(m.projectId)) return projRemap.get(m.projectId);
+        if (!progettoImportate) { progettoImportate = V.newProject({ name: d.name || d.title || 'Mappe importate' }); V.doc.projects[progettoImportate.id] = progettoImportate; }
+        return progettoImportate.id;
+      };
       // ogni riferimento fra mappe va rinominato insieme all'id, non solo la coppia attuale/ideale:
       // la catena dei giri (verOf) e il badge verso un sotto-foglio (props.link) puntavano alle mappe
       // gia' in libreria, e il file riaperto si cuciva addosso a quelle invece di restare una copia a se'.
@@ -527,6 +724,7 @@ window.VSM = window.VSM || {};
       const imported = Object.values(d.maps).map(m => {
         const nm = Object.assign(V.newMap(), keepLook(m));
         nm.id = ext(nm.id); nm.pairId = ext(nm.pairId); nm.parentId = ext(nm.parentId); nm.verOf = ext(nm.verOf);
+        nm.projectId = progettoPer(m);
         nm.elements.forEach(el => { if (el.props && el.props.link) el.props.link = ext(el.props.link); });
         return nm;
       });
@@ -574,7 +772,11 @@ window.VSM = window.VSM || {};
   V.flowOrder = (map) => {
     const byX = (a, b) => a.x - b.x;
     const boxes = map.elements.filter(e => e.type === 'box');
-    const flows = map.elements.filter(e => e.type === 'flow' && e.from.el && e.to.el);
+    // ordinano solo le frecce fra passi: una freccia che parte da una scorta o da un in-box collega,
+    // ma non dice «questo passo viene dopo quello» — senza il filtro, un passo raggiunto solo da una
+    // freccia del genere perdeva il numero e restava fuori dall'ordine stimato
+    const flows = map.elements.filter(e => e.type === 'flow' && e.from.el && e.to.el)
+      .filter(f => boxes.some(b => b.id === f.from.el) && boxes.some(b => b.id === f.to.el));
     if (!flows.length) return { order: boxes.slice().sort(byX), loose: [], estimated: boxes.length > 1, flows: [], segments: [], lane: new Map(), lanes: 1 };
     const outMap = new Map(), inCount = new Map(), touched = new Set(); boxes.forEach(b => { outMap.set(b.id, []); inCount.set(b.id, 0); });
     flows.forEach(f => { if (outMap.has(f.from.el) && inCount.has(f.to.el)) { outMap.get(f.from.el).push(f); inCount.set(f.to.el, inCount.get(f.to.el) + 1); touched.add(f.from.el); touched.add(f.to.el); } });
@@ -598,6 +800,128 @@ window.VSM = window.VSM || {};
     (starts.length ? starts : boxes.filter(b => touched.has(b.id)).sort(byX)).forEach((b, i) => visit(b, i ? ++corsie : 0));
     const loose = boxes.filter(b => !seen.has(b.id)).sort(byX);
     return { order, loose, estimated: loose.length > 0, flows: usedFlows, segments, lane, lanes: corsie + 1 };
+  };
+  /** Il numero di ogni passo dentro il foglio. Non si salva: si calcola dalle frecce, come una scaletta
+   *  si ricalcola quando sposti un capitolo. Regola: il numero è la PROFONDITÀ dal primo passo contando
+   *  le frecce percorse (col percorso più lungo, così un passo dove due rami si ricongiungono viene dopo
+   *  entrambi); quando alla stessa profondità stanno più rami, si aggiunge una lettera (2a, 2b), perché
+   *  numerarli 2 e 3 direbbe una bugia: non vengono uno dopo l'altro. */
+  V.stepNumbers = (map) => {
+    const out = new Map(); if (!map) return out;
+    const fo = V.flowOrder(map);
+    // senza frecce l'ordine è quello stimato da sinistra a destra: niente rami, niente lettere
+    if (!fo.segments.length) { fo.order.forEach((b, i) => out.set(b.id, String(i + 1))); return out; }
+    const prof = new Map(); fo.order.forEach(b => prof.set(b.id, 0));
+    let cambia = true, giri = 0;
+    while (cambia && giri++ <= fo.order.length) {
+      cambia = false;
+      fo.segments.forEach(s => { const d = (prof.get(s.from.id) || 0) + 1; if (d > (prof.get(s.to.id) || 0)) { prof.set(s.to.id, d); cambia = true; } });
+    }
+    const livelli = new Map();
+    fo.order.forEach(b => { const d = prof.get(b.id) || 0; if (!livelli.has(d)) livelli.set(d, []); livelli.get(d).push(b); });
+    Array.from(livelli.keys()).sort((a, b) => a - b).forEach(d => {
+      const gruppo = livelli.get(d).slice().sort((a, b) => a.y - b.y || a.x - b.x);
+      gruppo.forEach((b, j) => out.set(b.id, String(d + 1) + (gruppo.length > 1 ? ('abcdefghijklmnopqrstuvwxyz'[j] || String(j + 1)) : '')));
+    });
+    return out;
+  };
+  /** La striscia del flusso per l'occhio (UI.showPeek): la catena del sotto-foglio letta da flowOrder,
+   *  ridotta a una fila di tessere — il passo (numero e titolo), l'attesa appesa alla freccia (▼ col
+   *  suo tempo, null se nessuno l'ha misurato: si vede il triangolo, non un numero inventato).
+   *  Dove il flusso si biforca compare una tessera «fork» col numero del passo da cui si divide:
+   *  la striscia non deve mai far sembrare una catena semplice un flusso che semplice non è (usa
+   *  segments, non order: in order i due rami finiscono uno in coda all'altro e sembrerebbero in
+   *  fila). Quando due rami si ricongiungono il passo ricompare col suo stesso numero: chi legge
+   *  vede «3 … 3» e capisce che si torna lì. Foglio senza frecce → striscia vuota: resta il disegno. */
+  V.flowStrip = (map) => {
+    if (!map) return [];
+    const fo = V.flowOrder(map);
+    if (!fo.flows.length) return [];
+    const nums = V.stepNumbers(map);
+    const atteseSu = new Map();
+    map.elements.forEach(e => {
+      if (e.type !== 'delta' || !e.props.attachedTo) return;
+      if (!atteseSu.has(e.props.attachedTo)) atteseSu.set(e.props.attachedTo, []);
+      atteseSu.get(e.props.attachedTo).push(e);
+    });
+    const tessera = (b) => ({ kind: 'box', n: nums.get(b.id) || '', title: String(b.props.title || '').trim() });
+    const out = [tessera(fo.order[0])];
+    let ultimo = fo.order[0].id;
+    fo.segments.forEach(s => {
+      // chi emette questa freccia non è l'ultimo passo della fila: si sta aprendo un altro ramo
+      if (s.from.id !== ultimo) out.push({ kind: 'fork', n: nums.get(s.from.id) || '' });
+      (atteseSu.get(s.conn.id) || []).forEach(d => out.push({ kind: 'delta', avg: num(d.props.avg) }));
+      out.push(tessera(s.to));
+      ultimo = s.to.id;
+    });
+    return out;
+  };
+  /** Indirizzo del foglio: quello del passo che lo contiene, PER INTERO. Vuoto per la radice del
+   *  progetto. La guardia serve solo contro gli anelli di un documento arrivato da fuori e mai
+   *  passato per repairDoc (che gli anelli li scioglie): non deve mai tagliare una catena vera —
+   *  quando era `guard > 8` (spec 2026-08-20) dal nono livello in giù fogli diversi si ritrovavano
+   *  con lo STESSO indirizzo, e un indirizzo che non distingue non è un indirizzo. Quando è lungo
+   *  si accorcia solo in mostra, con V.shortAddress: il valore qui resta quello vero. */
+  V.mapAddress = (map, guard = 0) => {
+    if (!map || !map.parentId || guard > 40) return '';
+    const par = V.doc.maps[map.parentId]; if (!par) return '';
+    const su = V.mapAddress(par, guard + 1);
+    const n = map.parentStepId ? V.stepNumbers(par).get(map.parentStepId) : null;
+    if (!n) return su; // il passo non c'è più: si eredita l'indirizzo della madre invece di perderlo
+    return su ? su + '.' + n : n;
+  };
+  /** L'indirizzo come si mostra a schermo: oltre i quattro tratti si accorcia con l'ellissi davanti
+   *  e la coda vera («…1.1.1») — chi legge capisce «sono in fondo a una catena lunga» invece di
+   *  leggere un numero falso. Il valore intero resta in V.mapAddress: lo usano l'export e i title=
+   *  dei pulsanti, che nelle prove e nell'export devono dire la verità. */
+  V.shortAddress = (a) => {
+    const tratti = String(a || '').split('.').filter(Boolean);
+    return tratti.length <= 4 ? (a || '') : '…' + tratti.slice(-3).join('.');
+  };
+  /** Le briciole in barra hanno un limite, come i percorsi lunghi di un gestore di file: oltre i
+   *  quattro anelli restano il primo, un'ellissi (null al suo posto) e gli ultimi due. La catena
+   *  intera la risale chi serve; in barra conta leggere «da dove vengo» e «dove sono» senza
+   *  affogare il titolo. */
+  V.visibleCrumbs = (anelli) => anelli.length <= 4 ? anelli.slice() : [anelli[0], null, anelli[anelli.length - 2], anelli[anelli.length - 1]];
+  /** Indirizzo di un passo: il foglio più il proprio numero. Vuoto se il passo è fuori catena. */
+  V.addressOf = (box, map) => { const n = V.stepNumbers(map).get(box && box.id); if (!n) return ''; const su = V.mapAddress(map); return su ? su + '.' + n : n; };
+  /** Che cosa significa il badge di un passo. Due cose diverse, e devono vedersi diverse:
+   *  «figlia» = questo passo CONTIENE quella mappa (è il suo posto nell'albero, badge ↗);
+   *  «riferimento» = questo passo RICHIAMA una mappa che sta altrove — il caso «ha lo stesso identico
+   *  processo di 2.1.1» (badge ⇉, con l'indirizzo vero scritto accanto).
+   *  Il badge segue SEMPRE il link, perché è il link ciò che si apre toccandolo: guardare l'albero
+   *  (come prima) poteva mostrare ↗ mentre il tocco apriva una mappa che sta altrove — il badge
+   *  diceva una cosa e ne faceva un'altra. Un passo con un sotto-foglio ma senza link non ha badge:
+   *  il sotto-foglio si raggiunge dalla cartina. */
+  V.linkKind = (box, map) => {
+    if (!box || !map) return null;
+    const id = box.props && box.props.link; if (!id) return null;
+    const t = V.doc.maps[id]; if (!t) return null;
+    return (t.parentId === map.id && t.parentStepId === box.id) ? 'figlia' : 'riferimento';
+  };
+  /** Un hue o null. E' l'unica forma in cui una tinta puo' stare salvata: il disegno la scrive dentro
+   *  un attributo di stile, quindi tutto cio' che non e' un numero resta fuori (anche da sanitizeMap). */
+  V.tintHue = (v) => { if (v == null) return null; const n = +v; return isFinite(n) ? ((n % 360) + 360) % 360 : null; };
+  /** La palette dei passi: otto tinte tenui piu' «nessuna», decise da Gt guardandole a schermo
+   *  (spec 2026-08-21, «Le otto tinte, decise guardandole»). Due vincoli: nessun hue vicino al rosso
+   *  d'allarme dei delta e dei fulmini (9° — il primo mattone a 15° gli somigliava troppo), e colori
+   *  riposanti che non coprano gli elementi gia' colorati del canvas: in una mappa VSM e' l'allarme
+   *  la cosa che deve saltare addosso, non il contenitore. */
+  V.TINTS = [
+    { id: null, name: 'nessuna' },
+    { id: 35, name: 'sabbia' }, { id: 80, name: 'oliva' }, { id: 125, name: 'salvia' }, { id: 170, name: 'acqua' },
+    { id: 205, name: 'cielo' }, { id: 250, name: 'indaco' }, { id: 290, name: 'lavanda' }, { id: 330, name: 'rosa' }
+  ];
+  /** Colore di un passo E sfondo del suo sotto-foglio, nella stessa voce di annulla (mapfield, come
+   *  l'adozione): il colore e' il filo che lega i due, e un annulla che li separasse lascerebbe il
+   *  legame a meta'. Solo la figlia segue il colore: una mappa richiamata (⇉) ha la sua casa e il
+   *  suo sfondo, qui viene solo citata. */
+  V.setTint = (boxId, hue, map = V.map()) => {
+    const box = V.byId(boxId, map); if (!box) return false;
+    const H = V.tintHue(hue);
+    const ops = [{ t: 'props', id: boxId, after: { tint: H } }];
+    if (V.linkKind(box, map) === 'figlia') ops.push({ t: 'mapfield', mapId: box.props.link, key: 'tint', after: H });
+    return V.commit(ops, 'colore del passo');
   };
   V.metrics = (map) => {
     const boxes = map.elements.filter(e => e.type === 'box');
@@ -625,6 +949,21 @@ window.VSM = window.VSM || {};
       storms: map.elements.filter(e => e.type === 'storm').length, flows: map.elements.filter(e => e.type === 'flow').length, persons: map.elements.filter(e => e.type === 'person').length,
       incompleteBoxes: boxes.filter(b => num(b.props.avg) == null).length, incompleteDeltas: deltas.filter(d => num(d.props.avg) == null).length
     };
+  };
+  /** Una riga che dice che cosa contiene un foglio: e' il testo dell'occhio (UI.showPeek) e nasce da
+   *  metrics, cosi' resta vera da sola finche' nessuno la riscrive (props.summary). Si dicono solo le
+   *  cose che ci sono — «0 problemi» e' rumore — e i tempi compaiono solo se qualcuno li ha misurati.
+   *  Il tempo a valore si nomina solo se e' una PARTE del totale: «12 in tutto, 12 a valore» direbbe
+   *  due volte la stessa cosa. */
+  V.describeMap = (map) => {
+    if (!map) return '';
+    const M = V.metrics(map); const parti = [];
+    if (M.boxes) parti.push(M.boxes + (M.boxes === 1 ? ' passo' : ' passi'));
+    if (M.hasData) parti.push(fmt(M.tot) + ' ' + map.unit + ' in tutto' + (M.va > 0 && M.va < M.tot ? ', ' + fmt(M.va) + ' a valore' : ''));
+    if (M.storms) parti.push(M.storms + (M.storms === 1 ? ' problema' : ' problemi'));
+    if (M.persons) parti.push(M.persons + (M.persons === 1 ? ' persona' : ' persone'));
+    if (M.requests) parti.push(M.requests + (M.requests === 1 ? ' via di richiesta' : ' vie di richiesta'));
+    return parti.join(' · ');
   };
 
   // ---------- controlli offline (dal libro) ----------
@@ -730,6 +1069,12 @@ window.VSM = window.VSM || {};
     E.push(V.newElement('storm', 600, 225, { text: 'alle 11 tutti gli ambulatori pieni', muda: 'attesa', rule: '1 attività specificate' }));
     E.push(V.newElement('fluffy', 850, 225, { text: 'check-out rapido e costante: da replicare' }));
     E.push(V.newElement('text', 60, 560, { text: 'Come accade il lavoro adesso. È abbastanza buono?', size: 13 }));
+    // l'esempio del libro sta in un progetto suo, marcato «di esempio»: prima si infilava in ogni
+    // elenco di ogni reparto, e da un progetto di esempio non si eredita il progetto attivo
+    let esempi = Object.values(V.doc.projects).find(p => p.name === 'Esempi');
+    if (!esempi) { esempi = V.newProject({ name: 'Esempi', sample: true }); V.doc.projects[esempi.id] = esempi; }
+    esempi.sample = true; // un «Esempi» nato prima di questo segno va riconosciuto lo stesso
+    m.projectId = esempi.id;
     return m;
   };
 })(window.VSM);

@@ -147,8 +147,24 @@ svg .handle{fill:#fff;stroke:var(--sel);stroke-width:1.5;cursor:nwse-resize}
 svg .lasso{fill:rgba(31,78,121,.08);stroke:var(--sel);stroke-dasharray:4 4;stroke-width:1}
 svg .ghost{stroke:var(--sel);stroke-dasharray:5 4;stroke-width:1.5;fill:none;pointer-events:none}
 svg .el{cursor:move}
-svg .link-badge{fill:var(--accent);cursor:pointer}
-svg .link-badge-txt{fill:#fff;font-size:9px;font-weight:700}
+svg .link-badge{fill:var(--accent)}
+svg .link-badge-txt{fill:#fff;font-size:10px;font-weight:700}
+/* i due bersagli (apri il foglio / sbircia) si colpiscono col dito: l'area sensibile e' il gruppo
+   intero, con il suo disco trasparente da r=20 — il disegno piccolo resta solo un disegno */
+svg .link-badge-g,svg .peek-badge-g{cursor:pointer}
+/* un passo che CONTIENE un sotto-foglio si vede: bordo una volta e mezzo il normale (3 contro 1,8
+   di svg .box — «poco piu' spesso, che si veda che ha un contorno diverso», deciso da Gt a schermo).
+   E' una classe, non uno stile in linea: il blu di «scegli il bersaglio» (svg.t-flow,
+   #canvas.picking) ha piu' specificita' e deve continuare a vincere mentre si traccia una freccia. */
+svg .box.deep{stroke-width:3}
+/* la tinta del passo: riempimento tenue e bordo appena piu' presente arrivano come variabili dal
+   disegno (stessa famiglia di colore, due intensita'); il sotto-foglio la ripete come sfondo (map.tint) */
+svg .box.tinted{fill:var(--tint-fill);stroke:var(--tint-ink)}
+/* l'occhio accanto al badge: apre l'anteprima del foglio dietro il link */
+svg .peek-badge{fill:#fffdf7;stroke:var(--accent);stroke-width:1.2;cursor:pointer}
+svg .peek-eye{fill:none;stroke:var(--accent);stroke-width:1.4;stroke-linejoin:round}
+svg .peek-pupil{fill:var(--accent);pointer-events:none}
+svg .peek-badge-g:hover .peek-badge{stroke-width:1.8}
 svg .conn-hit{stroke:transparent;stroke-width:16;fill:none;cursor:pointer}
 svg .highlight rect,svg .highlight path,svg .highlight circle{filter:drop-shadow(0 0 5px rgba(31,78,121,.9))}
 svg .flash{animation:flash 1.2s ease-out 2}
@@ -200,6 +216,42 @@ header .btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
 #pop .pop-actions{border-top:1px solid var(--line);padding-top:8px;margin-top:4px}
 #pop.sheet{left:8px!important;right:8px;top:auto!important;bottom:calc(84px + env(safe-area-inset-bottom));width:auto;max-width:none;max-height:min(55vh,520px);border-radius:14px}
 #pop .why{border-left:3px solid var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent);padding:6px 8px;border-radius:0 8px 8px 0;font-size:12.5px;margin:6px 0 8px;color:var(--ink-2)}
+/* pannello del passo (variante B, spec 2026-08-21): fila di tondi in cima — gli stessi .pm-btn del
+   menu rotondo, ma in flusso invece che posizionati ad arco */
+/* Il pannello del passo e' piu' largo degli altri (380 invece di 330): con sette tondi da 44 px
+   la fila ne chiede 327, e a 330 il pannello ne offriva 289 (il rullo di scorrimento ne mangia 15).
+   Cosi' i tondi andavano a capo e il solo «Chiudi» finiva su una seconda riga, mangiandosi i 48 px
+   guadagnati dal pannello compatto: misurato 499 px con due attivita', contro i 405 del disegno.
+   Largo 380: una riga sola, la fila delle azioni scende da 111 a 75 px, il pannello da 499 a 415. */
+#pop.step:not(.sheet){width:380px}
+#pop .pop-rounds{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-bottom:8px}
+#pop .pop-rounds .pm-btn{position:static;margin:0;width:44px;height:44px;flex:none;animation:none}
+#pop .pop-rounds .pm-btn svg{width:18px;height:18px}
+#pop .pop-rounds .pm-btn span{font-size:8px;max-width:42px}
+#pop .pop-rounds .pm-btn.a-destra{margin-left:auto}
+#pop .pop-rounds .pm-btn.aperto{border-color:var(--accent);color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+#pop .pop-rounds .pm-btn.validata{border-color:#3f7d5a;color:#3f7d5a;background:color-mix(in srgb,#3f7d5a 12%,var(--panel))}
+/* in vista: titolo, attività numerate, tempi a riquadri */
+#pop .pop-ptitle{border:1px solid var(--line);background:var(--panel-2);color:var(--ink);border-radius:8px;padding:8px 10px;width:100%;min-height:40px;font-size:15px;font-weight:600;margin-bottom:6px}
+#pop .pop-sec{font-size:10.5px;color:var(--muted);font-weight:700;letter-spacing:.4px;text-transform:uppercase;margin:8px 0 4px}
+/* la lista cresce con le attività, ma non oltre ~5 righe: tempi e azioni restano in vista senza
+   scorrere tutto il pannello (il Prelievo di prova ne ha 7: dentro la lista si scorre) */
+#pop .acts{border:1px solid var(--line);border-radius:10px;background:var(--panel-2);padding:2px 6px;margin-bottom:6px;max-height:208px;overflow-y:auto}
+#pop .act-row{display:flex;align-items:center;gap:6px}
+#pop .act-row .act-n{flex:none;width:16px;text-align:right;font-size:11px;color:var(--muted)}
+#pop .act-row input{flex:1;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;color:var(--ink);padding:6px 2px;min-height:32px;font-size:13px}
+#pop .act-add{margin:4px 0 4px 20px}
+#pop .times{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:4px}
+#pop .tbox{display:flex;flex-direction:column;align-items:center;gap:1px;border:1px solid var(--line);border-radius:10px;background:var(--panel-2);padding:4px 6px 6px}
+#pop .tbox span{font-size:10px;color:var(--muted);font-weight:600}
+#pop .tbox input{border:0;background:transparent;color:var(--ink);width:100%;text-align:center;font-size:19px;font-weight:700;min-height:30px;padding:1px}
+/* sola lettura (✓ validato), non «spento»: il contenuto si legge come prima */
+#pop .pop-ptitle:disabled,#pop .tbox input:disabled,#pop .act-row input:disabled{opacity:1;color:var(--ink);-webkit-text-fill-color:var(--ink)}
+/* i pannellini si aprono dentro il pannello, sotto i tondi e sopra il contenuto: il box resta
+   visibile sotto in trasparenza — nessuna finestra sopra un'altra finestra. La `top` la mette il JS. */
+#pop .pop-mini{position:absolute;left:8px;right:8px;bottom:8px;z-index:3;overflow:auto;background:color-mix(in srgb,var(--panel) 88%,transparent);border:1px solid var(--line);border-radius:12px;padding:10px;box-shadow:var(--shadow)}
+#pop .pop-mini h4{margin:0 0 6px;font-size:12.5px}
+#pop .pop-mini h4 .ind{color:var(--accent)}
 .field{display:flex;flex-direction:column;gap:3px;margin-bottom:8px}
 .field label{font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.2px}
 .field input,.field select,.field textarea{border:1px solid var(--line);background:var(--panel-2);color:var(--ink);border-radius:8px;padding:7px 9px;width:100%;min-height:36px}
@@ -242,7 +294,27 @@ header .btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
 #gpcard .gpc-head{display:flex;align-items:center;gap:10px;margin-bottom:6px}
 #gpcard .gpc-head b{font-size:14px}
 #gpcard .gpc-body{font-size:12.8px;color:var(--ink-2);line-height:1.5}
+/* il pop-up dell'occhio: piu' largo della scheda, perche' ospita l'anteprima del foglio */
+#gpcard.peek{width:min(420px,calc(100vw - 20px))}
+/* l'anteprima e' l'SVG del foglio ritagliato sul contenuto (R.peekSVG usa exportSVG con crop):
+   si rimpicciolisce da solo entro i due limiti (larghezza della scheda, 220px di altezza)
+   conservando le proporzioni */
+.peek-view{border:1px solid var(--line);border-radius:8px;background:var(--paper);overflow:hidden;margin-bottom:8px}
+.peek-view svg{display:block;width:100%;height:auto;max-height:220px}
+/* foglio ancora vuoto: niente francobollo del nulla, una riga che lo dice */
+.peek-view.peek-empty{padding:16px 14px;font-size:12.5px;color:var(--muted);text-align:center}
+/* la striscia del flusso nell'occhio: la catena del sotto-foglio in una riga sola, che scorre di
+   lato se e' lunga. Il numero del passo e' quello che ha sul foglio; ▼ rossa = attesa col tempo;
+   ⑂ = il flusso si divide li' (non e' una catena semplice) */
+.peek-strip{display:flex;align-items:center;gap:6px;overflow-x:auto;padding:2px 2px 8px;margin-bottom:8px;border-bottom:1px dashed var(--line);font-size:12.5px;white-space:nowrap}
+.peek-strip .ps-box b{color:var(--accent);margin-right:1px}
+.peek-strip .ps-delta{color:var(--delta);font-weight:700}
+.peek-strip .ps-fork{color:var(--accent);font-weight:700}
+.peek-strip .ps-sep{color:var(--muted)}
 .gp-lint{display:flex;flex-direction:column;gap:6px;padding:8px 10px 4px;border-top:1px solid var(--line);margin-top:6px}
+/* le spunte «un passo per ogni attivita'» nel pop-up del sotto-foglio: oltre le ~6 righe l'elenco
+   scorre da se', invece di spingere i bottoni fuori dallo schermo (un passo puo' averne dieci) */
+.dn-acts{max-height:186px;overflow-y:auto}
 .gp-foot{margin:6px 10px 8px;font-size:12px;color:var(--ink-2)}
 .chev{width:15px;height:15px;flex:none;margin-left:auto;transition:transform .15s;color:var(--muted)}
 .gp-sec[aria-expanded="true"] .chev,.sub-head[aria-expanded="true"] .chev,.lg-sec[aria-expanded="true"] .chev{transform:rotate(90deg)}
@@ -269,6 +341,10 @@ table.plan input:focus{border-color:var(--line);background:var(--panel-2)}
 .picker.icons .pick svg{border-radius:6px}
 .picker .pick.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset;color:var(--accent);font-weight:600}
 .picker .pick span{max-width:62px;text-align:center;white-space:normal;line-height:1.05}
+/* la palette del passo: pastiglie tonde senza parole; «nessuna» e' la pastiglia vuota barrata */
+.picker.tints .pick{width:34px;min-height:34px;padding:3px}
+.picker.tints .sw{width:22px;height:22px;border-radius:50%;border:1.5px solid var(--line);display:block}
+.picker.tints .sw.none{background:linear-gradient(to top right,transparent 44%,var(--muted) 46%,var(--muted) 54%,transparent 56%)}
 .pick-group{font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:6px 0 3px}
 svg .icon-bg{fill:#fffdf7;stroke:var(--pencil-2);stroke-width:1}
 /* legenda completa (cassetto) */
@@ -304,6 +380,16 @@ svg .icon-bg{fill:#fffdf7;stroke:var(--pencil-2);stroke-width:1}
 /* dialogs & menus */
 dialog{border:1px solid var(--line);border-radius:14px;background:var(--panel);color:var(--ink);padding:0;max-width:560px;width:min(560px,94vw);box-shadow:var(--shadow)}
 dialog::backdrop{background:rgba(10,14,20,.45)}
+/* avviso dei lavori in corso: il cantiere si vede prima delle parole, e lo sfondo è più fitto degli
+   altri dialoghi — questo non è un pannello fra i tanti, è un cartello all'ingresso */
+#dlg-wip{max-width:460px;width:min(460px,94vw)}
+#dlg-wip::backdrop{background:rgba(10,14,20,.62)}
+#dlg-wip .d-head{gap:8px;font-size:15px}
+#dlg-wip .wip-ic{font-size:22px;line-height:1}
+#dlg-wip .wip-forte{margin:0 0 10px;font-size:14px;line-height:1.45}
+#dlg-wip .wip-lista{margin:0 0 12px;padding-left:18px;font-size:13px;line-height:1.5;color:var(--ink-2)}
+#dlg-wip .wip-lista li{margin-bottom:5px}
+#dlg-wip #wip-ver{text-align:center}
 dialog .d-head{padding:12px 16px;border-bottom:1px solid var(--line);font-weight:600;display:flex;align-items:center}
 dialog .d-body{padding:14px 16px;max-height:70vh;overflow:auto}
 dialog .d-foot{padding:10px 16px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end}
@@ -347,6 +433,9 @@ dialog .d-foot{padding:10px 16px;border-top:1px solid var(--line);display:flex;g
   header .seg,header #btn-maps{display:none}
   #map-head{max-width:none;min-width:0;flex:1}
   #crumbs{display:none}
+  /* anche le sottoschede si nascondono: su schermo stretto una seconda riga toglie troppo foglio,
+     e la discesa resta affidata alla cartina */
+  #subtabs{display:none}
   #menu .compact-only{display:block}
   #hint{max-width:80vw}
 }
@@ -424,16 +513,46 @@ dialog .d-foot{padding:10px 16px;border-top:1px solid var(--line);display:flex;g
 #palette .tool.done{color:var(--accent)}
 
 
-/* ---------- livelli (mappe collegate) a destra, sopra lo zoom ---------- */
+/* ---------- cartina del progetto, a destra sopra lo zoom ---------- */
 #levelsctl{position:absolute;right:12px;bottom:calc(160px + env(safe-area-inset-bottom));z-index:6}
 #levelsctl .btn{width:40px;height:40px;padding:0;justify-content:center;background:var(--panel)}
-#levels-list{position:absolute;right:46px;bottom:0;min-width:210px;max-width:290px;max-height:50vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);padding:6px;display:flex;flex-direction:column;gap:2px}
-#levels-list button{display:block;width:100%;text-align:left;border:0;background:transparent;color:var(--ink);padding:8px 10px;border-radius:8px;font-size:13px;min-height:var(--tap);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#levels-list button:hover{background:rgba(31,78,121,.08)}
-#levels-list button[aria-current="true"]{background:rgba(31,78,121,.12);font-weight:700}
-#levels-list button.sub{padding-left:26px}
+#cartina{position:absolute;right:0;bottom:44px;min-width:250px;max-width:78vw;max-height:52vh;overflow:auto;background:var(--panel,#fff);border:1px solid var(--line,#d9d4c9);border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.18);padding:6px}
+#cartina .cart-head{font-weight:700;font-size:12px;padding:4px 8px 8px;opacity:.75}
+#cartina .cart-sep{font-size:11px;opacity:.6;padding:10px 8px 4px;border-top:1px solid var(--line,#d9d4c9);margin-top:6px}
+#cartina .cart-row{display:flex;align-items:baseline;gap:.3em;width:100%;text-align:left;background:none;border:0;padding:6px 8px;border-radius:7px;font:inherit;cursor:pointer}
+/* il segno dell'albero: ogni gruppo di figlie ha una linea verticale lungo il rientro che lo collega
+   al padre, e il rientro per livello (~22 px) è più deciso dei vecchi 14 — la gerarchia si legge
+   a colpo d'occhio, senza contare i pixel */
+#cartina .cart-kids{margin-left:13px;padding-left:7px;border-left:1.5px solid var(--line,#d9d4c9)}
+#cartina .cart-row:hover{background:rgba(0,0,0,.05)}
+#cartina .cart-row.qui{background:rgba(31,78,121,.12);font-weight:700}
+#cartina .cart-row .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#cartina .cart-here{margin-left:auto;font-size:10px;opacity:.7;font-weight:400}
+#cartina .cart-ref{opacity:.7;font-size:12px;margin-left:20px;width:calc(100% - 20px)}
+#cartina .cart-prj{opacity:.85}
 #app.clean #levelsctl{display:none}
 @media print{#levelsctl{display:none!important}}
 @media (pointer:coarse){#levelsctl .btn{width:var(--tap);height:var(--tap)}#levelsctl{bottom:calc(170px + env(safe-area-inset-bottom))}}
 /* pallino di via di un connettore selezionato */
 svg .handle.via{fill:var(--panel);stroke:var(--sel);stroke-width:2;pointer-events:none}
+
+/* l'indirizzo di un passo o di un foglio: si legge prima del titolo, quindi sta davanti e non grida */
+.ind{font-variant-numeric:tabular-nums;color:var(--muted,#6b7280);font-weight:600;margin-right:.35em}
+/* davanti al titolo in barra sta l'indirizzo del foglio aperto: vuoto, non deve lasciare uno scarto */
+#map-head .ind:empty{display:none}
+
+/* briciole: solo la strada percorsa (il foglio aperto sta nel titolo accanto); la catena scorre invece di spezzarsi */
+#crumbs{display:flex;align-items:center;gap:.15em;overflow-x:auto;max-width:46vw;scrollbar-width:none}
+#crumbs::-webkit-scrollbar{display:none}
+/* l'ellissi delle briciole tagliate: inerte, dice solo «in mezzo c'è altro» (V.visibleCrumbs) */
+#crumbs .crumb-gap{flex:none;color:var(--muted);padding:0 2px}
+
+/* sottoschede: i figli diretti del foglio aperto, per ridiscendere senza aprire la cartina. Riga
+   intera sotto la barra (flex-basis:100%); vuota è display:none e non ruba un pixel al canvas.
+   Scorre di lato senza barra visibile, come le briciole. */
+#subtabs{display:flex;align-items:center;gap:6px;flex:1 0 100%;min-width:0;overflow-x:auto;scrollbar-width:none;padding:1px 2px 3px;font-size:12px}
+#subtabs:empty{display:none}
+#subtabs::-webkit-scrollbar{display:none}
+#subtabs .st-lead{color:var(--muted);flex:none}
+#subtabs button{flex:none;display:flex;align-items:baseline;border:1px solid var(--line);background:var(--panel-2);border-radius:999px;padding:3px 10px;min-height:30px;font:inherit;font-size:12px;color:var(--ink);cursor:pointer;white-space:nowrap}
+#subtabs button:hover{border-color:var(--accent);color:var(--accent)}

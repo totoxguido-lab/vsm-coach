@@ -4,7 +4,7 @@
   const I = V.interact, R = V.render, UI = V.ui, C = V.coach; const { clone, today } = V.util;
   const $ = (s, r = document) => r.querySelector(s); const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 
-  function fullRender() { const map = V.map(); R.all(map, { selection: I.selection.filter(id => V.byId(id, map)) }); UI.renderHeader(); UI.renderLevels && UI.renderLevels(); if (UI.guideVisible && UI.guideVisible()) UI.renderGuide(); if (!$('#drawer').classList.contains('closed') && !$('#pane-plan').classList.contains('hidden')) UI.renderPlan(); }
+  function fullRender() { const map = V.map(); R.all(map, { selection: I.selection.filter(id => V.byId(id, map)) }); UI.renderHeader(); UI.renderCartina && UI.renderCartina(); if (UI.guideVisible && UI.guideVisible()) UI.renderGuide(); if (!$('#drawer').classList.contains('closed') && !$('#pane-plan').classList.contains('hidden')) UI.renderPlan(); }
   let sugTimer = null;
   V.onChange((info) => {
     if (info.switched) { I.selection = []; V.pop.close(); UI.hideQuick(); fullRender(); return; }
@@ -216,6 +216,19 @@
     }
   }
 
+  /** Il cartello all'ingresso: questa copia è codice appena pubblicato, mai provato sul dispositivo.
+   *  Si apre a OGNI avvio di proposito — non è un «leggi una volta e non ti disturbo più»: ogni
+   *  pubblicazione è codice nuovo, e l'avviso vale per quello che si ha davanti adesso, non per la
+   *  prima volta che si è aperta l'app. Sull'app STABILE non compare: là il codice ci arriva solo
+   *  dopo che Gt l'ha provato, e un cartello di cantiere direbbe una cosa falsa. */
+  function avvisoLavoriInCorso() {
+    const d = $('#dlg-wip'); if (!d || !d.showModal) return;
+    if ((V.storage().canale || 'sviluppo') === 'stabile') return;
+    const vr = $('#wip-ver'); if (vr) vr.textContent = 'VSM Coach ' + V.versionLabel();
+    const ok = $('#wip-ok'); if (ok) ok.onclick = () => d.close();
+    try { d.showModal(); } catch (e) { /* già aperto */ }
+  }
+
   async function start() {
     R.init($('#canvas')); I.init($('#canvas'), $('#stage'));
     await V.load();
@@ -223,11 +236,12 @@
     UI.guideOn = localStorage.getItem('vsm.guideOn') !== '0';
     try { R.traceOn = localStorage.getItem('vsm.trace') !== '0'; } catch (e) { /* storage bloccato */ }
     { const vl = $('#ver-label'); if (vl) vl.textContent = 'VSM Coach ' + V.VERSION + (location.pathname.includes('/beta/') ? ' beta' : '') + ' · ' + V.BUILD; }
-    UI.buildPalette(); bindHeader(); UI.bindLevels(); UI.renderLevels(); C.init(); UI.menuCheck('#btn-pen-mode', I.penDraws); UI.menuCheck('#btn-overlays', V.map().overlays !== false); UI.menuCheck('#btn-trace', R.traceOn);
+    UI.buildPalette(); bindHeader(); UI.bindCartina(); UI.renderCartina(); C.init(); UI.menuCheck('#btn-pen-mode', I.penDraws); UI.menuCheck('#btn-overlays', V.map().overlays !== false); UI.menuCheck('#btn-trace', R.traceOn);
     { let chrome = '1', tools = '0'; try { chrome = localStorage.getItem('vsm.chrome') ?? '1'; tools = localStorage.getItem('vsm.toolsLeft') ?? '0'; } catch (e) { /* storage bloccato */ }
       UI.setToolsLeft(tools === '1'); if (chrome === '0') UI.setChrome(false, { hint: false }); }
     try { if (localStorage.getItem('vsm.paletteHidden') === '1') UI.setPaletteHidden(true, { quiet: true }); } catch (e) { /* storage bloccato */ }
     fullRender(); I.restoreView();
+    avvisoLavoriInCorso();
     if (!V.map().elements.length && Object.keys(V.doc.maps).length === 1) I.hint('Foglio nuovo: tocca il titolo in alto a destra, poi metti il richiedente e i process box. La Guida pratica (menu ⋯) ti accompagna se vuoi.', 6000);
     // Il foglio si scrive con un attimo di ritardo (V.save): ogni volta che l'app puo' sparire da sotto
     // i piedi — scheda chiusa, app mandata in sottofondo, iPadOS che libera memoria — si riversa subito

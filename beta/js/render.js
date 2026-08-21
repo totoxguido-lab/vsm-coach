@@ -43,7 +43,14 @@
       // chevron non si confondono con niente, nemmeno in fotocopia, e dicono «qualcuno ci va».
       + R.inkColors().map(col => `<marker id="${markerId(col, 'aperta')}" viewBox="0 0 12 10" refX="11" refY="5" markerWidth="11" markerHeight="9" orient="auto-start-reverse"><path d="M1 1.5 L5 5 L1 8.5 M6 1.5 L10 5 L6 8.5" fill="none" stroke="${col}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></marker>`).join('');
     svg.appendChild(defs);
-    ['paper', 'lanes', 'ink', 'conn', 'el', 'hand', 'overlay', 'ui'].forEach(k => { const g = document.createElementNS(NS, 'g'); g.id = 'L-' + k; svg.appendChild(g); L[k] = g; });
+    // L si RIFA' da capo, non si riempie quello di prima: R.peekSVG disegna un'altra mappa su un svg
+    // distaccato mettendo da parte `svg` e `L` e rimettendoli al loro posto dopo. Riempiendo lo stesso
+    // oggetto, il «da parte» era un riferimento all'oggetto GIA' sovrascritto: da quel momento i livelli
+    // puntavano all'svg distaccato, il foglio aperto non si ridisegnava piu' (restava il disegno della
+    // mappa di prima) e il primo tocco su un elemento che li' non c'e' piu' bloccava tutto.
+    const nuovi = {};
+    ['paper', 'lanes', 'ink', 'conn', 'el', 'hand', 'overlay', 'ui'].forEach(k => { const g = document.createElementNS(NS, 'g'); g.id = 'L-' + k; svg.appendChild(g); nuovi[k] = g; });
+    L = nuovi;
     L.ink.setAttribute('pointer-events', 'none');
     // Il riepilogo e la timeline sono un calcolo disegnato sopra il foglio, non roba da toccare: il
     // rettangolo pieno della card rubava il tocco a quello che ci stava sotto (note, nuvole) e faceva
@@ -65,6 +72,43 @@
   }
   /** taglia una riga sola a `max` caratteri, con "…" se serve */
   R.wrap = wrap; R.fitLines = fitLines;
+  /** Le attività dentro il passo, disegnate come righe DISTINTE e numerate. Il numero toglie
+   *  l'ambiguità che aveva il vecchio elenco a «•»: un'attività lunga mandata a capo era
+   *  indistinguibile da due attività. La riga di continuazione si rientra sotto il testo della
+   *  sua attività (tanti spazi quanti ne occupa il numero), così a colpo d'occhio si conta quel
+   *  che c'è. Il numero è anche la promessa del sotto-foglio: il «3» di qui diventa il passo 3
+   *  di là sotto (V.buildDetailFromActivities). */
+  R.activityLines = (activities, w, size = 10) => {
+    const lines = [];
+    (activities || []).forEach((a, i) => {
+      const tag = (i + 1) + '. ';
+      // 0.56 px per carattere per ogni px di corpo: a 10 e' il vecchio w/5.6, e le mappe gia'
+      // disegnate non si spostano di un pixel finche' il corpo resta 10
+      const inner = Math.max(8, Math.floor(w / (size * 0.56)) - tag.length);
+      fitLines(wrap(a, inner), 2).forEach((l, j) => lines.push((j ? ' '.repeat(tag.length) : tag) + l));
+    });
+    return lines;
+  };
+  /** Quanto grande scrivere le attivita' dentro il passo. Tre attivita' scritte a 10 px in un box
+   *  alto 170 lasciavano mezzo passo vuoto e si leggevano male: qui il corpo CRESCE finche' le righe
+   *  ci stanno tutte, e torna al minimo quando le attivita' sono tante (con otto righe piccolo va
+   *  bene, con tre no). Il minimo e' il 10 di sempre, con la prima riga a 58: senza attivita', o con
+   *  tante, il disegno e' identico a prima. Logica pura: si prova a schermo, ma si misura qui. */
+  R.activityBlock = (activities, w, h, roomForOwner = 0) => {
+    const prova = (size) => {
+      const lineH = Math.round(size * 1.2);
+      const y0 = Math.max(58, 46 + size);            // la prima riga scende quel tanto che serve a stare sotto il filo del titolo
+      const max = Math.max(1, Math.floor((h - y0 - 2 - roomForOwner) / lineH));
+      return { size, lineH, y0, max, lines: R.activityLines(activities, w, size) };
+    };
+    if (!(activities || []).some(a => String(a || '').trim())) return prova(10);
+    // Si cresce solo se NON si perde una parola: piu' grande vuol dire meno caratteri per riga, e
+    // un'attivita' che a 10 si leggeva intera a 16 finirebbe in «…». Leggere tutto viene prima di
+    // leggere in grande — se gia' a 10 il testo si taglia, si resta a 10 e non si peggiora.
+    const taglia = (lines) => lines.some(l => /…$/.test(l));
+    for (let size = 16; size > 10; size--) { const t = prova(size); if (t.lines.length <= t.max && !taglia(t.lines)) return t; }
+    return prova(10);
+  };
   /** righe di un elemento testo (a capo sulla larghezza scelta) */
   R.textLines = (el) => { const p = el.props, sz = p.size || 12; return wrap(p.text || '', Math.max(6, Math.floor(el.w / (sz * 0.5)))); };
   /** misura da usare per selezione e maniglie: per il testo l'altezza vera è quella delle righe, non quella memorizzata */
@@ -82,9 +126,12 @@
     const { w, h } = V.paperOf(map);
     let g = `<rect class="paper" x="0" y="0" width="${w}" height="${h}" rx="2"/>`;
     // ogni canvas ha la sua tinta leggera (map.tint, assegnata a caso alla creazione): si capisce a
-    // colpo d'occhio su quale mappa si sta lavorando, e il foglio resta leggibile
+    // colpo d'occhio su quale mappa si sta lavorando, e il foglio resta leggibile. La saturazione
+    // resta nella famiglia del passo colorato (38%): col vecchio 60% il velo era piu' saturo del
+    // bordo del passo stesso, e passo e sotto-foglio sembravano due parenti lontani invece dello
+    // stesso colore.
     const tint = map.tint == null ? null : ((+map.tint || 0) % 360 + 360) % 360;
-    if (tint != null) g += `<rect x="0" y="0" width="${w}" height="${h}" rx="2" fill="hsl(${tint} 60% 55%)" opacity="0.07"/>`;
+    if (tint != null) g += `<rect x="0" y="0" width="${w}" height="${h}" rx="2" fill="hsl(${tint} 40% 62%)" opacity="0.08"/>`;
     g += `<line class="fold" x1="${w / 2}" y1="0" x2="${w / 2}" y2="${h}"/><line class="fold" x1="${w * 0.75}" y1="0" x2="${w * 0.75}" y2="${h}"/>`;
     // niente blocco titolo sul foglio (titolo, data e autori vivono in barra); in basso, semitrasparente,
     // il nome della mappa: il giro dell'attuale, «ideale» (con lo stato del lucchetto) o «dettaglio»
@@ -94,16 +141,33 @@
   };
 
   // ---------- elementi ----------
-  function drawEl(el) {
+  function drawEl(el, map) {
+    // la mappa serve al badge del collegamento (figlia o riferimento); la legenda disegna elementi
+    // che non stanno in nessuna mappa, e per quelli vale il ripiego sulla mappa attiva
+    map = map || V.map();
     const p = el.props; const w = el.w, h = el.h; let s = '';
+    // figlia = il passo CONTIENE un sotto-foglio (bordo spesso, colore che il foglio ripete);
+    // riferimento = lo cita soltanto. Calcolato una volta: bordo, badge e occhio dicono la stessa cosa.
+    // (ogni elemento puo' richiamare una mappa; contenerla — repairDoc — e' cosa da soli box)
+    const lk = p.link ? V.linkKind(el, map) : null;
+    const H = V.tintHue(p.tint);
     switch (el.type) {
       case 'box': {
-        s += `<rect class="box" x="0" y="0" width="${w}" height="${h}" rx="2"/>`;
+        // «deep» (bordo piu' spesso) dice: scendendo di qui si trova un foglio. E' un fatto del
+        // disegno, non una preferenza, e resta una classe CSS (non uno stile in linea) cosi' il
+        // blu di «scegli il bersaglio» continua a vincere mentre si traccia una freccia.
+        // La tinta viaggia in due variabili: riempimento tenue, bordo appena piu' presente — stessa
+        // famiglia, due intensita', e sempre leggibile il testo a matita sopra. Le intensita' sono
+        // quelle decise da Gt a schermo (spec 2026-08-21): piu' sature di cosi' i passi colorati
+        // tiravano l'occhio piu' del rosso d'allarme dei delta, che e' l'opposto di quel che serve.
+        const cls = 'box' + (lk === 'figlia' ? ' deep' : '') + (H != null ? ' tinted' : '');
+        const sty = H != null ? ` style="--tint-fill:hsl(${H} 38% 95.5%);--tint-ink:hsl(${H} 26% 64%)"` : '';
+        s += `<rect class="${cls}" x="0" y="0" width="${w}" height="${h}" rx="2"${sty}/>`;
         s += `<text class="hand" x="${w / 2}" y="18" text-anchor="middle" font-size="13" font-weight="700">${tspans(fitLines(wrap(p.title || 'Passo', Math.max(8, Math.floor(w / 8))), 2), w / 2, 18, 15)}</text>`;
         s += `<line class="pencil-thin" x1="8" y1="42" x2="${w - 8}" y2="42"/>`;
-        const lines = []; (p.activities || []).forEach(a => fitLines(wrap('• ' + a, Math.max(10, Math.floor(w / 5.6))), 2).forEach(l => lines.push(l)));
         const roomForOwner = p.owner ? 12 : 0; // l'etichetta del responsabile sta in basso a destra: non farci finire sopra l'ultima riga
-        s += `<text class="hand" x="8" y="58" font-size="10">${tspans(fitLines(lines, Math.max(1, Math.floor((h - 60 - roomForOwner) / 12))), 8, 58, 12)}</text>`;
+        const blk = R.activityBlock(p.activities, w, h, roomForOwner);
+        s += `<text class="hand" x="8" y="${blk.y0}" font-size="${blk.size}">${tspans(fitLines(blk.lines, blk.max), 8, blk.y0, blk.lineH)}</text>`;
         if (p.owner) s += `<text class="hand muted" x="${w - 6}" y="${h - 6}" text-anchor="end" font-size="9">${esc(p.owner)}</text>`;
         const hasData = p.hi !== '' || p.lo !== '' || p.avg !== '';
         s += `<text class="hand ${hasData ? '' : 'muted'}" x="${w / 2}" y="${h + 14}" text-anchor="middle" font-size="10">${hasData ? tspans(['Hi: ' + fmt(num(p.hi)), 'Lo: ' + fmt(num(p.lo)), 'Avg: ' + fmt(num(p.avg))], w / 2, h + 14, 12) : `<tspan x="${w / 2}" y="${h + 14}">Hi / Lo / Avg ?</tspan>`}</text>`;
@@ -146,12 +210,10 @@
         s += `<path class="${cls}" d="${cloudPath(w, h)}"/>`;
         // il problema porta un fulmine rosso: senza, nuvola e nuvoletta erano gemelle a colpo d'occhio
         if (el.type === 'storm') s += `<path d="M${w - 12} ${h - 13} l-4.5 7 h3.6 l-4.5 8" fill="none" stroke="#c8321e" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`;
-        // il testo sta dentro la pancia della nuvola (piu' stretta del rettangolo w×h): larghezza utile ~72%.
-        // Se non ci sta in altezza si tronca con «…» — la misura giusta la sistema l'auto-crescita al momento della scrittura.
-        const maxLn = Math.max(1, Math.floor((h - 22) / 11));
-        const allLn = wrap(p.text || (el.type === 'storm' ? 'problema…' : 'idea…'), Math.max(9, Math.floor(w * 0.72 / 5)));
-        const lines = allLn.slice(0, maxLn);
-        if (allLn.length > maxLn) lines[lines.length - 1] = lines[lines.length - 1].replace(/.{0,2}$/, '…');
+        // il testo sta dentro la pancia (ogni riga larga quanto la sua banda) e non si tronca MAI:
+        // se non ci sta è la nuvola a essere troppo bassa, e la rialza cloudFit — alla scrittura,
+        // al ridimensionamento e all'apertura del documento
+        const lines = R.cloudLines(w, h, p.text || (el.type === 'storm' ? 'problema…' : 'idea…')).lines;
         s += `<text class="hand ${cls}-txt" x="${w / 2}" y="${h / 2 - (lines.length - 1) * 5.5 + 3}" text-anchor="middle" font-size="9.5">${tspans(lines, w / 2, h / 2 - (lines.length - 1) * 5.5 + 3, 11)}</text>`;
         if (el.type === 'storm' && (p.muda || p.rule)) s += `<text class="hand cloud-txt" x="${w / 2}" y="${h + 10}" text-anchor="middle" font-size="8">${esc([p.muda, p.rule ? 'R' + p.rule[0] : ''].filter(Boolean).join(' · '))}${p.a3 ? ' · A3' : ''}</text>`;
         break;
@@ -220,7 +282,25 @@
         break;
       }
     }
-    if (p.link) s += `<g class="link-badge-g" data-link="${esc(p.link)}"><circle class="link-badge" cx="${w - 2}" cy="2" r="8"/><text class="link-badge-txt" x="${w - 2}" y="5" text-anchor="middle">↗</text></g>`;
+    // ↗ = qui dentro c'è un sotto-foglio (l'albero scende di qui) · ⇉ = questo passo richiama una
+    // mappa che sta altrove, e accanto c'è scritto DOVE: senza, aprirla lasciava spaesati
+    if (p.link) {
+      const dove = lk === 'riferimento' ? V.shortAddress(V.mapAddress(V.doc.maps[p.link])) : '';
+      // badge e occhio si usano COL DITO (l'app dichiara --tap: 44px): i disegni restano piccoli per
+      // non coprire il passo, ma le aree sensibili sono due dischi trasparenti da r=20 (~42 px allo
+      // zoom di lavoro) con i centri a 48 unita' l'uno dall'altro. Misurati a schermo il 2026-08-21
+      // erano 17 px e 11 px a 13 px fra i centri: si sbagliava bersaglio e invece di sbirciare si
+      // cambiava foglio. Chi non azzecca comunque il disco ha «Sbircia» fra le azioni rapide.
+      s += `<g class="link-badge-g" data-link="${esc(p.link)}"><circle class="link-hit" cx="${w - 2}" cy="2" r="20" fill="transparent"/><circle class="link-badge" cx="${w - 2}" cy="2" r="9"/><text class="link-badge-txt" x="${w - 2}" y="5.5" text-anchor="middle">${lk === 'riferimento' ? '⇉' : '↗'}</text></g>`;
+      if (dove) s += `<text class="hand muted" x="${w - 12}" y="22" text-anchor="end" font-size="9">${esc(dove)}</text>`;
+      // l'occhio: sbirciare il foglio senza entrarci. Sta a sinistra del badge e si apre al RILASCIO
+      // (gesto 'peek' in interact.js): un pop-up nato sotto il dito al pointerdown ingoierebbe il
+      // pointerup, e il pan successivo diventerebbe zoom — la lezione del sesto giro.
+      if (V.doc.maps[p.link]) {
+        const ex = w - 50;
+        s += `<g class="peek-badge-g" data-peek="${esc(p.link)}" data-box="${esc(el.id)}"><circle class="peek-hit" cx="${ex}" cy="2" r="20" fill="transparent"/><circle class="peek-badge" cx="${ex}" cy="2" r="9.5"/><path class="peek-eye" d="M${ex - 5.5} 2 Q${ex} -3 ${ex + 5.5} 2 Q${ex} 7 ${ex - 5.5} 2 Z"/><circle class="peek-pupil" cx="${ex}" cy="2" r="1.8"/></g>`;
+      }
+    }
     return s;
   }
   R.drawEl = drawEl;
@@ -478,8 +558,45 @@
   };
   R.LOCK_PARENTS = ['box', 'person', 'lane', 'flow', 'request', 'inventory'];
   R.LOCKABLE = ['storm', 'fluffy', 'burst', 'text', 'inbox', 'inventory', 'distance', 'delta', 'person', 'box', 'icon', 'face'];
-  /** altezza necessaria perche' il testo stia nella pancia della nuvola (stesse costanti del disegno) */
-  R.cloudFit = (w, text) => { const n = wrap(String(text || ''), Math.max(9, Math.floor(w * 0.72 / 5))).length; return Math.max(56, n * 11 + 26); };
+  // ---------- testo dentro la nuvola ----------
+  // La pancia non è un rettangolo: la nuvola si stringe verso l'alto e verso il basso. La larghezza
+  // utile di ogni riga segue un profilo a ellisse (con margine per il tratto a matita), così le righe
+  // ai bordi sono più corte di quelle in mezzo — prima tutte contavano sul 72% della larghezza e il
+  // testo sforava ai bordi, oppure spariva troncato con «…».
+  const CLOUD_LH = 11, CLOUD_CHW = 5, CLOUD_MARGIN = 26; // interlinea, larghezza media di un carattere, margine verticale complessivo
+  const cloudBand = (t) => 0.84 * Math.sqrt(Math.max(0, 1 - Math.pow(2 * t - 1, 2)));
+  /** Distribuisce il testo nella nuvola w×h: ogni riga prende il budget di caratteri della sua banda.
+   *  Restituisce SEMPRE tutto il testo (niente troncamenti silenziosi): fits=false dice che le righe
+   *  non bastano, e allora è l'altezza a dover crescere (R.cloudFit), non il testo a sparire. */
+  R.cloudLines = (w, h, text) => {
+    const words = String(text || '').split(/\s+/).filter(Boolean);
+    if (!words.length) return { lines: [], fits: true };
+    const cap = Math.max(1, Math.round((h - CLOUD_MARGIN) / CLOUD_LH));
+    // i budget dipendono dalla posizione di ogni riga, che dipende da quante righe escono:
+    // si itera fino a numero stabile (più righe = bordi più stretti = mai meno righe, quindi converge)
+    let n = 1, lines = [];
+    for (let guard = 0; guard < 40; guard++) {
+      const y0 = h / 2 - (n - 1) * CLOUD_LH / 2;
+      const budget = (i) => Math.max(6, Math.floor(w * cloudBand((y0 + i * CLOUD_LH) / h) / CLOUD_CHW));
+      lines = [''];
+      words.forEach(word => {
+        const i = lines.length - 1;
+        const cand = lines[i] ? lines[i] + ' ' + word : word;
+        if (lines[i] && cand.length > budget(i)) lines.push(word);
+        else lines[i] = cand;
+      });
+      if (lines.length === n) break;
+      n = lines.length;
+    }
+    return { lines, fits: lines.length <= cap };
+  };
+  /** altezza necessaria perché il testo stia nella pancia della nuvola (stesse costanti del disegno):
+   *  si cresce di un'interlinea alla volta finché cloudLines non dice che ci sta tutto */
+  R.cloudFit = (w, text) => {
+    let h = 56;
+    while (!R.cloudLines(w, h, text).fits && h < 4000) h += CLOUD_LH;
+    return h;
+  };
   R.children = (id, map) => map.elements.filter(e => e.props && (e.props.lockTo === id || (e.type === 'delta' && e.props.attachedTo === id)));
 
   /** Area sensibile: molti elementi sono disegnati a sole linee (l'omino ha tratti da 1.6 px su un
@@ -499,7 +616,7 @@
     const zOrder = { lane: 0, legend: 1, text: 2, box: 3, inventory: 3, inbox: 3, distance: 3, person: 3, delta: 4, icon: 4, face: 4, storm: 5, fluffy: 5, burst: 5 };
     const els = map.elements.filter(e => !V.isConnector(e)).slice().sort((a, b) => (zOrder[a.type] || 3) - (zOrder[b.type] || 3) || (a.z || 0) - (b.z || 0));
     let lanes = '', body = '';
-    els.forEach(el => { const pos = R.elPos(el, map); const g = `<g class="el el-${el.type}" data-id="${esc(el.id)}" data-type="${el.type}" transform="translate(${pos.x} ${pos.y})">${hitRect(el)}${drawEl(el)}</g>`; if (el.type === 'lane') lanes += g; else body += g; });
+    els.forEach(el => { const pos = R.elPos(el, map); const g = `<g class="el el-${el.type}" data-id="${esc(el.id)}" data-type="${el.type}" transform="translate(${pos.x} ${pos.y})">${hitRect(el)}${drawEl(el, map)}</g>`; if (el.type === 'lane') lanes += g; else body += g; });
     L.lanes.innerHTML = lanes; L.el.innerHTML = body;
     L.conn.innerHTML = map.elements.filter(V.isConnector).map(c => `<g class="conn" data-id="${esc(c.id)}" data-type="${c.type}">${drawConn(c, map)}</g>`).join('');
     R.handles(map);
@@ -521,7 +638,7 @@
       // Mentre si trascina, dentro il gruppo non cambia niente: il disegno e' relativo alla sua origine
       // e basta spostare il gruppo. Ricostruirlo a ogni movimento del dito — per l'elemento e per ogni
       // figlio legato — era il lavoro che faceva scattare il trascinamento su iPad.
-      if (!(opts && opts.soloPosizione)) g.innerHTML = hitRect(el) + drawEl(el);
+      if (!(opts && opts.soloPosizione)) g.innerHTML = hitRect(el) + drawEl(el, map);
     }
     // connettori toccati (e i loro figli agganciati/bloccati): questi si ridisegnano comunque, il loro
     // percorso dipende da dove stanno adesso i capi
@@ -711,12 +828,47 @@
   R.all = (map, opts = {}) => { R.paper(map); R.strokes(map); R.elements(map); R.overlay(map, map.overlays !== false); R.selection(opts.selection || [], map); };
 
   // ---------- export SVG (solo il foglio) ----------
-  R.exportSVG = (map) => {
+  /** Il rettangolo che contiene cio' che e' disegnato: elementi (alla posizione e misura VISTE, con
+   *  i legati risolti) e i punti dei connettori, piu' un margine, mai oltre il bordo del foglio.
+   *  Serve all'anteprima dell'occhio: il foglio e' 2376×1680 e quasi sempre in gran parte vuoto —
+   *  col viewBox intero tre passi in un angolo diventano un francobollo illeggibile. */
+  R.contentBox = (map, margin = 48) => {
     const { w, h } = V.paperOf(map);
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    const grow = (x, y) => { if (x < x0) x0 = x; if (y < y0) y0 = y; if (x > x1) x1 = x; if (y > y1) y1 = y; };
+    map.elements.forEach(el => {
+      if (V.isConnector(el)) { (R.connPath(el, map).pts || []).forEach(q => grow(q.x, q.y)); return; }
+      const p = R.elPos(el, map), z = R.elSize(el);
+      grow(p.x, p.y); grow(p.x + z.w, p.y + z.h + (el.type === 'person' ? 30 : 0)); // l'omino ha nome e ruolo sotto la figura
+    });
+    if (!isFinite(x0) || x1 <= x0 || y1 <= y0) return { x: 0, y: 0, w, h }; // foglio vuoto: si ripiega sul foglio intero
+    const x = Math.max(0, x0 - margin), y = Math.max(0, y0 - margin);
+    return { x, y, w: Math.min(w, x1 + margin) - x, h: Math.min(h, y1 + margin) - y };
+  };
+  R.exportSVG = (map, opts = {}) => {
+    const { w, h } = V.paperOf(map);
+    // crop: solo per l'anteprima dell'occhio. L'export del menu «File e stampa» resta il foglio
+    // intero, perche' e' quello che si stampa.
+    const vb = opts.crop ? R.contentBox(map) : { x: 0, y: 0, w, h };
+    const vw = Math.round(vb.w), vh = Math.round(vb.h);
     const css = Array.from(document.styleSheets).flatMap(ss => { try { return Array.from(ss.cssRules); } catch (e) { return []; } }).filter(r => r.selectorText && r.selectorText.startsWith('svg ')).map(r => r.cssText.replace(/^svg /, '')).join('\n');
     const vars = `:root{--paper:#fbf8f0;--pencil:#2b2b2b;--pencil-2:#5a5a5a;--paper-line:#c9c2b0;--delta:#c8321e;--cloud:#5b6472;--sage:#3f7d5a;--sel:#1f4e79;--accent:#1f4e79;--hand:"Chalkboard SE","Marker Felt","Segoe Print","Bradley Hand","Comic Neue","Patrick Hand",cursive}`;
     const defs = svg.querySelector('defs').outerHTML;
     const layers = ['paper', 'lanes', 'ink', 'conn', 'el', 'hand', 'overlay'].map(k => L[k].outerHTML).join('');
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}"><style>${vars}\n${css}</style>${defs}${layers}</svg>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${Math.round(vb.x)} ${Math.round(vb.y)} ${vw} ${vh}" width="${vw}" height="${vh}"><style>${vars}\n${css}</style>${defs}${layers}</svg>`;
+  };
+
+  /** L'immagine dell'occhio: lo stesso identico disegno del foglio, ma di UN'ALTRA mappa (exportSVG
+   *  legge i livelli correnti, quindi da sola esporterebbe sempre il foglio aperto). Si disegna su un
+   *  svg distaccato scambiando per un attimo i riferimenti del modulo, e li si ripristina subito:
+   *  il foglio aperto non si accorge di niente. E' un'immagine ferma, non un canvas vivo: niente gesti.
+   *  Ritagliata sul contenuto (crop): l'anteprima mostra i passi, non il vuoto che li circonda. */
+  R.peekSVG = (map) => {
+    const keepSvg = svg, keepL = L;
+    try {
+      R.init(document.createElementNS(NS, 'svg'));
+      R.paper(map); R.strokes(map); R.elements(map); R.overlay(map, map.overlays !== false);
+      return R.exportSVG(map, { crop: true });
+    } finally { svg = keepSvg; L = keepL; }
   };
 })(window.VSM);

@@ -72,6 +72,13 @@
    *  verso la legenda, una nota di testo o una nuvola: agganciate per il programma, senza senso sul foglio. */
   I.CONN_TARGETS = { flow: ['box', 'inventory', 'inbox'], request: ['box', 'inventory', 'inbox'] };
   I.CONN_SOURCES = { flow: ['box', 'inventory', 'inbox'], request: ['person'] };
+  /** Bersagli che hanno senso da una data partenza. Da scorta e in-box la freccia va a un passo:
+   *  una scorta che nasce da una scorta (o un in-box da un in-box) sul foglio non dice niente.
+   *  Lo strumento Flusso tirato a mano resta libero (carta e matita): la scelta assistita guida. */
+  I.connTargetsFrom = (ctype, fromType) => {
+    const all = I.CONN_TARGETS[ctype] || [];
+    return ctype === 'flow' && (fromType === 'inventory' || fromType === 'inbox') ? all.filter(t => t === 'box') : all;
+  };
   const nearEl = (w, map, px = 28, skip = [], only = null) => {
     // la tolleranza segue lo zoom, ma con un tetto: a foglio intero 28 px valevano ~190 unita' di mondo
     // e il rilascio si agganciava a qualunque cosa passasse di li'
@@ -141,6 +148,9 @@
     const map = V.map(); const w = I.toWorld(e.clientX, e.clientY);
     const handleTarget = e.target.closest && e.target.closest('[data-handle],[data-endhandle],[data-chan-handle]');
     let hit = hitEl(e.target);
+    // Un nodo rimasto nel disegno di un'altra mappa non e' un bersaglio: senza questa riga
+    // V.byId tornava undefined e il primo tocco moriva con un errore, bloccando tutto il foglio.
+    if (hit && !V.byId(hit.id, map)) hit = null;
     // Il rettangolo invisibile sta in uno strato sopra i connettori: senza questo, una freccia che passa
     // sotto un omino (o sotto il suo nome) non si poteva piu' toccare. Se il tocco cade proprio sulla linea,
     // il connettore vince. Vale solo per il rettangolo di comodo, non per il disegno vero dell'elemento.
@@ -157,14 +167,20 @@
     if (frozen && !['select', 'pan', 'whatis'].includes(t)) { I.hint('Ideale validato \u{1F512}: apri il lucchetto in alto per modificarlo.', 2500); gesture = { type: 'noop' }; return; }
     if (e.pointerType === 'pen') seenOnce('pen', 'Penna: sulla carta vuota scrivi a matita; sugli elementi selezioni e sposti. Cambia in ⋯ → "Penna = matita".');
     else if (e.pointerType === 'touch') seenOnce('touch', 'Un dito: tocca un elemento per le azioni rapide, trascina per spostarlo, sul vuoto sposti il foglio. Due dita: zoom.');
+    // l'occhio prima del badge: i due si sfiorano e il colpo diretto deve vincere. Il pop-up si apre
+    // al RILASCIO (case 'peek' in up): mai interfaccia nuova sotto il dito a meta' gesto.
+    if (e.target.closest && e.target.closest('[data-peek]')) { const g2 = e.target.closest('[data-peek]'); gesture = { type: 'peek', boxId: g2.dataset.box, link: g2.dataset.peek }; return; }
     if (e.target.closest && e.target.closest('[data-link]')) { const link = e.target.closest('[data-link]').dataset.link; gesture = { type: 'link', link }; return; }
     if (I.pickConn && !V.byId(I.pickConn.from, map)) I.cancelPickConnect(); // la partenza non c'e' piu' (undo/elimina): il tocco prosegue normale
     if (I.pickConn) {
-      const pc = I.pickConn; I.cancelPickConnect();
+      const pc = I.pickConn;
       // conta solo il colpo diretto: lo snap "al piu' vicino" trasformava il tocco sul vuoto
       // (che qui promette di ANNULLARE) in un collegamento a sorpresa
-      const tgt = hit && !V.isConnector(V.byId(hit.id, map)) ? hit.id : null;
-      if (tgt && tgt !== pc.from) I.connectTo(pc.from, tgt, pc.ctype, { intent: pc.intent });
+      const tgtEl = hit && V.byId(hit.id, map);
+      const tgt = tgtEl && !V.isConnector(tgtEl) && tgtEl.id !== pc.from && (pc.okTypes || I.CONN_TARGETS[pc.ctype]).includes(tgtEl.type) ? hit.id : null;
+      // colpo a segno: niente ritorno al menu, sta per aprirsi il pop-up del collegamento
+      I.cancelPickConnect({ quiet: !!tgt });
+      if (tgt) I.connectTo(pc.from, tgt, pc.ctype, { intent: pc.intent });
       gesture = { type: 'noop' }; return;
     }
     if (I.pickLock) { const kids = I.pickLock; if (hit && !kids.includes(hit.id)) { I.cancelPickLock(); if (!I.lockMany(kids, hit.id)) I.hint('Non si può legare a questo elemento.', 2500); } else if (!hit) I.cancelPickLock(); gesture = { type: 'noop' }; return; }
@@ -306,6 +322,7 @@
       // (lo schermo intero si comanda solo dal pulsante: il foglio non deve cambiare da sé)
       case 'pan': if (!g.moved) { if (I.selection.length || (V.pop && V.pop.current)) { I.select([]); V.pop.close(); } } else saveView(); break;
       case 'link': V.ui.openMap(g.link); break;
+      case 'peek': if (V.ui.showPeek) V.ui.showPeek(g.boxId, e.clientX, e.clientY); break;
       case 'legend': { const el = V.byId(g.id, map); if (!el) break; const collapsed = !el.props.collapsed; V.commit([{ t: 'props', id: el.id, after: { collapsed } }, { t: 'update', id: el.id, after: { w: collapsed ? 74 : 170, h: collapsed ? 18 : 104 } }], 'legenda'); break; }
       // stessa regola del rilascio dopo il trascinamento: il richiedente e' uno solo, e chi arriva dopo
       // nasce senza la spunta (ma con l'etichetta vuota: chi e', lo scrive chi disegna)
@@ -355,7 +372,10 @@
         else if (g.hitPinned) I.hint('Bloccato sul foglio \u{1F512}: per spostarlo tocca «Sblocca» nelle azioni rapide.', 2500);
         break;
       }
-      case 'resize': { const el = V.byId(g.id, map); V.commit({ t: 'update', id: el.id, after: { w: el.w, h: el.h }, before: { w: g.w0, h: g.h0 } }, 'ridimensiona'); break; }
+      case 'resize': { const el = V.byId(g.id, map);
+        // la nuvola non si stringe sotto il suo testo: niente troncamenti, l'altezza minima è quella che serve
+        if ((el.type === 'storm' || el.type === 'fluffy') && !el.props.collapsed && el.props.text && R.cloudFit) el.h = Math.max(el.h, R.cloudFit(el.w, el.props.text));
+        V.commit({ t: 'update', id: el.id, after: { w: el.w, h: el.h }, before: { w: g.w0, h: g.h0 } }, 'ridimensiona'); break; }
       case 'lasso': {
         R.ghost('');
         if (!g.rect || (g.rect.w < 4 && g.rect.h < 4)) { I.select([]); V.pop.close(); break; }
@@ -505,24 +525,32 @@
     return c;
   };
 
-  /** "Collega" senza trascinare: si tocca il bersaglio. Non blocca nulla — si esce toccando il vuoto o con Esc. */
+  /** "Collega" senza trascinare: si tocca il bersaglio. Non blocca nulla — si esce toccando il vuoto o con Esc.
+   *  Con opts.keepMenu il menu di «Collega» resta aperto: la scelta sul foglio è armata dentro di lui. */
   I.startPickConnect = (fromId, ctype, opts = {}) => {
-    I.pickConn = { from: fromId, ctype, intent: opts.intent };
-    svg.classList.add('picking'); V.ui.hideQuick && V.ui.hideQuick(); V.pop && V.pop.close();
     const map = V.map();
-    const okTypes = I.CONN_TARGETS[ctype]; // stessa lista usata dalla validazione: gli anelli non mentono
+    // stessa lista usata dagli anelli e dalla validazione del tocco: gli anelli non mentono
+    const okTypes = I.connTargetsFrom(ctype, (V.byId(fromId, map) || {}).type);
+    I.pickConn = { from: fromId, ctype, intent: opts.intent, okTypes };
+    svg.classList.add('picking');
+    if (!opts.keepMenu) V.ui.hideQuick && V.ui.hideQuick();
+    V.pop && V.pop.close();
     const rings = map.elements.filter(el => !V.isConnector(el) && el.id !== fromId && okTypes.includes(el.type))
       .map(el => { const q = R.elPos(el, map), z = R.elSize(el); return `<rect class="sel-ring ok" x="${q.x - 5}" y="${q.y - 5}" width="${z.w + 10}" height="${z.h + 10}"/>`; }).join('');
     R.ghost(rings);
-    I.hint(ctype === 'flow' ? 'Tocca il passo di arrivo (tocca il foglio vuoto per annullare).'
+    I.hint(opts.keepMenu ? 'Tocca l’elemento sul foglio, oppure scegli una voce del menu (tocco sul vuoto o Esc per annullare).'
+      : ctype === 'flow' ? 'Tocca il passo di arrivo (tocca il foglio vuoto per annullare).'
       : opts.intent === 'si reca' ? 'Tocca il passo a cui si reca la persona (tocca il foglio vuoto per annullare).'
       : 'Tocca il passo a cui arriva la richiesta (tocca il foglio vuoto per annullare).', 0);
   };
-  I.cancelPickConnect = () => {
+  I.cancelPickConnect = (opts = {}) => {
     I.pickConn = null; svg.classList.remove('picking'); R.ghost(''); I.hint('');
     // gli anelli dei bersagli erano disegnati nello stesso strato di anello e maniglie della selezione:
     // svuotarlo lasciava l'elemento selezionato ma senza contorno, e il tocco dopo apriva il pop-up
     R.selection(I.selection, V.map());
+    // quiet: chi ha annullato ridisegna da sé (colpo a segno, «Indietro», voce di menu);
+    // altrimenti il menu di «Collega» torna alle azioni dell'elemento
+    if (!opts.quiet && V.ui && V.ui.onPickCancel) V.ui.onPickCancel();
   };
 
   /** Trascinato nel vuoto: l'elemento nuovo nasce li' e il collegamento lo raggiunge, in un solo passo di undo. */
@@ -550,8 +578,11 @@
   /** Porta gli elementi selezionati in una nuova mappa di dettaglio e li sostituisce, nel foglio madre,
    *  con un solo passo collegato (props.link): un settore affollato diventa un livello a parte.
    *  I collegamenti interamente dentro migrano; quelli a cavallo si riattaccano al passo riassuntivo.
-   *  L'undo (una voce sola) ripristina il foglio madre; la mappa di dettaglio resta fra le mappe. */
-  I.groupToDetail = (ids) => {
+   *  L'undo (una voce sola) ripristina il foglio madre; la mappa di dettaglio resta fra le mappe.
+   *  Il nome arriva dalla scheda di conferma (lo scrive chi disegna, col titolo del passo proposto):
+   *  lo prendono sia il sotto-foglio sia il passo riassuntivo, perché il passo È il sotto-foglio
+   *  visto da sopra — chiamarli diversamente farebbe sembrare la cartina un elenco di estranei. */
+  I.groupToDetail = (ids, nomeFoglio) => {
     const map = V.map();
     const inside = new Set(ids.filter(id => { const el = V.byId(id, map); return el && !V.isConnector(el) && el.type !== 'lane'; }));
     if (inside.size < 2) { I.hint('Seleziona almeno due elementi (con lo strumento Area) per farne un sotto-foglio.', 3000); return; }
@@ -575,7 +606,10 @@
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     movingEls.forEach(el => { const q = R.elPos(el, map); x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x + el.w); y1 = Math.max(y1, q.y + el.h); });
     // la mappa di dettaglio riceve copie normalizzate verso l'angolo in alto a sinistra
-    const d = V.createDetail(map, 'Sotto-foglio');
+    const nome = String(nomeFoglio || '').trim() || 'Sotto-foglio';
+    const d = V.createDetail(map, nome);
+    // il passo riassuntivo nasce qui sotto: il sotto-foglio deve sapere di appartenere a LUI, o
+    // resterebbe appeso alla mappa senza indirizzo (2.1 diventerebbe solo «sotto la 2»)
     const sx = 120 - x0, sy = 140 - y0;
     const shift = (o) => { const n = clone(o); if (!V.isConnector(n)) { n.x += sx; n.y += sy; } else { if (!n.from.el) { n.from.x += sx; n.from.y += sy; } if (!n.to.el) { n.to.x += sx; n.to.y += sy; } if (Array.isArray(n.props.via)) n.props.via = n.props.via.map(v2 => ({ x: v2.x + sx, y: v2.y + sy })); } return n; };
     d.elements = movingEls.map(shift).concat(moveConns.map(shift));
@@ -583,7 +617,10 @@
     // nel foglio madre: un passo con il link, e le operazioni di sostituzione in UNA voce di undo
     const T = V.TYPES.box;
     const nb = V.newElement('box', Math.round((x0 + x1) / 2 - T.w / 2), Math.round((y0 + y1) / 2 - T.h / 2));
-    nb.props.title = 'Sotto-foglio'; nb.props.link = d.id;
+    nb.props.title = nome; nb.props.link = d.id;
+    // niente V.save() qui: salva già il commit subito sotto (e se il commit venisse rifiutato,
+    // repairDoc azzera da sé un parentStepId che punta a un box mai nato)
+    d.parentStepId = nb.id;
     const ops = [{ t: 'add', el: nb }];
     movingEls.forEach(el => ops.push({ t: 'remove', el: clone(el) }));
     moveConns.forEach(c => ops.push({ t: 'remove', el: clone(c) }));
@@ -591,7 +628,7 @@
     V.commit(ops, 'trasforma in sotto-foglio');
     I.select([nb.id], { keepPop: true }); V.pop.open(nb.id);
     if (V.ui && V.ui.toast) V.ui.toast('Settore spostato nel sotto-foglio: apri con \u2197 (annulla per tornare indietro).');
-    if (V.ui && V.ui.renderLevels) V.ui.renderLevels();
+    if (V.ui && V.ui.renderCartina) V.ui.renderCartina();
   };
 
   // ---------- eliminazione / duplicazione ----------
@@ -614,8 +651,9 @@
   I.duplicateMany = (ids) => {
     const map = V.map(); const uniq = Array.from(new Set(ids)).map(id => V.byId(id, map)).filter(el => el && !V.isConnector(el));
     if (!uniq.length) return;
-    // la copia nasce col lucchetto aperto: si duplica per metterla altrove, inchiodata non si potrebbe
-    const idMap = new Map(); const clones = uniq.map(el => { const c = clone(el); c.id = uid(); c.props.pinned = false; idMap.set(el.id, c.id); return c; });
+    // la copia nasce col lucchetto aperto: si duplica per metterla altrove, inchiodata non si potrebbe.
+    // Né col sigillo della ✓: «mappato e confermato» vale per quel passo, non per la sua fotocopia
+    const idMap = new Map(); const clones = uniq.map(el => { const c = clone(el); c.id = uid(); c.props.pinned = false; if (c.props.validated) c.props.validated = false; idMap.set(el.id, c.id); return c; });
     clones.forEach((c, i) => {
       const orig = uniq[i];
       const par = c.props.lockTo || (c.type === 'delta' && c.props.attachedTo);
