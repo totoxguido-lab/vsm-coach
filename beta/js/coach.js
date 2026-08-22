@@ -37,7 +37,12 @@
       preparazione: map.prep, validazione: map.validation, raccolta_dati: map.data, analisi: map.analysis, realismo_futuro: map.futureCheck, chiusura: map.closure,
       piano: map.plan.map((r, i) => ({ n: i + 1, what: r.what, who: r.who, when: r.when, outcome: r.outcome, a3: r.a3 })),
       mappa_accoppiata: other(map.kind === 'current' ? V.futureOf(map) : V.currentOf(map)),
-      mappe_collegate: Object.values(V.doc.maps).filter(m => m.parentId === map.id).map(m => ({ id: m.id, title: m.title })),
+      progetto: (V.doc.projects[map.projectId] || {}).name || null,
+      indirizzo: V.mapAddress(map) || null,
+      // che cosa sta SOTTO questo foglio e che cosa richiama altrove: due cose diverse, e il coach
+      // deve saperle distinte o proporrà collegamenti che l'app rifiuta
+      sotto_fogli: Object.values(V.doc.maps).filter(m => m.parentId === map.id).map(m => ({ id: m.id, title: m.title, indirizzo: V.mapAddress(m) })),
+      riferimenti: map.elements.filter(e => e.type === 'box' && V.linkKind(e, map) === 'riferimento').map(e => ({ da: e.id, a: e.props.link, indirizzo: V.mapAddress(V.doc.maps[e.props.link]) })),
       controlli_offline: V.lint(map).map(x => `[${x.level}] fase ${x.phase}: ${x.msg}`),
       strumenti_disponibili: ['select', 'pan', 'ink', 'eraser', 'box', 'delta', 'flow', 'request', 'person', 'storm', 'fluffy', 'burst', 'inventory', 'inbox', 'distance', 'lane', 'text', 'legend']
     };

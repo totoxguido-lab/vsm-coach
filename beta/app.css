@@ -107,6 +107,7 @@ svg .el-hit{fill:transparent;stroke:none}
 svg .alert{fill:#fff4e5;stroke:var(--cloud);stroke-width:1.6;stroke-linejoin:round}
 svg .alert-mark{stroke:var(--cloud);stroke-width:2;stroke-linecap:round;fill:none}
 svg .alert-dot{fill:var(--cloud)}
+svg .alert-i{fill:var(--cloud)}
 svg .cloud-txt{fill:var(--cloud)}
 svg .fluffy{fill:#f3f8f4;stroke:var(--sage);stroke-width:1.2}
 svg .fluffy-txt{fill:var(--sage)}
@@ -234,6 +235,9 @@ header .btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
 /* in vista: titolo, attività numerate, tempi a riquadri */
 #pop .pop-ptitle{border:1px solid var(--line);background:var(--panel-2);color:var(--ink);border-radius:8px;padding:8px 10px;width:100%;min-height:40px;font-size:15px;font-weight:600;margin-bottom:6px}
 #pop .pop-sec{font-size:10.5px;color:var(--muted);font-weight:700;letter-spacing:.4px;text-transform:uppercase;margin:8px 0 4px}
+/* la sezione «Tempi» porta in coda il tasto ⏱ del cronometro: la scritta a sinistra, il tasto a destra */
+#pop .pop-sec{display:flex;align-items:center;gap:8px}
+#pop .pop-sec .btn{margin-left:auto;text-transform:none;letter-spacing:0;font-weight:600}
 /* la lista cresce con le attività, ma non oltre ~5 righe: tempi e azioni restano in vista senza
    scorrere tutto il pannello (il Prelievo di prova ne ha 7: dentro la lista si scorre) */
 #pop .acts{border:1px solid var(--line);border-radius:10px;background:var(--panel-2);padding:2px 6px;margin-bottom:6px;max-height:208px;overflow-y:auto}
@@ -345,6 +349,9 @@ table.plan input:focus{border-color:var(--line);background:var(--panel-2)}
 .picker.tints .pick{width:34px;min-height:34px;padding:3px}
 .picker.tints .sw{width:22px;height:22px;border-radius:50%;border:1.5px solid var(--line);display:block}
 .picker.tints .sw.none{background:linear-gradient(to top right,transparent 44%,var(--muted) 46%,var(--muted) 54%,transparent 56%)}
+/* le forme del problema: la sagoma vera, non il suo nome — si sceglie guardando */
+.picker.forme .pick{width:52px;min-height:44px}
+.picker.forme .pick svg{width:38px;height:30px;border-radius:6px;color:var(--cloud)}
 .pick-group{font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:6px 0 3px}
 svg .icon-bg{fill:#fffdf7;stroke:var(--pencil-2);stroke-width:1}
 /* legenda completa (cassetto) */
@@ -408,6 +415,32 @@ dialog .d-foot{padding:10px 16px;border-top:1px solid var(--line);display:flex;g
 #menu .tag-alfa{font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn);border-radius:999px;padding:2px 7px;font-weight:700}
 #maplist{max-height:50vh;overflow:auto}
 .maprow{display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;border:1px solid var(--line);margin-bottom:6px}
+
+/* ---------- Misura: il cronometro del giro ----------
+   Si usa camminando, con una mano sola: il numero grande si legge di sfuggita e i due tasti si
+   azzeccano senza guardare (min-height 54, la taglia del pollice, non quella del mouse). */
+#dlg-misura .d-body{padding-top:10px}
+.mis-crono{text-align:center;border:1px solid var(--line);border-radius:12px;padding:12px 10px;background:var(--panel-2);margin-bottom:10px}
+.mis-time{font-size:46px;line-height:1.05;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:1px}
+.mis-what{font-size:13px;color:var(--muted);margin:4px 0 10px}
+.mis-acts{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:6px}
+.btn.big{min-height:54px;padding:0 20px;font-size:15px;border-radius:12px}
+.mis-list{margin:8px 0}
+.mis-row{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:8px;border:1px solid var(--line);margin-bottom:5px}
+.mis-row b{font-weight:600;font-size:13px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mis-row .k{font-size:12px;color:var(--muted);white-space:nowrap}
+.mis-row .btn{min-width:44px;min-height:44px;font-size:15px}
+.mis-row.now{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent)}
+.mis-row.fuori{border-style:dashed}
+.mis-mis{border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:6px}
+.mis-mis .mm-head{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
+.mis-mis .mm-head b{font-size:13px}
+.mis-mis .mm-head .k{font-size:12px;color:var(--muted)}
+.mm-chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.mm-chip{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:999px;padding:4px 9px;font-size:12px;min-height:30px;cursor:pointer}
+.mm-chip:hover{border-color:var(--bad);color:var(--bad)}
+.mm-chip.breve{border-color:var(--warn);color:var(--warn)}
+.mm-chip span{opacity:.5;margin-left:2px}
 .maprow b{flex:1;font-size:13px}
 .maprow .k{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
 #toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--desk);padding:8px 14px;border-radius:999px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:50}
@@ -499,6 +532,11 @@ dialog .d-foot{padding:10px 16px;border-top:1px solid var(--line);display:flex;g
 /* compare dove il dito ha lasciato il collegamento nel vuoto; un tocco fuori annulla tutto */
 .placemenu{position:absolute;z-index:60;width:0;height:0}
 .placemenu .pm-dot{position:absolute;left:-7px;top:-7px;width:14px;height:14px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px rgba(31,78,121,.18)}
+/* le faccine del menu del vuoto: un pannello a sé, centrato sul punto toccato — dieci facce in un
+   arco non ci starebbero, e qui non si sceglie un elemento ma come si vive quel punto */
+.placemenu.facce .pm-card{position:absolute;transform:translate(-50%,-50%);width:min(300px,86vw);background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:10px}
+.placemenu.facce .pm-card-h{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--ink-2);margin-bottom:8px}
+.placemenu.facce .pm-card-h .btn{margin-left:auto;min-width:32px;font-size:16px;line-height:1}
 /* .pm-btn è condiviso: lo usano il menu del vuoto (#placemenu) e le azioni rapide (#quick) */
 .pm-btn{position:absolute;width:54px;height:54px;margin:-27px 0 0 -27px;border-radius:50%;border:1px solid var(--line);
   background:var(--panel);color:var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;

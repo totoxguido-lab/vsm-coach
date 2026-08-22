@@ -37,7 +37,10 @@
   // il vuoto, quindi erano due bottoni che non facevano nulla di nuovo. Matita e Gomma invece restano:
   // col dito non c'e' modo di distinguere "disegno" da "trascino" senza un interruttore (con la penna parte da se').
   const MAIN_TOOLS = [['box', 'Process box (B)'], ['delta', 'Delta / attesa (D)'], ['flow', 'Freccia di flusso (F)'], ['request', 'Via di richiesta (R)'], ['person', 'Persona / richiedente (O)'], ['storm', 'Nuvola temporalesca (N)'], null, ['area', 'Seleziona un\u2019area (A)'], ['ink', 'Matita (P)'], ['eraser', 'Gomma (E)'], null, ['whatis', 'Che cos’è? Tocca un elemento e te lo spiego'], ['more', 'Altri elementi del libro']];
-  const MORE_TOOLS = [['fluffy', 'Nuvola soffice'], ['burst', 'Kaizen burst'], ['face', 'Faccia (esperienza)'], ['icon', 'Icona (canale, mezzo, documento…)'], ['inventory', 'Scorta'], ['inbox', 'In-box / attesa'], ['distance', 'Distanza'], ['lane', 'Corsia (reparto)'], ['text', 'Testo']];
+  // La mano non è un elemento del foglio: è un modo di muoverlo, e sta in «Altro» perché col mouse
+  // (dove non c'è il dito che fa pan da sé) senza di lei si sposta il foglio solo con le barre e la
+  // rotella. Col dito continua a non servire: sul vuoto il dito fa pan comunque.
+  const MORE_TOOLS = [['pan', 'Mano: sposta il foglio'], ['fluffy', 'Nuvola soffice'], ['burst', 'Kaizen burst'], ['face', 'Faccia (esperienza)'], ['icon', 'Icona (canale, mezzo, documento…)'], ['inventory', 'Scorta'], ['inbox', 'In-box / attesa'], ['distance', 'Distanza'], ['lane', 'Corsia (reparto)'], ['text', 'Testo']];
   const INK_COLORS = [['#2b2b2b', 'grafite'], ['#c8321e', 'rosso'], ['#1f4e79', 'blu'], ['#3f7d5a', 'verde']];
 
   UI.buildPalette = () => {
@@ -110,6 +113,63 @@
       if (prima) UI.openMap(prima.id); else UI.toast('Quel progetto non ha ancora nessuna mappa.');
     });
   };
+  /** «Questo foglio diventa un passo di…»: si sale, invece di scendere soltanto. Le candidate sono i
+   *  fogli dello stesso progetto che non discendono da questo (appenderlo a un suo discendente farebbe
+   *  un anello) e che hanno almeno un passo a cui agganciarlo. Se non ce n'è nessuna lo dice, invece
+   *  di mostrare un elenco vuoto. */
+  UI.askAttach = () => {
+    const map = V.map(); if (!map) return;
+    const discende = (m) => { const visti = new Set(); for (let p = m; p && !visti.has(p.id); p = p.parentId ? V.doc.maps[p.parentId] : null) { if (p.id === map.id) return true; visti.add(p.id); } return false; };
+    // due «non si può» diversi, e vanno detti diversi: «non c'è nessun foglio con dei passi» e «i
+    // fogli con dei passi stanno tutti SOTTO questo». Dire il primo quando vale il secondo è una
+    // bugia davanti a un foglio pieno di passi (prova utente su iPad, 2026-08-21).
+    const conPassi = V.mapsOfProject(map.projectId).filter(m => m.id !== map.id && m.kind !== 'future' && m.elements.some(e => e.type === 'box'));
+    const cand = conPassi.filter(m => !discende(m));
+    const pop = $('#pop'); V.pop.current = '__attach__'; pop.classList.remove('step');
+    const opts = cand.map(m => `<optgroup label="${esc((V.mapAddress(m) ? V.mapAddress(m) + ' ' : '') + (m.title || 'senza titolo'))}">${m.elements.filter(e => e.type === 'box').map(e => `<option value="${m.id}:${e.id}">${esc((V.addressOf(e, m) || '?') + ' ' + (e.props.title || 'passo senza nome'))}</option>`).join('')}</optgroup>`).join('');
+    const gia = map.parentId ? V.doc.maps[map.parentId] : null;
+    pop.innerHTML = `<div class="pop-head"><b>Questo foglio diventa un passo di…</b><button class="btn small ghost" id="pop-x" aria-label="Chiudi">✕</button></div>
+      <div class="why">Il foglio che stai guardando può essere un passo di un processo più grande. Scegli sotto quale passo metterlo: da lì in poi avrà il suo indirizzo (per esempio 2.1) e la cartina saprà dove sei.</div>
+      ${gia ? `<div class="hint">Adesso sta sotto <b>${esc(gia.title || 'senza titolo')}</b>${V.mapAddress(map) ? ' come ' + esc(V.mapAddress(map)) : ''}: scegliendo un altro passo si sposta lì.</div>` : ''}
+      ${cand.length ? `<div class="field"><label for="att-sel">Passo che lo conterrà</label><select id="att-sel">${opts}</select></div><div class="actions"><button class="btn small primary" id="att-ok">Appendi qui</button></div>`
+        : conPassi.length
+          ? `<p class="hint">In questo progetto i fogli con dei passi (${conPassi.length}) stanno <b>tutti sotto questo</b>: appenderlo a uno di loro chiuderebbe un anello — un foglio non può stare sotto sé stesso. Per salire serve un foglio <b>più grande</b> di questo: ⋯ → «Nuova mappa», disegna il passo che rappresenta questo lavoro, e torna qui.</p>`
+          : '<p class="hint">In questo progetto non c\'è ancora un foglio con dei passi a cui appenderlo. Creane uno più grande (⋯ → «Nuova mappa»), disegna il passo che rappresenta questo lavoro, e torna qui.</p>'}`;
+    pop.classList.remove('hidden');
+    const st = $('#stage').getBoundingClientRect(); pop.style.left = Math.max(10, st.width / 2 - 170) + 'px'; pop.style.top = '20px';
+    $('#pop-x').onclick = V.pop.close;
+    const ok = $('#att-ok'); if (ok) ok.onclick = () => {
+      const [mid, sid] = $('#att-sel').value.split(':');
+      const r = V.attachUnder(map, V.doc.maps[mid], sid);
+      if (!r.ok) { UI.toast(r.reason === 'anello' ? 'Non si può: quel foglio sta già sotto questo.' : r.reason === 'altro progetto' ? 'Quel foglio è di un altro progetto.' : 'Non si può appendere lì.'); return; }
+      V.pop.close(); UI.renderHeader(); UI.renderCartina();
+      UI.toast('Appeso: ora questo foglio è il ' + (V.mapAddress(map) || 'sotto-foglio') + '.');
+    };
+  };
+  /** I progetti: crearne, rinominarli, dichiarare quali si toccano. Il collegamento è ciò che permette
+   *  a un passo di puntare a una mappa dell'altro progetto: senza, gli elenchi restano separati — ed è
+   *  la ragione per cui l'esempio del libro non si infila più in ogni menu. */
+  UI.askProjects = () => {
+    const map = V.map(); const mio = map && V.doc.projects[map.projectId];
+    const pop = $('#pop'); V.pop.current = '__projects__'; pop.classList.remove('step');
+    const altri = Object.values(V.doc.projects).filter(p => !mio || p.id !== mio.id);
+    pop.innerHTML = `<div class="pop-head"><b>Progetti</b><button class="btn small ghost" id="pop-x" aria-label="Chiudi">✕</button></div>
+      <div class="why">Ogni gruppo di mappe sta dentro un progetto, e gli elenchi mostrano solo il progetto in cui sei. Due progetti si parlano — cioè un passo può puntare a una mappa dell'altro — solo se li colleghi qui.</div>
+      ${mio ? `<div class="field"><label for="pj-name">Progetto di questo foglio</label><input id="pj-name" value="${esc(mio.name)}" autocomplete="off"></div>` : ''}
+      ${altri.length ? `<div class="field"><label>Collegato a</label>${altri.map(p => { const n = V.mapsOfProject(p.id).length; return `<label class="check"><input type="checkbox" data-pjlink="${p.id}" ${mio && (mio.links || []).includes(p.id) ? 'checked' : ''}> <span>${esc(p.name)} <small>(${n} ${n === 1 ? 'mappa' : 'mappe'})</small></span></label>`; }).join('')}</div>` : '<p class="hint">Non c\'è ancora nessun altro progetto.</p>'}
+      <div class="actions"><button class="btn small" id="pj-new">+ Nuovo progetto</button></div>`;
+    pop.classList.remove('hidden');
+    const st = $('#stage').getBoundingClientRect(); pop.style.left = Math.max(10, st.width / 2 - 170) + 'px'; pop.style.top = '20px';
+    $('#pop-x').onclick = V.pop.close;
+    const nm = $('#pj-name'); if (nm) nm.addEventListener('change', () => { V.renameProject(mio.id, nm.value); nm.value = V.doc.projects[mio.id].name; UI.renderCartina(); UI.renderMaps(); UI.renderHeader(); });
+    $$('[data-pjlink]', pop).forEach(c => c.onchange = () => { V.linkProjects(mio.id, c.dataset.pjlink, c.checked); });
+    $('#pj-new').onclick = () => {
+      // un progetto nuovo nasce con un foglio dentro: un progetto vuoto non si potrebbe nemmeno aprire
+      const p = V.addProject('Progetto ' + (Object.keys(V.doc.projects).length + 1));
+      const m = V.addMap(V.newMap({ title: '', projectId: p.id }));
+      V.pop.close(); UI.openMap(m.id); UI.toast('Progetto «' + p.name + '» creato: sei nel suo primo foglio.');
+    };
+  };
   UI.bindCartina = () => {
     const btn = $('#levels-btn'); if (!btn) return;
     btn.onclick = () => { const box = $('#cartina'); UI.renderCartina(); box.classList.toggle('hidden'); };
@@ -138,10 +198,44 @@
     }).join('');
     stage.appendChild(m);
     $$('.pm-btn', m).forEach(b => b.onclick = (ev) => { ev.stopPropagation(); const k = b.dataset.kind; UI.closePlaceMenu(); I.placeAndConnect(k, w, fromId, ctype); });
-    // un tocco fuori dal menu annulla: niente elemento, niente freccia
-    // Chiudere il menu non deve mangiarsi il tocco: se si tocca un comando (✓ Fine, Annulla, il cassetto)
-    // quel tocco deve arrivare a destinazione. Si blocca solo quando il dito finisce sul foglio, dove
-    // altrimenti partirebbe subito un altro gesto.
+    chiudiToccandoFuori(); // un tocco fuori annulla: niente elemento, niente freccia
+    I.hint('Scegli che cosa mettere qui: nasce gi\u00e0 collegato. Tocca fuori per annullare.', 4000);
+  };
+
+  /* ---------- Il menu del vuoto: che cosa metto qui (punto 5 del resoconto di Gt) ----------
+     Si apre toccando la carta vuota, ma solo al RILASCIO, col dito fermo e senza niente da
+     deselezionare: il primo tocco sul vuoto continua a voler dire «sgombera», e far comparire dei
+     bottoni sotto un dito che sta ancora trascinando è ciò che trasformava il pan in zoom.
+     Le voci stanno in gruppi: in vista i quattro elementi del libro che si usano sempre, dietro
+     «Altro» quelli di contorno, e le faccine in un pannello a sé — sono dieci, in un arco non ci
+     stanno e sceglierle è un'altra cosa dal mettere un elemento sul foglio. */
+  const RAGGIO_MIN = 74, MEZZO_BTN = 29;
+  /** l'arco (o il cerchio) dei bottoni rotondi attorno al punto toccato */
+  const apriRadiale = (clientX, clientY, voci, onPick, hint) => {
+    UI.closePlaceMenu();
+    const stage = $('#stage'); const r = stage.getBoundingClientRect();
+    const n = voci.length;
+    const step = Math.min(0.84, (Math.PI * 2) / Math.max(n, 3));
+    const R0 = Math.max(RAGGIO_MIN, Math.ceil(MEZZO_BTN / Math.sin(step / 2)));
+    const bordo = R0 + 32;
+    const m = document.createElement('div'); m.id = 'placemenu'; m.className = 'placemenu';
+    m.style.left = Math.min(Math.max(clientX - r.left, bordo), Math.max(bordo, r.width - bordo)) + 'px';
+    m.style.top = Math.min(Math.max(clientY - r.top, bordo), Math.max(bordo, r.height - bordo)) + 'px';
+    m.innerHTML = '<span class="pm-dot"></span>' + voci.map((v, i) => {
+      const a = -Math.PI / 2 + (i - (n - 1) / 2) * step;
+      const x = Math.round(Math.cos(a) * R0), y = Math.round(Math.sin(a) * R0);
+      return `<button class="pm-btn" data-pm="${esc(v.id)}" style="left:${x}px;top:${y}px" title="${esc(v.title || v.label)}" aria-label="${esc(v.title || v.label)}">${v.icon || ''}<span>${esc(v.label)}</span></button>`;
+    }).join('');
+    stage.appendChild(m);
+    $$('.pm-btn', m).forEach(b => b.onclick = (ev) => { ev.stopPropagation(); onPick(b.dataset.pm); });
+    chiudiToccandoFuori();
+    if (hint) I.hint(hint, 4000);
+    return m;
+  };
+  /** un tocco fuori chiude. Chiudere il menu non deve mangiarsi il tocco: se si tocca un comando
+   *  (✓ Fine, Annulla, il cassetto) quel tocco deve arrivare a destinazione. Si blocca solo quando il
+   *  dito finisce sul foglio, dove altrimenti partirebbe subito un altro gesto. */
+  const chiudiToccandoFuori = () => {
     UI._pmAway = (ev) => {
       if (ev.target.closest && ev.target.closest('#placemenu')) return;
       // il secondo dito di un pinch non chiude ne' blocca nulla: bloccarlo spezzava il conteggio
@@ -151,7 +245,57 @@
       if (ev.target.closest && ev.target.closest('#canvas')) { ev.stopPropagation(); ev.preventDefault(); }
     };
     setTimeout(() => document.addEventListener('pointerdown', UI._pmAway, true), 0);
-    I.hint('Scegli che cosa mettere qui: nasce gi\u00e0 collegato. Tocca fuori per annullare.', 4000);
+  };
+  // i quattro del libro in vista, il resto dietro «Altro»: un arco di quindici bottoni non si legge
+  const INS_PRIMI = [
+    { id: 'k:box', label: 'Passo', icon: IC.box, title: 'Process box: un passo del processo' },
+    { id: 'k:delta', label: 'Attesa', icon: IC.delta, title: 'Delta: il tempo in cui non succede niente' },
+    { id: 'k:storm', label: 'Problema', icon: IC.storm, title: 'Un problema del processo (nuvola temporalesca)' },
+    { id: 'k:person', label: 'Persona', icon: IC.person, title: 'Chi chiede, chi lavora, chi si reca' },
+    { id: 'g:altro', label: 'Altro…', icon: IC.more, title: 'Scorta, in-box, distanza, corsia, nota, icona, idee' },
+    { id: 'g:facce', label: 'Faccine', icon: IC.face, title: 'Come si vive questo punto: le faccine, in un pannello a sé' }
+  ];
+  const INS_ALTRO = [
+    { id: 'k:fluffy', label: 'Idea', icon: IC.fluffy, title: 'Nuvoletta: un\'idea, o qualcosa che funziona' },
+    { id: 'k:burst', label: 'Kaizen', icon: IC.burst, title: 'Kaizen burst: un miglioramento con un padrone' },
+    { id: 'k:inventory', label: 'Scorta', icon: IC.inventory, title: 'Materiale o persone che si accumulano' },
+    { id: 'k:inbox', label: 'In-box', icon: IC.inbox, title: 'In-box, coda, orologio' },
+    { id: 'k:distance', label: 'Distanza', icon: IC.distance, title: 'Quanti metri si percorrono' },
+    { id: 'k:lane', label: 'Corsia', icon: IC.lane, title: 'La fascia di un reparto' },
+    { id: 'k:text', label: 'Nota', icon: IC.text, title: 'Una nota scritta sul foglio' },
+    { id: 'k:icon', label: 'Icona', icon: IC.icon, title: 'Un simbolo dalla libreria (telefono, referto, letto…)' },
+    { id: 'g:primi', label: 'Indietro', icon: IC.select, title: 'Torna alle voci principali' }
+  ];
+  UI.openInsertMenu = (clientX, clientY, w) => {
+    const map = V.map(); if (!map) return;
+    if (map.validated) return; // Ideale col lucchetto: non si aggiunge niente, e il menu direbbe il contrario
+    const mostra = (voci, hint) => apriRadiale(clientX, clientY, voci, (id) => {
+      if (id === 'g:altro') return mostra(INS_ALTRO);
+      if (id === 'g:primi') return mostra(INS_PRIMI);
+      if (id === 'g:facce') { UI.closePlaceMenu(); return UI.openFaceMenu(clientX, clientY, w); }
+      UI.closePlaceMenu();
+      I.placeKind(id.slice(2), w);
+    }, hint);
+    mostra(INS_PRIMI, 'Che cosa metti qui? Tocca fuori per lasciare il foglio com’è.');
+  };
+  /** Le faccine in un pannello a sé: sono dieci e in un arco non ci starebbero, ma soprattutto qui non
+   *  si sceglie un elemento — si sceglie *come si vive* quel punto del processo, ed è la faccia stessa
+   *  a essere la voce del menu. */
+  UI.openFaceMenu = (clientX, clientY, w) => {
+    UI.closePlaceMenu();
+    const stage = $('#stage'); const r = stage.getBoundingClientRect();
+    const m = document.createElement('div'); m.id = 'placemenu'; m.className = 'placemenu facce';
+    const card = document.createElement('div'); card.className = 'pm-card';
+    card.innerHTML = `<div class="pm-card-h">Come si vive questo punto?<button class="btn small ghost" data-pm="g:primi" title="Torna alle voci principali" aria-label="Indietro">‹</button></div>`
+      + `<div class="picker faces">${V.MOODS.map(mo => `<button type="button" class="pick" data-mood="${esc(mo)}" title="${esc(V.MOOD_MEANING[mo] || mo)}"><svg viewBox="0 0 30 30" aria-hidden="true"><g class="pencil">${R.face(mo, 15, 15, 12)}</g></svg><span>${esc(mo)}</span></button>`).join('')}</div>`;
+    m.appendChild(card);
+    stage.appendChild(m);
+    const cw = card.offsetWidth, ch = card.offsetHeight;
+    m.style.left = Math.round(Math.min(Math.max(clientX - r.left, cw / 2 + 8), Math.max(cw / 2 + 8, r.width - cw / 2 - 8))) + 'px';
+    m.style.top = Math.round(Math.min(Math.max(clientY - r.top, ch / 2 + 8), Math.max(ch / 2 + 8, r.height - ch / 2 - 8))) + 'px';
+    $$('[data-mood]', card).forEach(b => b.onclick = (ev) => { ev.stopPropagation(); UI.closePlaceMenu(); I.placeKind('face', w, { props: { mood: b.dataset.mood } }); });
+    $('[data-pm]', card).onclick = (ev) => { ev.stopPropagation(); UI.closePlaceMenu(); UI.openInsertMenu(clientX, clientY, w); };
+    chiudiToccandoFuori();
   };
 
   UI.inkOptions = () => { const p = $('#pop'); p.innerHTML = `<div class="pop-head"><b>Matita</b><button class="btn small ghost" id="pop-x" aria-label="Chiudi">✕</button></div><div class="actions">${INK_COLORS.map(c => `<button class="btn small" data-c="${c[0]}" style="border-color:${c[0]};${I.ink.color === c[0] ? 'background:' + c[0] + ';color:#fff' : ''}">${c[1]}</button>`).join('')}</div><div class="actions">${[1.2, 1.8, 3].map(w => `<button class="btn small" data-w="${w}" ${I.ink.width === w ? 'style="border-color:var(--accent);color:var(--accent)"' : ''}>${w === 1.2 ? 'sottile' : w === 1.8 ? 'media' : 'spessa'}</button>`).join('')}</div>`; p.classList.remove('hidden'); const st = $('#stage').getBoundingClientRect(); p.style.left = Math.max(10, st.width / 2 - 100) + 'px'; p.style.top = (st.height - 200) + 'px'; $$('[data-c]', p).forEach(b => b.onclick = () => { I.ink.color = b.dataset.c; UI.inkOptions(); }); $$('[data-w]', p).forEach(b => b.onclick = () => { I.ink.width = +b.dataset.w; UI.inkOptions(); }); $('#pop-x').onclick = () => V.pop.close(); };
@@ -202,6 +346,13 @@
     const on = (t.id == null && cur == null) || t.id === cur;
     const dot = t.id == null ? '<span class="sw none" aria-hidden="true"></span>' : `<span class="sw" style="background:hsl(${t.id} 38% 95.5%);border-color:hsl(${t.id} 26% 64%)" aria-hidden="true"></span>`;
     return `<button type="button" class="pick ${on ? 'on' : ''}" data-pick="tint" data-v="${t.id == null ? '' : t.id}" role="radio" aria-checked="${on}" title="${esc(t.name)}" aria-label="Colore: ${esc(t.name)}">${dot}</button>`;
+  }).join('')}</div>`;
+  /* La forma del problema (richiesta di Gt): quattro pastiglie che mostrano la sagoma vera, non il suo
+     nome — si sceglie guardando. La nuvola resta quella del libro ed è il valore di partenza. */
+  const FORME_NOMI = { nuvola: 'nuvola (come nel libro)', cerchio: 'cerchio', quadrato: 'quadrato', triangolo: 'triangolo' };
+  const shapePicker = (cur) => `<div class="picker forme" role="radiogroup" aria-label="Forma del problema">${V.STORM_SHAPES.map(f => {
+    const on = f === cur;
+    return `<button type="button" class="pick ${on ? 'on' : ''}" data-pick="shape" data-v="${f}" role="radio" aria-checked="${on}" title="${esc(FORME_NOMI[f])}" aria-label="Forma: ${esc(FORME_NOMI[f])}"><svg viewBox="0 0 30 24" aria-hidden="true"><path d="${R.shapePath(f, 30, 24)}" fill="#fff" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></button>`;
   }).join('')}</div>`;
   const dataRow = (p) => `<div class="row3">${field('Hi', inp('hi', p.hi, 'inputmode="decimal" placeholder="max"'))}${field('Lo', inp('lo', p.lo, 'inputmode="decimal" placeholder="min"'))}${field('Avg', inp('avg', p.avg, 'inputmode="decimal" placeholder="media"'))}</div>`;
   /** Le mappe che si possono scegliere: quelle del progetto corrente, più quelle dei progetti che vi
@@ -328,7 +479,8 @@
         + `<button class="pm-btn" id="pop-x" title="Chiudi il pannello" aria-label="Chiudi">${RIC.close}<span>Chiudi</span></button>`
         + `</div><div class="why hidden" id="pop-whytext">${esc(T.why)}</div>`;
     } else {
-      h = `<div class="pop-head">${preview(el, map)}<div class="pop-title"><b>${T.name}</b><div class="pop-sub">${esc(subtitleOf(el, map))}</div></div><button class="btn small ghost" id="pop-why" title="Perché / cos'è (dal libro)" aria-label="Spiegazione dal libro" aria-expanded="false">?</button><button class="btn small ghost" id="pop-x" aria-label="Chiudi">✕</button></div><div class="why hidden" id="pop-whytext">${esc(T.why)}</div>`;
+      const nomeTipo = el.type === 'storm' ? (V.shapeOf(el) === 'nuvola' ? 'Nuvola temporalesca' : 'Problema · ' + V.shapeOf(el)) : T.name;
+      h = `<div class="pop-head">${preview(el, map)}<div class="pop-title"><b>${nomeTipo}</b><div class="pop-sub">${esc(subtitleOf(el, map))}</div></div><button class="btn small ghost" id="pop-why" title="Perché / cos'è (dal libro)" aria-label="Spiegazione dal libro" aria-expanded="false">?</button><button class="btn small ghost" id="pop-x" aria-label="Chiudi">✕</button></div><div class="why hidden" id="pop-whytext">${esc(T.why)}</div>`;
     }
     let main = '', adv = '', minis = '';
     switch (el.type) {
@@ -339,7 +491,12 @@
       case 'box': {
         main += `<input class="pop-ptitle" data-k="title" value="${esc(p.title)}" placeholder="Nome del passo (es. Accettazione)" autocomplete="off" autofocus${roStep}>`;
         main += `<div class="pop-sec">Attività, una per riga</div><div class="acts" data-acts></div>`;
-        main += `<div class="pop-sec">Tempi (${esc(map.unit)}) · dalla prima all'ultima attività</div><div class="times">`
+        // ⏱ accanto ai tempi: da qui si apre il cronometro (spec 2026-08-21, Parte 2). Sta qui e non
+        // fra i tondi perché è di quei tre riquadri che parla — e i tondi sono già sette.
+        const mis = V.timesOf(el); const misSt = V.timeStats(mis);
+        main += `<div class="pop-sec">Tempi (${esc(map.unit)}) · dalla prima all'ultima attività<button class="btn small" data-misura title="Misura i tempi col cronometro" aria-label="Misura i tempi">⏱${mis.length ? ' ' + mis.length : ''}</button></div>`
+          + (mis.length ? `<div class="hint" style="margin:-2px 0 6px">${mis.length} ${mis.length === 1 ? 'misura raccolta' : 'misure raccolte'} · media ${esc(fmt(V.toUnit(misSt.avg, map.unit)))}: da ⏱ si scrivono qui sotto.</div>` : '')
+          + `<div class="times">`
           + [['hi', 'max'], ['lo', 'min'], ['avg', 'media']].map(([k, lab]) => `<label class="tbox"><span>${lab}</span><input data-k="${k}" value="${esc(p[k])}" inputmode="decimal" autocomplete="off"${roStep}></label>`).join('') + `</div>`;
         if (p.validated) main += `<div class="hint lockrow">✓ Passo validato: il contenuto è in sola lettura. Si sposta, si colora e si collega come prima — per modificarlo tocca la ✓ in alto.</div>`;
         // il colore è il filo fra il passo e il suo sotto-foglio: area e bordo qui, sfondo di là
@@ -373,7 +530,12 @@
       case 'person': main += field('Chi è (si legge sul foglio)', inp('label', p.label, 'placeholder="paziente, segretaria, corriere…" autofocus')) + field('Ruolo o reparto (facoltativo)', inp('role', p.role, 'placeholder="medico di reparto, familiare, ditta esterna…"')) + `<div class="field"><label>Espressione (come vive questo momento)</label>${facePicker(p.mood)}</div>` + chk('requestor', p.requestor, 'È chi origina la richiesta (l\'omino della fascia alta)'); break;
       case 'face': main += `<div class="field"><label>Espressione</label>${facePicker(p.mood)}</div>` + `<div class="row">${field('Di chi', sel('who', p.who, ['paziente', 'operatore', 'famigliare', 'medico', 'infermiere', 'segreteria', '']))}${field('Etichetta (opzionale)', inp('label', p.label, 'placeholder="es. dopo 40 min di attesa"'))}</div>`; break;
       case 'icon': main += `<div class="field"><label>Simbolo</label>${iconPicker(p.icon)}</div>`; adv += field('Etichetta', inp('label', p.label, 'placeholder="es. fax al laboratorio"')); break;
-      case 'storm': main += field('Problema (di processo, non di persone)', ta('text', p.text, 'placeholder="che cosa non è ideale qui?" autofocus')) + `<div class="row">${field('Muda', sel('muda', p.muda, ['', ...V.MUDA]))}${field('Regola violata', sel('rule', p.rule, ['', ...V.RULES]))}</div>`; adv += chk('a3', p.a3, 'Candidato ad A3 (5 perché → contromisure → test → follow-up)'); break;
+      // Il problema si disegna nella forma che chi mappa preferisce, e può stare sul foglio come solo
+      // segno: una «i» dentro la sagoma, che si tocca per leggere il testo. Il significato non cambia.
+      case 'storm': main += field('Problema (di processo, non di persone)', ta('text', p.text, 'placeholder="che cosa non è ideale qui?" autofocus'))
+        + `<div class="field"><label>Forma sul foglio</label>${shapePicker(V.shapeOf(el))}</div>`
+        + `<label class="check"><input type="checkbox" data-mark ${p.collapsed ? '' : 'checked'}><span>Il testo si legge sul foglio${p.collapsed ? '' : ' (togli la spunta e resta la «i»: un tocco lo apre)'}</span></label>`
+        + `<div class="row">${field('Muda', sel('muda', p.muda, ['', ...V.MUDA]))}${field('Regola violata', sel('rule', p.rule, ['', ...V.RULES]))}</div>`; adv += chk('a3', p.a3, 'Candidato ad A3 (5 perché → contromisure → test → follow-up)'); break;
       case 'fluffy': main += field('Idea / cosa funziona', ta('text', p.text, 'autofocus')); break;
       case 'burst': main += field('Cosa migliorare', ta('text', p.text, 'autofocus')) + `<div class="row">${field('Priorità', sel('priority', p.priority, ['alta', 'media', 'bassa']))}${field('Owner', inp('owner', p.owner))}</div>`; break;
       case 'inventory': main += field('Cosa', inp('what', p.what)) + `<div class="row">${field('Quantità', inp('qty', p.qty, 'inputmode="decimal"'))}${field('Giorni di copertura', inp('days', p.days, 'inputmode="decimal"'))}</div>`; break;
@@ -516,7 +678,15 @@
         if (rb) { if (hue == null) rb.removeAttribute('style'); else rb.style.cssText = `background:hsl(${hue} 38% 95.5%);border-color:hsl(${hue} 26% 64%)`; }
         return;
       }
+      if (k === 'shape') {
+        if (V.shapeOf(cur) === v) return;
+        V.setStormShape(V.map(), id, v);
+        $$('[data-pick="shape"]', pop).forEach(x => { const on = x.dataset.v === v; x.classList.toggle('on', on); x.setAttribute('aria-checked', on); });
+        return;
+      }
       if (cur.props[k] === v) return; V.commit({ t: 'props', id, after: { [k]: v } }, k === 'mood' ? 'espressione' : 'icona'); $$(`[data-pick="${k}"]`, pop).forEach(x => { const on = x.dataset.v === v; x.classList.toggle('on', on); x.setAttribute(x.hasAttribute('role') ? 'aria-checked' : 'aria-pressed', on); }); const mm = $('[data-mood-mean]', pop); if (mm && k === 'mood') mm.textContent = V.MOOD_MEANING[v] || ''; });
+    const mk = $('[data-mark]', pop);
+    if (mk) mk.onchange = () => { V.setStormMark(V.map(), id, !mk.checked); P.open(id); };
     if (isBox) {
       // attività numerate, una riga ciascuna: svuotare una riga la toglie (come cancellare una riga
       // del vecchio testo unico). Una voce di annulla per riga, dal focus al cambio.
@@ -551,6 +721,8 @@
         }
       };
       $$('[data-round]', pop).forEach(b => b.onclick = () => { P._mini = (P._mini === b.dataset.round) ? null : b.dataset.round; paintMini(P._mini); });
+      const mb = $('[data-misura]', pop);
+      if (mb) mb.onclick = () => { P.close(); UI.openMisura(id); };
       if (P._mini && $(`.pop-mini[data-mini="${P._mini}"]`, pop)) paintMini(P._mini); else P._mini = null;
       // la ✓: validare costa un tocco; riaprire costa un tocco + conferma (è metodo, non interfaccia)
       const vb = $('[data-valid]', pop);
@@ -666,23 +838,175 @@
     $$('#maplist [data-open]').forEach(b => b.onclick = () => { $('#dlg-maps').close(); UI.openMap(b.dataset.open); });
   };
 
+  // ---------- Misura: il cronometro del giro (spec 2026-08-21, Parte 2) ----------
+  /* Lo strumento è per CHI FA IL LAVORO, non per chi lo osserva da fuori (libro, cap. 5: dati falsati
+   * se lo staff si sente sorvegliato): niente parole da sorveglianza, e i tocchi grandi perché si usa
+   * camminando. Il giro sequenziale è l'unico modo in cui il metodo vuole che le attese nascano —
+   * per differenza, mai cronometrate a parte. */
+  let misuraTick = null;
+  // oltre l'ora si scrive h:mm:ss — un giro riaperto il giorno dopo mostrava «1387:12», che non si legge
+  const mmss = (sec) => {
+    const h = Math.floor(sec / 3600), m = Math.floor(sec / 60) % 60, s2 = sec % 60;
+    return (h ? h + ':' + String(m).padStart(2, '0') : String(Math.floor(sec / 60))) + ':' + String(s2).padStart(2, '0');
+  };
+  const VECCHIA = 2 * 3600; // una misura aperta da due ore e' quasi sempre un giro lasciato a meta'
+  const nomePasso = (b, nums) => (b ? ((nums.get(b.id) ? nums.get(b.id) + ' ' : '') + (String(b.props.title || '').trim() || 'passo senza nome')) : '—');
+  const SOGLIA = 8; // il libro: 8-10 misure per una vista rapida, ~30 per significatività
+
+  UI.openMisura = (stepId) => {
+    const map = V.map(); if (!map) return;
+    UI.renderMisura();
+    const d = $('#dlg-misura');
+    if (!d.open) d.showModal();
+    // il tocco su ⏱ nel pannello di un passo arriva qui con l'id: si propone quel passo, non parte da sé
+    if (stepId) { const r = $(`[data-mis-solo="${stepId}"]`, d); if (r) r.scrollIntoView({ block: 'center' }); }
+    clearInterval(misuraTick);
+    // solo il numero si aggiorna: ridisegnare tutto ogni mezzo secondo farebbe saltare lo scorrimento
+    misuraTick = setInterval(() => {
+      const m = V.map(); const s = V.measureState(m); const t = $('#mis-crono');
+      if (t && s && s.t0) t.textContent = mmss(V.measureElapsed(m));
+    }, 500);
+  };
+  UI.closeMisura = () => { clearInterval(misuraTick); misuraTick = null; const d = $('#dlg-misura'); if (d && d.open) d.close(); };
+
+  UI.renderMisura = () => {
+    const map = V.map(); const body = $('#mis-body'); if (!map || !body) return;
+    const s = V.measureState(map);
+    const c = V.measureChain(map);
+    const nums = V.stepNumbers(map);
+    const st = (el) => V.timeStats(V.timesOf(el));
+    $('#mis-head').textContent = 'Misura' + (s && s.giro ? ' — giro ' + s.giro : '') + ' · ' + map.unit;
+    let h = '';
+    if (!c.chain.length) {
+      h += `<p class="hint">Su questo foglio non c'è ancora un passo da misurare: disegna almeno un process box, poi torna qui.</p>`;
+    } else {
+      const cur = s && s.stepId ? V.byId(s.stepId, map) : null;
+      const from = s && s.fromId ? V.byId(s.fromId, map) : null;
+      // Il passo (o la freccia) cancellato sotto la misura: senza questo ramo il pannello scriveva
+      // «sto misurando: —», e il trattino è ancora una mezza bugia. Qui lo si dice, e l'unica via
+      // d'uscita è a portata di dito invece che da indovinare.
+      const vivoPasso = !!(cur && cur.type === 'box');
+      const fantasma = !!(s && s.phase && (!vivoPasso || (s.phase === 'attesa' && (!from || !V.byId(s.connId, map)))));
+      // si nomina il pezzo che manca davvero: dire «il passo» mentre il passo sta nell'elenco qui
+      // sotto è una contraddizione che si vede a colpo d'occhio
+      const cosaManca = !vivoPasso ? 'Il passo che stavi misurando non c\'è più: è stato cancellato'
+        : (s && s.phase === 'attesa' && !V.byId(s.connId, map)) ? 'La freccia su cui nasceva questa attesa non c\'è più: è stata cancellata'
+        : 'Il passo da cui eri partito non c\'è più: è stato cancellato';
+      if (fantasma) {
+        h += `<div class="mis-crono"><div class="mis-what">${cosaManca} mentre il cronometro correva.</div>`
+          + `<p class="notice warn">Questa misura non si può salvare: non c'è più dove scriverla. Chiudi il giro e riparti quando vuoi — le misure già raccolte restano.</p>`
+          + `<div class="mis-acts"><button class="btn big primary" data-mis-stop>chiudi il giro</button></div></div>`;
+      } else if (s && s.phase) {
+        h += `<div class="mis-crono"><div class="mis-time" id="mis-crono">${mmss(V.measureElapsed(map))}</div>`
+          + `<div class="mis-what">${s.phase === 'attesa'
+            ? `attesa fra <b>${esc(nomePasso(from, nums))}</b> e <b>${esc(nomePasso(cur, nums))}</b>`
+            : `sto misurando: <b>${esc(nomePasso(cur, nums))}</b>`}</div>`
+          + `<div class="mis-acts"><button class="btn big primary" data-mis-ok>${s.phase === 'attesa' ? 'comincia il prossimo' : 'passo finito'}</button>`
+          + `<button class="btn big" data-mis-scarta title="Butta via questa misura e riparti da adesso">scarta</button></div>`
+          + (V.measureElapsed(map) > VECCHIA ? `<p class="notice warn">Questa misura è aperta da un pezzo: se il giro era rimasto a metà (app chiusa, tablet spento), tocca «scarta» per ripartire da adesso — il tempo che vedi non è il tempo del passo.</p>` : '')
+          + `<div class="hint">${s.phase === 'attesa'
+            ? 'L\'attesa non si cronometra: nasce da qui, per differenza — fine del passo → inizio del successivo.'
+            : (s.mode === 'singolo' ? 'Un passo alla volta: così le attese non nascono (nascono solo misurando in sequenza).' : 'Dalla prima all\'ultima attività del passo.')}</div>`
+          + `<div class="mis-acts"><button class="btn small ghost" data-mis-stop>chiudi il giro</button></div></div>`;
+      } else {
+        h += `<div class="mis-crono"><div class="mis-time">0:00</div>`
+          + `<div class="mis-what">${s && s.giro > 1 ? 'Giro ' + s.giro + ': pronto a partire.' : 'Il giro parte dal primo passo e segue le frecce.'}</div>`
+          + `<div class="mis-acts"><button class="btn big primary" data-mis-giro>comincia il giro</button></div>`
+          + `<div class="hint">Oppure tocca ⏱ accanto a un passo qui sotto per misurare solo quello, quante volte vuoi.</div></div>`;
+      }
+      if (c.forks.length) {
+        const dove = c.forks.map(id => nums.get(id) || '?').join(', ');
+        h += `<p class="notice warn">Il flusso si divide (dopo il passo ${esc(dove)}): il giro segue un ramo solo${c.fuori.length ? `, e ${c.fuori.length === 1 ? 'un passo resta fuori' : c.fuori.length + ' passi restano fuori'}` : ''}. ${c.fuori.length === 1 ? 'Quello si misura' : 'Quelli si misurano'} a parte, con ⏱.</p>`;
+      }
+      h += '<div class="mis-list">' + c.chain.map(b => {
+        const k = st(b); const corrente = s && s.phase === 'box' && s.stepId === b.id;
+        return `<div class="mis-row${corrente ? ' now' : ''}">`
+          + `<b>${esc(nomePasso(b, nums))}</b>`
+          + `<span class="k">${corrente ? '⏱ in corso' : (k.n ? `✓ ${esc(fmt(V.toUnit(k.avg, map.unit)))} · ${k.n} ${k.n === 1 ? 'misura' : 'misure'}` : '—')}</span>`
+          + (b.props.validated ? '<span class="k" title="Passo validato: il contenuto non si modifica">✓</span>'
+            : `<button class="btn small" data-mis-solo="${b.id}" title="Misura solo questo passo">⏱</button>`)
+          + '</div>';
+      }).join('') + '</div>';
+      if (c.fuori.length) h += `<div class="mis-list">` + c.fuori.map(b => {
+        const k = st(b);
+        return `<div class="mis-row fuori"><b>${esc(nomePasso(b, nums))}</b><span class="k">fuori dalla catena${k.n ? ` · ${k.n} misure` : ''}</span><button class="btn small" data-mis-solo="${b.id}" title="Misura solo questo passo">⏱</button></div>`;
+      }).join('') + '</div>';
+    }
+    // Le misure raccolte, una per una: si guardano e si scartano (il caso eccezionale lo riconosce
+    // chi ha osservato, non l'app). Il conto si rifà da solo.
+    const rep = V.timesReport(map);
+    if (rep.length) {
+      const poche = rep.filter(r => r.n < SOGLIA).length;
+      h += `<div class="pop-sec">Misure raccolte</div>`;
+      const sospette = rep.reduce((n, r) => n + r.brevi, 0);
+      h += rep.map(r => `<div class="mis-mis"><div class="mm-head"><b>${esc(r.label)}</b>`
+        + `<span class="k">max ${esc(fmt(r.stats.hi))} · min ${esc(fmt(r.stats.lo))} · media ${esc(fmt(r.stats.avg))} · ${r.n} ${r.n === 1 ? 'misura' : 'misure'}${r.validated ? ' · validato' : ''}</span></div>`
+        + `<div class="mm-chips">` + r.times.map((t, i) => `<button class="mm-chip${t < V.MISURA_BREVE ? ' breve' : ''}" data-mis-drop="${r.id}" data-i="${i}" title="${t < V.MISURA_BREVE ? `Solo ${t} second${t === 1 ? 'o' : 'i'}: un tocco per sbaglio? Toccala per scartarla` : 'Scarta questa misura'}">${esc(fmt(V.toUnit(t, map.unit)))} <span aria-hidden="true">✕</span></button>`).join('') + `</div></div>`).join('');
+      // un tocco per sbaglio scrive «0,02 minuti» su un'accoglienza: il numero è vero e la mappa è falsa
+      if (sospette) h += `<p class="notice warn">${sospette === 1 ? 'Una misura dura' : sospette + ' misure durano'} meno di ${V.MISURA_BREVE} secondi: ${sospette === 1 ? 'è' : 'sono'} un tocco per sbaglio, o un giro chiuso subito? ${sospette === 1 ? 'È segnata in arancione' : 'Sono segnate in arancione'} qui sotto — toccala${sospette === 1 ? '' : 'e'} per scartarla${sospette === 1 ? '' : 'e'}. Nessun tempo di un passo vero dura due secondi.</p>`;
+      if (poche) h += `<p class="hint">${poche === rep.length ? 'Sono' : 'Per qualcuno sono'} poche per farci un ragionamento: il libro consiglia 8-10 misure per una vista rapida, una trentina per parlare di significatività. Non fissarti sul numero: guarda se i valori si somigliano.</p>`;
+      h += `<div class="mis-acts"><button class="btn primary" data-mis-calc>Calcola i tempi</button></div>`
+        + `<p class="hint">Scrive max / min / media su ogni passo e ogni attesa che ha misure. È una sola voce di annulla.</p>`;
+    } else {
+      h += `<p class="hint">Nessuna misura ancora. Il tempo del passo va dalla prima all'ultima attività; l'attesa non si cronometra: esce da sola misurando i passi in fila.</p>`;
+    }
+    body.innerHTML = h;
+
+    const ridisegna = () => UI.renderMisura();
+    const btn = (sel, fn) => { const b = $(sel, body); if (b) b.onclick = fn; };
+    btn('[data-mis-giro]', () => {
+      if (map.validated) return UI.toast('Questo foglio è validato 🔒: finché il lucchetto è chiuso le misure non si possono scrivere. Aprilo in alto, poi comincia il giro.');
+      const primo = c.chain.find(b => !b.props.validated);
+      if (!primo) return UI.toast('Tutti i passi di questa catena sono validati ✓: non c\'è niente da misurare.');
+      V.measureStart(map, primo.id, 'giro'); ridisegna();
+    });
+    btn('[data-mis-ok]', () => {
+      const r = V.measureAdvance(map);
+      // Tre esiti diversi, tre frasi diverse: dire «è validato ✓» davanti a un passo cancellato era
+      // una bugia detta proprio a chi sta camminando il processo (R2 del debug 2026-08-21).
+      if (r && r.ko === 'sparito') UI.toast(
+        r.cosa === 'freccia' ? 'La freccia fra i due passi non c\'è più: è stata cancellata. Il giro si è fermato e questa attesa è persa — l\'attesa nasce sulla freccia, e senza quella non c\'è dove scriverla.'
+        : r.cosa === 'partenza' ? 'Il passo da cui eri partito non c\'è più: è stato cancellato. Il giro si è fermato e questa attesa è persa — un\'attesa si calcola fra due passi, e uno dei due non c\'è.'
+        : 'Il passo che stavi misurando non c\'è più: è stato cancellato. Il giro si è fermato e questa misura è persa — non c\'era più dove scriverla.');
+      else if (r && r.ko === 'foglio') UI.toast('Questo foglio è validato 🔒: finché il lucchetto è chiuso le misure non si possono scrivere. Aprilo in alto, poi riprendi il giro.');
+      else if (r && r.ko === 'validato') UI.toast('Questa misura non è stata registrata: il passo è validato ✓.');
+      else if (r && r.chiuso) UI.toast('Giro finito. Le misure sono salvate: «Calcola i tempi» le scrive sul foglio.');
+      ridisegna();
+    });
+    btn('[data-mis-scarta]', () => { V.measureDiscard(map); ridisegna(); });
+    btn('[data-mis-stop]', () => { V.measureStop(map); ridisegna(); });
+    $$('[data-mis-solo]', body).forEach(b => b.onclick = () => { V.measureStart(map, b.dataset.misSolo, 'singolo'); ridisegna(); });
+    $$('[data-mis-drop]', body).forEach(b => b.onclick = () => { V.dropTime(map, b.dataset.misDrop, +b.dataset.i); ridisegna(); });
+    btn('[data-mis-calc]', () => {
+      const brevi = rep.reduce((n, r) => n + r.brevi, 0);
+      if (brevi && !confirm(`${brevi === 1 ? 'Una misura dura' : brevi + ' misure durano'} meno di ${V.MISURA_BREVE} secondi.\n\nSe ${brevi === 1 ? 'è' : 'sono'} un tocco per sbaglio, ${brevi === 1 ? 'scartala' : 'scartale'} prima: ${brevi === 1 ? 'finirebbe' : 'finirebbero'} nel minimo e nella media, e il foglio direbbe una cosa falsa.\n\nOK = scrivi i tempi lo stesso.`)) return;
+      const manuali = rep.filter(r => r.manual && !r.validated);
+      if (manuali.length && !confirm(`${manuali.length === 1 ? 'Un elemento ha' : manuali.length + ' elementi hanno'} già tempi scritti a mano (${manuali.slice(0, 3).map(r => r.label).join(', ')}${manuali.length > 3 ? '…' : ''}).\n\nCalcolando i tempi vengono sostituiti da quelli misurati. Si annulla con ↶.\n\nOK = scrivi i tempi.`)) return;
+      const r = V.applyTimes(map);
+      if (!r.ok && !r.written) UI.toast(r.validati ? 'Solo passi validati ✓: nessun tempo scritto.' : 'Niente da scrivere.');
+      else UI.toast(`Tempi scritti su ${r.written} ${r.written === 1 ? 'elemento' : 'elementi'}${r.validati ? ` (${r.validati} validati ✓, non toccati)` : ''}. Annulla con ↶.`);
+      ridisegna();
+    });
+  };
+
   // ---------- Guida pratica: primi passi, metodo e simboli in un solo pannello ----------
   // Fusione di guida, «come si usa» e legenda (report Kimi K3, docs/kimi-guida-pratica-report.md).
   // Il pannello elenca le voci; il tocco apre una scheda flottante autosufficiente che si chiude con ✕
   // o toccando il vuoto — il pannello resta aperto. Ogni regola è scritta in un posto solo: la formula
   // del delta in «Dati», C&C % in «Passo», VA %/FTQ in «Leggere il foglio».
   const PRIMI = [
-    { id: 'prima', t: 'La prima mappa', body: 'Sul foglio vuoto tocca i segnaposto ① Chi chiede? e ② Primo passo: è il modo più rapido per iniziare. Altrimenti scegli lo strumento nella barra in basso e tocca il punto del foglio dove vuoi l’elemento. Le mappe si salvano da sole, non c’è un tasto salva. Errore tipico: progettare tutto prima di disegnare — parti dal richiedente e segui il processo.' },
+    { id: 'prima', t: 'La prima mappa', body: 'Sul foglio vuoto tocca i segnaposto ① Chi chiede? e ② Primo passo: è il modo più rapido per iniziare. Un altro modo: tocca il foglio dove vuoi l’elemento e scegli dal menu rotondo che compare (Passo, Attesa, Problema, Persona, «Altro…» e le faccine in un pannello a sé). Oppure scegli lo strumento nella barra in basso e tocca il punto del foglio. Per spostare il foglio: col dito basta trascinare il vuoto; col mouse c’è la <b>mano</b> in «Altro» (poi «✓ Fine» per tornare a selezionare). Le mappe si salvano da sole, non c’è un tasto salva. Errore tipico: progettare tutto prima di disegnare — parti dal richiedente e segui il processo.' },
     { id: 'modifica', t: 'Modificare e collegare', body: 'Un tocco su un elemento apre le azioni rapide (+ Passo dopo, Collega →…); un secondo tocco apre i dettagli. «Collega →» apre un secondo menu con che cosa collegare: un passo nuovo, una scorta, un in-box, o un elemento già sul foglio — e sull\'omino prima ancora il verbo («chiede a…» / «si reca a…»). Per una freccia di flusso o di richiesta tieni premuto e trascina fino all’altro elemento. Un’estremità staccata è segnata in rosso tratteggiato: riagganciala, altrimenti resta fuori dalla timeline.' },
     { id: 'matita', t: 'Matita, coach, annulla', body: 'Con la Matita scrivi e disegni a mano libera (l’Apple Pencil scrive da sé, le dita muovono gli elementi). ✦ legge il foglio e propone modifiche: è un secondo parere, non un correttore — valuta prima di accettare. ↶ annulla l’ultima azione, tutte le volte che serve.' },
-    { id: 'foglio', t: 'Leggere il foglio', body: 'Sotto i passi la timeline: verde in basso il tempo a valore, rosso in alto le attese; il riepilogo in basso a destra fa i conti (VA, NVA, VA %, First Time Quality). La catena ⛓ dice che un elemento è legato a un altro: spostando quello, si muove anche lui («Lega a…» / «Slega» nelle azioni rapide). Il lucchetto 🔒 invece inchioda un elemento al foglio: non si sposta finché non lo sblocchi («Blocca» / «Sblocca»). Il badge ↗ apre la mappa collegata (dettaglio, turno, futuro). «Provvisoria» nell’intestazione in barra resta finché non cammini e validi il processo (vedi Cammina e valida).' }
+    { id: 'foglio', t: 'Leggere il foglio', body: 'Sotto i passi la timeline: verde in basso il tempo a valore, rosso in alto le attese; il riepilogo in basso a destra fa i conti (VA, NVA, VA %, First Time Quality). La catena ⛓ dice che un elemento è legato a un altro: spostando quello, si muove anche lui («Lega a…» / «Slega» nelle azioni rapide). Il lucchetto 🔒 invece inchioda un elemento al foglio: non si sposta finché non lo sblocchi («Blocca» / «Sblocca»). Il badge ↗ apre la mappa collegata (dettaglio, turno, futuro). «Provvisoria» nell’intestazione in barra resta finché non cammini e validi il processo (vedi Cammina e valida).' },
+    { id: 'livelli', t: 'Più fogli, senza perdersi', body: 'Un passo può contenere un foglio suo: aprilo col badge ↗. Da lì in poi ogni passo ha un <b>indirizzo</b> — il passo 2 contiene il 2.1, che contiene il 2.1.1 — e l\'indirizzo si vede sul badge, nelle briciole in barra e nella <b>cartina</b> (l\'icona a destra, sopra lo zoom): la cartina dice sempre dove sei. «↑ su» in barra risale, selezionando il passo da cui eri sceso; ⋯ → «Questo foglio diventa un passo di…» fa il contrario, e appende il foglio che stai guardando sotto un passo di un processo più grande. Il badge <b>⇉</b> è un\'altra cosa: quel passo <i>richiama</i> un foglio che sta altrove (stesso processo, già disegnato) e ti dice dove. I numeri si ricalcolano da soli quando cambi le frecce: sono una scaletta, non un\'etichetta. Tutte le mappe di un lavoro stanno in un <b>progetto</b> (⋯ → «Progetti…»): gli elenchi mostrano solo quello in cui sei, e due progetti si parlano solo se li colleghi.' },
   ];
   const METODO = [
     { id: 'testata', t: 'Intestazione e scopo', body: 'Titolo, data e iniziali vivono in barra, in alto a sinistra: tocca l’intestazione per vederli e cambiarli (sul foglio A3 del libro stavano in alto a destra). Lo scopo in una frase: dalla richiesta X alla consegna Y. Una mappa = un processo solo: se cambia turno o unità, fai un’altra mappa, non una variante.', q: 'Cosa soddisfa esattamente questa mappa?', acts: [['title', 'Apri l’intestazione']] },
     { id: 'richiesta', t: 'La richiesta', body: 'Disegna il richiedente e tutte le vie reali con cui la richiesta arriva: telefono, fax, e-mail, a voce, di persona. La giungla di frecce in alto non è disordine da nascondere: è il primo spreco da attaccare, perché ogni via in più è una richiesta che può perdersi o essere fraintesa.', q: 'Quante mani tocca la richiesta prima di arrivare a chi eroga?', tools: [['person', 'Persona'], ['request', 'Richiesta']] },
     { id: 'flusso', t: 'Flusso e attese', body: 'Disegna i passi nell’ordine in cui avvengono davvero, non come dovrebbero: nello stato attuale ciò che sta nei box è valore adesso, si giudica dopo. Tra due passi metti sempre un delta se la cosa sta ferma. Più di 4-5 passi? Forse lo scopo è troppo largo.', q: 'Quale attività apre la porta del passo e quale la chiude?', tools: [['box', 'Passo'], ['delta', 'Attesa']] },
     { id: 'valida', t: 'Cammina e valida', body: 'Una mappa fatta alla scrivania è una bozza. Cammina il processo dall’inizio alla fine osservando, poi mostrala a chi fa il lavoro: accuratezza e adesione arrivano insieme. Le domande da fare sono due: «Ti sembra giusto? Ho lasciato fuori qualcosa?». Finché non l’hai fatto, la mappa resta provvisoria.', valida: true },
-    { id: 'dati', t: 'Dati', body: 'Per ogni passo e ogni attesa raccogli Hi / Lo / Avg, un’unità sola per tutta la mappa. L’attesa non si cronometra: si calcola per differenza, fine del passo precedente → inizio del successivo. Servono ~30 misure per dati credibili, 8-10 per una prima vista; il massimo è dove si nascondono interruzioni e workaround.', q: 'Perché a volte 5 minuti e a volte 19?' },
+    { id: 'dati', t: 'Dati', body: 'Per ogni passo e ogni attesa raccogli Hi / Lo / Avg, un’unità sola per tutta la mappa. L’attesa non si cronometra: si calcola per differenza, fine del passo precedente → inizio del successivo. Servono ~30 misure per dati credibili, 8-10 per una prima vista; il massimo è dove si nascondono interruzioni e workaround. Per misurarli camminando il processo: ⋯ → «Misura i tempi ⏱» (o il ⏱ accanto ai tempi di un passo). Il cronometro segue la catena: tu chiudi il passo, l’attesa nasce da sé fino a quando cominci il successivo. Poi «Calcola i tempi» scrive Hi/Lo/Avg.', acts: [['misura', 'Apri il cronometro ⏱']], q: 'Perché a volte 5 minuti e a volte 19?' },
     { id: 'analisi', t: 'Analisi', body: 'Una nuvola su ogni punto debole, con muda e regola violata: una riga, non un tema. Comincia dalle nuvole a monte: correggere la richiesta rende più di quanto sembri. Quando senti «a volte, dipende, forse» il processo non è specificato — è già una nuvola.', q: 'Così accade adesso: è abbastanza buono?', tools: [['storm', 'Nuvola']] },
     { id: 'futuro', t: 'Ideale (stato futuro)', body: 'L’Ideale è dove volete arrivare: uno solo per processo, col lucchetto — una volta validato non si modifica finché non lo riapri. Dev’essere raggiungibile (persone, sponsor, data). Prima mossa quasi sempre: ridurre le vie della richiesta; poi eliminare o combinare passi; tempi standard solo dai dati raccolti. Se il futuro non è visibilmente più semplice dell’attuale, torna a osservare. E niente monumenti: non automatizzare ciò che non funziona a mano.', acts: [['future', 'Apri / crea l’Ideale']], cmp: true },
     { id: 'piano', t: 'Piano e follow-up', body: 'Ogni riga del piano: cosa, chi, entro quando, esito atteso; senza chi e quando non accadrà. L’ostacolo grosso merita un A3, non una riga di piano. A piano eseguito si rimisura: nuova mappa dello stato attuale e confronto fianco a fianco.', q: 'Chi fa cosa, entro quando?', acts: [['plan', 'Apri il piano']] }
@@ -734,6 +1058,28 @@
       c.style.left = Math.round(Math.max(8, Math.min(window.innerWidth - chW - 8, cx + 16))) + 'px';
       c.style.top = Math.round(Math.max(58, Math.min(window.innerHeight - chH - 10, cy - 24))) + 'px';
       $('#gpc-x').onclick = UI.closeGuideCard;
+    }, 0);
+  };
+  /** Il testo di un problema ridotto al segno: un tocco sulla «i» e si legge, senza aprire il pannello
+   *  (richiesta di Gt: «un tocco apre il testo, due aprono il menu»). Nasconderlo non è cancellarlo —
+   *  il libro chiede di segnare TUTTI i problemi, e questa è la via per rileggerli sul foglio fitto. */
+  UI.showStormText = (el, cx, cy) => {
+    const p = el.props || {};
+    const testo = String(p.text || '').trim();
+    const sotto = [p.muda, p.rule ? 'regola ' + p.rule[0] : '', p.a3 ? 'candidato ad A3' : ''].filter(Boolean).join(' · ');
+    setTimeout(() => {
+      UI.closeGuideCard();
+      const c = document.createElement('div'); c.id = 'gpcard';
+      c.innerHTML = `<div class="gpc-head"><span class="gp-glyph">ⓘ</span><b>Problema</b><span class="spacer"></span><button class="btn small ghost" id="gpc-x" aria-label="Chiudi">✕</button></div>`
+        + `<div class="gpc-body">${testo ? esc(testo) : '<i>Nessun testo scritto: aprilo con un secondo tocco e raccontalo.</i>'}${sotto ? `<div class="lg-var">${esc(sotto)}</div>` : ''}</div>`
+        + `<div class="actions"><button class="btn small ghost" data-st-apri title="Rimetti il testo sul foglio">▽ Apri sul foglio</button><span style="flex:1"></span><button class="btn small primary" data-st-mod>Modifica</button></div>`;
+      document.body.appendChild(c);
+      const chW = c.offsetWidth, chH = c.offsetHeight;
+      c.style.left = Math.round(Math.max(8, Math.min(window.innerWidth - chW - 8, cx + 16))) + 'px';
+      c.style.top = Math.round(Math.max(58, Math.min(window.innerHeight - chH - 10, cy - 24))) + 'px';
+      $('#gpc-x').onclick = UI.closeGuideCard;
+      $('[data-st-mod]', c).onclick = () => { UI.closeGuideCard(); V.pop.open(el.id); };
+      $('[data-st-apri]', c).onclick = () => { UI.closeGuideCard(); V.setStormMark(V.map(), el.id, false); };
     }, 0);
   };
   /** Il pop-up dell'occhio: si sbircia il foglio dietro il link senza entrarci. Dentro ci sono
@@ -904,7 +1250,7 @@
     }
     $('#gpc-x').onclick = UI.closeGuideCard;
     $$('[data-tool-go]', c).forEach(x => x.onclick = () => { UI.closeGuideCard(); UI.toggleGuide(false); I.setTool(x.dataset.toolGo); });
-    $$('[data-ga]', c).forEach(x => x.onclick = () => { const a = x.dataset.ga; UI.closeGuideCard(); UI.toggleGuide(false); if (a === 'title') V.pop.openTitle(); else if (a === 'plan') UI.showTab('plan'); else if (a === 'future') $('#tab-future').click(); });
+    $$('[data-ga]', c).forEach(x => x.onclick = () => { const a = x.dataset.ga; UI.closeGuideCard(); UI.toggleGuide(false); if (a === 'title') V.pop.openTitle(); else if (a === 'plan') UI.showTab('plan'); else if (a === 'future') $('#tab-future').click(); else if (a === 'misura') UI.openMisura(); });
     const wk = $('#gp-walked', c); if (wk) wk.onchange = () => { const after = Object.assign(clone(V.map().validation), { walked: wk.checked, walkedDate: wk.checked ? today() : '' }); V.commit({ t: 'meta', after: { validation: after } }, 'validazione', { silent: true }); };
     const vd = $('#gp-validated', c); if (vd) vd.addEventListener('input', () => { const after = Object.assign(clone(V.map().validation), { validatedBy: vd.value, validatedDate: vd.value ? today() : '' }); V.commit({ t: 'meta', after: { validation: after } }, 'validazione', { silent: true }); });
   };
@@ -1144,7 +1490,7 @@
       case 'inbox': case 'inventory': btn('connect', 'Collega →', 'Fai partire una freccia di flusso da qui verso un passo'); break;
       case 'delta': if (!el.props.attachedTo) btn('attach', 'Aggancia alla freccia'); break;
       case 'flow': btn('deltaOn', '+ Attesa qui'); btn('invert', 'Inverti'); break;
-      case 'storm': btn('shrink', el.props.collapsed ? '▽ Espandi' : '⚠ Riduci a segnale', el.props.collapsed ? 'Torna nuvola con il testo visibile' : 'Diventa un triangolo di allerta: il foglio resta pulito, il testo si legge toccandolo'); btn('dup', 'Duplica'); break;
+      case 'storm': btn('shrink', el.props.collapsed ? '▽ Apri il testo' : 'ⓘ Riduci al segno', el.props.collapsed ? 'Torna grande, col testo scritto dentro' : 'Resta la sua forma, piccola, con la «i»: il foglio si legge, e il testo si apre con un tocco'); btn('dup', 'Duplica'); break;
       case 'fluffy': case 'burst': case 'text': btn('dup', 'Duplica'); break;
       case 'icon': case 'face': btn('dup', 'Duplica'); break;
       case 'legend': btn('legend', el.props.collapsed ? 'Apri' : 'Chiudi'); btn('legendfull', 'Tutti i simboli', 'Ogni simbolo con significato e varianti, nella Guida pratica'); break;
@@ -1204,14 +1550,9 @@
       // sbirciare non chiede una posizione: senza coordinate il pop-up si apre al centro-alto
       case 'peek': UI.hideQuick(); UI.showPeek(id); break;
       case 'legendfull': UI.toggleGuide(true, 'simboli'); break;
-      case 'shrink': {
-        const T = V.TYPES.storm; const collapsed = !el.props.collapsed;
-        // la misura di prima si tiene da parte: chi allarga una nuvola non vuole ritrovarla piccola al ritorno
-        const props = collapsed ? { collapsed, w0: el.w, h0: el.h } : { collapsed };
-        const size = collapsed ? { w: 30, h: 26 } : { w: el.props.w0 || T.w, h: el.props.h0 || T.h };
-        V.commit([{ t: 'props', id, after: props }, { t: 'update', id, after: size, before: { w: el.w, h: el.h } }], collapsed ? 'riduci a segnale' : 'espandi');
-        I.select([id]); break;
-      }
+      // la misura di prima si tiene da parte (V.setStormMark): chi allarga un problema non vuole
+      // ritrovarlo piccolo al ritorno, ne' piu' basso del suo testo
+      case 'shrink': { V.setStormMark(V.map(), id, !el.props.collapsed); I.select([id]); break; }
       case 'lockto': I.startPickLock([id]); break;
       case 'unlock': I.unlock(id); break;
       case 'pin': V.commit({ t: 'props', id, after: { pinned: true } }, 'blocca sul foglio'); I.select([id]); I.hint('Bloccato sul foglio \u{1F512}: trascinarlo non lo sposta più. «Sblocca» nelle azioni rapide per liberarlo.', 3500); break;

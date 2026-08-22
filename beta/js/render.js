@@ -119,6 +119,15 @@
   };
   const cloudPath = (w, h) => { // nuvola che riempie w×h
     const r = h / 2.6; return `M${r * 0.9} ${h - 6} H${w - r * 0.9} a${r} ${r} 0 0 0 ${r * 0.55} -${r * 1.6} a${r * 1.1} ${r * 1.1} 0 0 0 -${r * 1.4} -${r * 1.1} a${r * 1.3} ${r * 1.3} 0 0 0 -${Math.max(8, w - 2 * r * 2.6)} 0 a${r * 1.1} ${r * 1.1} 0 0 0 -${r * 1.5} ${r * 1.1} a${r} ${r} 0 0 0 ${r * 0.5} ${r * 1.6} z`; };
+  /* Le altre tre forme del problema (richiesta di Gt, 2026-08-21). Restano disegnate «a matita» come
+     la nuvola: cambia la sagoma, non il significato — è sempre un problema di processo. */
+  const shapePath = (forma, w, h) => {
+    if (forma === 'cerchio') { const rx = w / 2 - 1, ry = h / 2 - 1; return `M1 ${h / 2} a${rx} ${ry} 0 1 0 ${w - 2} 0 a${rx} ${ry} 0 1 0 -${w - 2} 0 z`; }
+    if (forma === 'quadrato') { const r = 6; return `M${1 + r} 1 H${w - 1 - r} a${r} ${r} 0 0 1 ${r} ${r} V${h - 1 - r} a${r} ${r} 0 0 1 -${r} ${r} H${1 + r} a${r} ${r} 0 0 1 -${r} -${r} V${1 + r} a${r} ${r} 0 0 1 ${r} -${r} z`; }
+    if (forma === 'triangolo') return `M${w / 2} 1 L${w - 1} ${h - 1} H1 z`;
+    return cloudPath(w, h);
+  };
+  R.shapePath = (forma, w, h) => shapePath(forma, w, h); // serve al selettore nel pop-up
   const burstPath = (w, h) => { const cx = w / 2, cy = h / 2, n = 12; let d = ''; for (let i = 0; i < n * 2; i++) { const a = Math.PI * i / n - Math.PI / 2; const rx = (i % 2 ? 0.7 : 1) * cx, ry = (i % 2 ? 0.7 : 1) * cy; d += (i ? 'L' : 'M') + (cx + rx * Math.cos(a)).toFixed(1) + ' ' + (cy + ry * Math.sin(a)).toFixed(1) + ' '; } return d + 'z'; };
 
   // ---------- carta + titolo ----------
@@ -201,20 +210,27 @@
       }
       case 'storm': case 'fluffy': {
         const cls = el.type === 'storm' ? 'cloud' : 'fluffy';
-        // ridotta a segnale: il problema resta sul foglio ma non occupa spazio; il testo si legge toccandolo
+        // la forma del problema si sceglie: nuvola (quella del libro), cerchio, quadrato, triangolo
+        const forma = el.type === 'storm' ? V.shapeOf(el) : 'nuvola';
+        // ridotto al segno: la forma resta, piccola, con una «i» dentro — il testo si legge toccandola
         if (el.type === 'storm' && p.collapsed) {
-          s += `<path class="alert" d="M${w / 2} 2 L${w - 2} ${h - 3} H2 z"/>`;
-          s += `<path class="alert-mark" d="M${w / 2} ${h * 0.38} V${h * 0.66}"/><circle class="alert-dot" cx="${w / 2}" cy="${h * 0.82}" r="1.5"/>`;
+          s += `<path class="alert" d="${shapePath(forma, w, h)}"/>`;
+          s += `<text class="hand alert-i" x="${w / 2}" y="${(h * (forma === 'triangolo' ? 0.9 : 0.72)).toFixed(1)}" text-anchor="middle" font-size="15" font-weight="700">i</text>`;
           break;
         }
-        s += `<path class="${cls}" d="${cloudPath(w, h)}"/>`;
-        // il problema porta un fulmine rosso: senza, nuvola e nuvoletta erano gemelle a colpo d'occhio
-        if (el.type === 'storm') s += `<path d="M${w - 12} ${h - 13} l-4.5 7 h3.6 l-4.5 8" fill="none" stroke="#c8321e" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`;
+        s += `<path class="${cls}" d="${shapePath(forma, w, h)}"/>`;
+        // il problema porta un fulmine rosso: senza, nuvola e nuvoletta erano gemelle a colpo d'occhio.
+        // Ogni forma ha il suo angolo buono: sul triangolo, in basso a destra, il fulmine finiva fuori.
+        if (el.type === 'storm') {
+          const fx = forma === 'nuvola' ? w - 12 : w + 6, fy = forma === 'nuvola' ? h - 13 : h / 2 - 7;
+          s += `<path d="M${fx.toFixed(1)} ${fy.toFixed(1)} l-4.5 7 h3.6 l-4.5 8" fill="none" stroke="#c8321e" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`;
+        }
         // il testo sta dentro la pancia (ogni riga larga quanto la sua banda) e non si tronca MAI:
         // se non ci sta è la nuvola a essere troppo bassa, e la rialza cloudFit — alla scrittura,
         // al ridimensionamento e all'apertura del documento
-        const lines = R.cloudLines(w, h, p.text || (el.type === 'storm' ? 'problema…' : 'idea…')).lines;
-        s += `<text class="hand ${cls}-txt" x="${w / 2}" y="${h / 2 - (lines.length - 1) * 5.5 + 3}" text-anchor="middle" font-size="9.5">${tspans(lines, w / 2, h / 2 - (lines.length - 1) * 5.5 + 3, 11)}</text>`;
+        const lines = R.cloudLines(w, h, p.text || (el.type === 'storm' ? 'problema…' : 'idea…'), forma).lines;
+        const cy = h * R.shapeCenter(forma) - (lines.length - 1) * 5.5 + 3;
+        s += `<text class="hand ${cls}-txt" x="${w / 2}" y="${cy.toFixed(1)}" text-anchor="middle" font-size="9.5">${tspans(lines, w / 2, cy, 11)}</text>`;
         if (el.type === 'storm' && (p.muda || p.rule)) s += `<text class="hand cloud-txt" x="${w / 2}" y="${h + 10}" text-anchor="middle" font-size="8">${esc([p.muda, p.rule ? 'R' + p.rule[0] : ''].filter(Boolean).join(' · '))}${p.a3 ? ' · A3' : ''}</text>`;
         break;
       }
@@ -564,20 +580,35 @@
   // ai bordi sono più corte di quelle in mezzo — prima tutte contavano sul 72% della larghezza e il
   // testo sforava ai bordi, oppure spariva troncato con «…».
   const CLOUD_LH = 11, CLOUD_CHW = 5, CLOUD_MARGIN = 26; // interlinea, larghezza media di un carattere, margine verticale complessivo
-  const cloudBand = (t) => 0.84 * Math.sqrt(Math.max(0, 1 - Math.pow(2 * t - 1, 2)));
+  /* Quanto è larga la forma all'altezza t (0 = cima, 1 = fondo), in frazione della larghezza: è ciò
+     che decide quanti caratteri stanno in ogni riga. Il triangolo, stretto in cima, tiene meno testo
+     alla stessa misura — e infatti cresce di più. */
+  const BANDE = {
+    nuvola: (t) => 0.84 * Math.sqrt(Math.max(0, 1 - Math.pow(2 * t - 1, 2))),
+    cerchio: (t) => 0.92 * Math.sqrt(Math.max(0, 1 - Math.pow(2 * t - 1, 2))),
+    quadrato: () => 0.88,
+    triangolo: (t) => Math.max(0.06, 0.86 * Math.max(0, t - 0.14))
+  };
+  // dove sta il blocco di testo dentro la forma: al centro, tranne nel triangolo, che in cima non ha posto
+  const CENTRO = { nuvola: 0.5, cerchio: 0.5, quadrato: 0.5, triangolo: 0.6 };
+  // quanta aria serve sopra e sotto il testo: nel triangolo l'ultima riga finiva seduta sulla base
+  const MARGINI = { nuvola: 26, cerchio: 26, quadrato: 22, triangolo: 42 };
+  const cloudBand = (t) => BANDE.nuvola(t);
   /** Distribuisce il testo nella nuvola w×h: ogni riga prende il budget di caratteri della sua banda.
    *  Restituisce SEMPRE tutto il testo (niente troncamenti silenziosi): fits=false dice che le righe
    *  non bastano, e allora è l'altezza a dover crescere (R.cloudFit), non il testo a sparire. */
-  R.cloudLines = (w, h, text) => {
+  R.cloudLines = (w, h, text, forma) => {
+    const banda = BANDE[forma] || BANDE.nuvola;
+    const centro = CENTRO[forma] != null ? CENTRO[forma] : 0.5;
     const words = String(text || '').split(/\s+/).filter(Boolean);
     if (!words.length) return { lines: [], fits: true };
-    const cap = Math.max(1, Math.round((h - CLOUD_MARGIN) / CLOUD_LH));
+    const cap = Math.max(1, Math.round((h - (MARGINI[forma] != null ? MARGINI[forma] : CLOUD_MARGIN)) / CLOUD_LH));
     // i budget dipendono dalla posizione di ogni riga, che dipende da quante righe escono:
     // si itera fino a numero stabile (più righe = bordi più stretti = mai meno righe, quindi converge)
     let n = 1, lines = [];
     for (let guard = 0; guard < 40; guard++) {
-      const y0 = h / 2 - (n - 1) * CLOUD_LH / 2;
-      const budget = (i) => Math.max(6, Math.floor(w * cloudBand((y0 + i * CLOUD_LH) / h) / CLOUD_CHW));
+      const y0 = h * centro - (n - 1) * CLOUD_LH / 2;
+      const budget = (i) => Math.max(6, Math.floor(w * banda((y0 + i * CLOUD_LH) / h) / CLOUD_CHW));
       lines = [''];
       words.forEach(word => {
         const i = lines.length - 1;
@@ -592,11 +623,13 @@
   };
   /** altezza necessaria perché il testo stia nella pancia della nuvola (stesse costanti del disegno):
    *  si cresce di un'interlinea alla volta finché cloudLines non dice che ci sta tutto */
-  R.cloudFit = (w, text) => {
+  R.cloudFit = (w, text, forma) => {
     let h = 56;
-    while (!R.cloudLines(w, h, text).fits && h < 4000) h += CLOUD_LH;
+    while (!R.cloudLines(w, h, text, forma).fits && h < 4000) h += CLOUD_LH;
     return h;
   };
+  /** Dove va scritto il testo dentro la forma: il triangolo lo tiene più in basso, dove c'è posto. */
+  R.shapeCenter = (forma) => (CENTRO[forma] != null ? CENTRO[forma] : 0.5);
   R.children = (id, map) => map.elements.filter(e => e.props && (e.props.lockTo === id || (e.type === 'delta' && e.props.attachedTo === id)));
 
   /** Area sensibile: molti elementi sono disegnati a sole linee (l'omino ha tratti da 1.6 px su un
@@ -731,7 +764,14 @@
     if (M.looseBoxes) fuoriParti.push(`${M.looseBoxes} ${M.looseBoxes === 1 ? 'passo' : 'passi'} fuori catena`);
     if (M.looseDeltas) fuoriParti.push(`${M.looseDeltas} ${M.looseDeltas === 1 ? 'attesa non agganciata' : 'attese non agganciate'}`);
     const fuori = fuoriParti.length ? esc('non contati: ' + fuoriParti.join(' · ')) : '';
-    const sw = 270, sh = M.ftq != null ? 106 : 92;
+    // I PERCORSI: dove il flusso si divide, il totale unico non e' il tempo di nessuno. Si elencano
+    // i percorsi con i loro minuti, e in una riga sola la lettura «se i rami vanno insieme» — dove
+    // il piu' lento detta il passo e l'altro RESTA FERMO ad aspettarlo (R6, deciso il 2026-08-22).
+    const P = V.flowPaths(map);
+    const multi = P.paths.length > 1 && M.hasData;
+    const righeP = multi ? P.paths.slice(0, 4) : [];
+    const nomeP = (x) => { const t = String(x.label || '').trim(); return t.length > 16 ? t.slice(0, 15) + '…' : t; };
+    const sw = 270, sh = (M.ftq != null ? 106 : 92) + (multi ? 22 + righeP.length * 16 + (P.together && P.together.waits.length ? 30 : 0) + (P.truncated ? 14 : 0) : 0);
     let sx = w - sw - 30, sy = h - sh - 30;
     if (loY != null) {
       // accanto al contenuto, non sotto: sotto la timeline ci sono spesso note e nuvole che verrebbero coperte
@@ -744,7 +784,25 @@
       <text class="hand" x="${sx + 12}" y="${sy + 40}" font-size="11">Totale VA: <tspan font-weight="700">${fmt(M.va)}</tspan>   Totale NVA: <tspan font-weight="700" fill="#c8321e">${fmt(M.nva)}</tspan></text>
       <text class="hand" x="${sx + 12}" y="${sy + 58}" font-size="11">VA %: <tspan font-weight="700">${fmt(M.vaPct)} %</tspan>   NVA %: <tspan font-weight="700" fill="#c8321e">${fmt(M.nvaPct)} %</tspan></text>
       ${M.ftq != null ? `<text class="hand" x="${sx + 12}" y="${sy + 76}" font-size="11">First Time Quality: <tspan font-weight="700">${fmt(M.ftq)} %</tspan>${M.ftqPartial ? '<tspan class="muted" font-size="10"> · parziale</tspan>' : ''}</text>` : ''}
-      <text class="hand muted" x="${sx + 12}" y="${sy + (M.ftq != null ? 94 : 78)}" font-size="10">${fuori || (M.hasData ? 'value quotient = VA / (VA + NVA)' : 'aggiungi Hi/Lo/Avg ai box e ai delta')}</text></g>`;
+      <text class="hand muted" x="${sx + 12}" y="${sy + (M.ftq != null ? 94 : 78)}" font-size="10">${fuori || (multi ? 'i totali qui sopra sommano tutti i rami' : (M.hasData ? 'value quotient = VA / (VA + NVA)' : 'aggiungi Hi/Lo/Avg ai box e ai delta'))}</text>
+      ${multi ? (() => {
+        let y = sy + (M.ftq != null ? 94 : 78) + 20;
+        let t = `<line x1="${sx + 12}" y1="${y - 12}" x2="${sx + sw - 12}" y2="${y - 12}" stroke="#d9d4c8"/>`
+          + `<text class="hand" x="${sx + 12}" y="${y}" font-size="10.5">${P.common.boxes.length ? `In comune: <tspan font-weight="700">${fmt(P.common.va)}</tspan> a valore` : `${P.count} percorsi diversi`}</text>`;
+        righeP.forEach((x) => {
+          y += 16;
+          t += `<text class="hand" x="${sx + 12}" y="${y}" font-size="10.5">via ${esc(nomeP(x))}</text>`
+            + `<text class="hand" x="${sx + sw - 12}" y="${y}" font-size="10.5" text-anchor="end"><tspan font-weight="700">${fmt(x.tot)}</tspan>${x.vaPct != null ? ` · VA ${Math.round(x.vaPct)} %` : ''}</text>`;
+        });
+        if (P.truncated) { y += 14; t += `<text class="hand muted" x="${sx + 12}" y="${y}" font-size="9.5">…e altri: ${P.count} percorsi in tutto</text>`; }
+        if (P.together && P.together.waits.length) {
+          y += 18;
+          const a = P.together.waits[0];
+          t += `<text class="hand" x="${sx + 12}" y="${y}" font-size="10" fill="#c8321e">Se vanno insieme: ${fmt(P.together.tot)} in tutto,</text>`
+            + `<text class="hand" x="${sx + 12}" y="${y + 12}" font-size="10" fill="#c8321e">e «${esc(nomeP(a))}» aspetta ${fmt(a.sec)}${P.together.waits.length > 1 ? ' (e non solo lui)' : ''}</text>`;
+        }
+        return t;
+      })() : ''}</g>`;
     L.overlay.innerHTML = g;
   };
 

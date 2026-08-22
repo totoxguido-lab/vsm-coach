@@ -93,6 +93,9 @@
 <div id="menu" class="hidden">
   <button data-m="new"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9z"/><path d="M13 3v6h6"/><path d="M12 12v6M9 15h6"/></svg>Nuova mappa</button>
   <button data-m="detail"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="8" y="3" width="13" height="13" rx="1.5"/><path d="M16 16v3a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h3" stroke-linecap="round"/></svg>Sotto-foglio di dettaglio</button>
+  <button data-m="attach"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V8M7 13l5-5 5 5"/><rect x="4" y="2.5" width="16" height="2.2" rx="1"/></svg>Questo foglio diventa un passo di…</button>
+  <button data-m="projects"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 7h6l2 2h10v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/></svg>Progetti…</button>
+  <button data-m="misura"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2h6M19 6l1.5-1.5"/></svg>Misura i tempi ⏱</button>
   <button data-m="guide"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.6 2.6 0 1 1 3.6 2.4c-.9.4-1.2 1-1.2 1.8"/><circle cx="12" cy="17" r=".4" fill="currentColor"/></svg>Guida pratica</button>
   <button class="compact-only" data-m="af"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13M14 4l4 4-4 4M20 16H7M10 12l-4 4 4 4"/></svg>Attuale ⇄ Ideale</button>
   <button class="compact-only" data-m="giri"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h10M4 12h13M4 18h8"/><circle cx="19" cy="6" r="2"/></svg>Giri dell'attuale…</button>
@@ -130,6 +133,14 @@
   <button data-m="info" class="ver-row"><span id="ver-label">VSM Coach</span><span class="hint">tocca: copia i dati per la diagnosi</span></button>
 </div>
 <input type="file" id="file-open" accept="application/json" hidden>
+
+<!-- Misura: il cronometro del giro (spec 2026-08-21, Parte 2). Il delta non si cronometra: nasce
+     per differenza fra la fine di un passo e l'inizio del successivo, misurando in sequenza. -->
+<dialog id="dlg-misura" aria-labelledby="mis-head">
+  <div class="d-head" id="mis-head">Misura</div>
+  <div class="d-body"><div id="mis-body"></div></div>
+  <div class="d-foot"><button class="btn" id="mis-close">Chiudi</button></div>
+</dialog>
 
 <dialog id="dlg-maps">
   <div class="d-head">Le tue mappe</div>

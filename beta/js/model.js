@@ -66,6 +66,12 @@ window.VSM = window.VSM || {};
   /** significato dichiarato di ogni espressione (cap. 7: il potere di includere le emozioni) */
   V.MOOD_MEANING = { neutro: 'né bene né male: esperienza ordinaria', felice: 'esperienza positiva in questo punto', soddisfatto: 'bisogno risolto, richiesta chiusa bene', triste: 'esperienza negativa, delusione', stanco: 'sovraccarico, fatica (operatore a fine turno, paziente spossato)', confuso: 'non sa cosa fare o dove andare: istruzioni poco chiare', arrabbiato: 'frustrazione: errori, ripetizioni, rimpalli', 'in attesa': 'aspetta senza sapere quanto né perché', preoccupato: 'ansia, incertezza (es. attesa di un referto)', sorpreso: 'imprevisto: qualcosa che non si aspettava' };
   V.DELTA_KINDS = ['attesa', 'in-box', 'coda', 'viaggio', 'sala d\'attesa'];
+  /** La forma del problema si sceglie (richiesta di Gt, 2026-08-21): la nuvola temporalesca del libro
+   *  resta il valore di partenza, ma su un foglio fitto un cerchio, un quadrato o un triangolo si
+   *  distinguono meglio fra loro — e chi mappa usa la forma per dire «questi problemi sono la stessa
+   *  famiglia». Il significato non cambia: è sempre un problema di processo. */
+  V.STORM_SHAPES = ['nuvola', 'cerchio', 'quadrato', 'triangolo'];
+  V.shapeOf = (el) => { const f = el && el.props && el.props.shape; return V.STORM_SHAPES.includes(f) ? f : 'nuvola'; };
   V.BAD_WORDS = /\b(a volte|alle volte|talvolta|dipende|forse|magari|può darsi|puo darsi|qualche volta|di solito|in genere|se capita|se serve|se possibile)\b/i;
 
   // ---------- tipi di elemento: default e spiegazioni (dal libro, parole nostre) ----------
@@ -76,7 +82,7 @@ window.VSM = window.VSM || {};
       why: 'Il triangolo rovesciato rosso segna il tempo in cui nulla avanza (richiesta nel vassoio, campione in coda, viaggio, paziente in sala d\'attesa): è spreco reso visibile. Il tempo si ottiene per differenza tra la fine del box precedente e l\'inizio del successivo, non si cronometra. Aggancialo a una freccia di flusso per entrare nella timeline.' },
     person: { name: 'Persona', w: 40, h: 78, props: { label: '', role: '', mood: 'neutro', requestor: true },
       why: 'L\'omino è chi sta nel processo: il richiedente (a destra, nella fascia alta), un paziente che si reca a un passo, un operatore. Scrivi chi è e che ruolo ha — l\'app non decide per te. L\'espressione (felice/neutro/triste) racconta l\'esperienza. Da qui partono le vie: «chiede a…» oppure «si reca a…».' },
-    storm: { name: 'Nuvola temporalesca', w: 120, h: 50, props: { text: '', muda: '', rule: '', a3: false, collapsed: false },
+    storm: { name: 'Nuvola temporalesca', w: 120, h: 50, props: { text: '', muda: '', rule: '', a3: false, collapsed: false, shape: 'nuvola' },
       why: 'Un problema del processo, mai una colpa: "che cosa, del modo in cui il lavoro accade ora, non è ideale?". Etichettalo con il muda (confusione, movimento, attesa, sovra-processo, scorte, difetti, sovrapproduzione) e la regola violata. Le nuvole diventano candidate ad A3 (5 perché → contromisure → test → follow-up).' },
     fluffy: { name: 'Nuvola soffice', w: 120, h: 50, props: { text: '' },
       why: 'Una buona pratica o un\'idea da conservare: ciò che già funziona (e va replicato) o un\'idea per lo stato futuro.' },
@@ -131,10 +137,39 @@ window.VSM = window.VSM || {};
    *  un colore inventato da un file non entra nel disegno. */
   const okInk = (c) => V.INK_COLORS.some(x => x.id && x.id === c) || Object.values(V.CHANNEL_LOOK).some(l => l.color === c);
   /** rimette in riga id, riferimenti e tinte di una mappa che arriva da fuori */
+  /** I campi di testo che arrivano da un file. Un JSON puo' portare un numero, un booleano o un
+   *  oggetto dove l'app si aspetta una riga da leggere: il titolo finiva in slug() e «Salva JSON» ed
+   *  «Esporta SVG» morivano con un TypeError, senza nemmeno un avviso (R1, debug del 2026-08-21).
+   *  Si ripara all'ingresso, come gia' si fa per gli id duplicati e i capi fantasma.
+   *  Regola stretta: si coercisce SOLO un valore presente e di tipo sbagliato. Una chiave assente
+   *  resta assente — nel modello «assente» ha un significato suo (summary assente = ricalcola,
+   *  tint assente = nessuna tinta scelta) e riempirla di stringa vuota cambierebbe comportamenti
+   *  che oggi sono giusti. */
+  const testo = (o, k) => { if (o && o[k] != null && typeof o[k] !== 'string') o[k] = String(o[k]); };
+  /** le chiavi di props che sono testo in qualche tipo (V.TYPES). Fuori da qui restano fuori:
+   *  size e offset sono numeri, or/validated/collapsed/a3 booleani, via/activities/times liste,
+   *  link/lockTo/attachedTo riferimenti, tint/intent/shape/summary/override hanno gia' la loro guardia. */
+  const PROPS_TESTO = ['title', 'label', 'text', 'note', 'to', 'hands', 'owner', 'role', 'what', 'qty',
+    'days', 'meters', 'from', 'name', 'color', 'who', 'gateIn', 'gateOut', 'hi', 'lo', 'avg', 'cc',
+    'priority', 'muda', 'rule', 'kind', 'mood', 'icon', 'channel', 'style'];
   V.sanitizeMap = (m) => {
     if (!m || typeof m !== 'object') return m;
     if (!Array.isArray(m.elements)) m.elements = [];
     if (!Array.isArray(m.strokes)) m.strokes = [];
+    ['title', 'date', 'authors', 'unitName', 'verName', 'samples', 'scope', 'ideal', 'requestor'].forEach(k => testo(m, k));
+    // l'unita' non e' testo libero: e' una delle quattro dichiarate. Fuori elenco si torna a quella
+    // di partenza, come gia' fanno la modalita' dei collegamenti e la forma del problema.
+    if (m.unit != null && !UNIT_SEC[m.unit]) m.unit = 'minuti';
+    // Il piano è una lista di righe: `plan` arrivato come stringa faceva morire V.lint — che gira a
+    // ogni apertura della Guida pratica e dentro il coach — e il pannello del Piano. Stessa cura
+    // delle attività: una lista, sempre, e dentro solo righe vere.
+    if (m.plan != null) m.plan = Array.isArray(m.plan) ? m.plan.filter(r => r && typeof r === 'object' && !Array.isArray(r)) : [];
+    // Le schede del foglio (preparazione, validazione, dati, analisi, controllo del futuro, chiusura)
+    // sono contenitori: da fuori può arrivarne una che è una stringa, e allora leggerla dà undefined
+    // ma SCRIVERCI dentro lancia. Fuori tipo si torna a quella di casa, coi campi vuoti.
+    ['prep', 'validation', 'data', 'analysis', 'futureCheck', 'closure'].forEach(k => {
+      if (m[k] != null && (typeof m[k] !== 'object' || Array.isArray(m[k]))) m[k] = clone(V.newMap()[k]);
+    });
     m.elements = m.elements.filter(el => el && typeof el === 'object' && V.TYPES[el.type]);
     const remap = new Map(), live = new Set();
     m.elements.forEach(el => {
@@ -153,16 +188,28 @@ window.VSM = window.VSM || {};
           el[k] = end;
         });
       }
+      PROPS_TESTO.forEach(k => testo(p, k));
+      // le attivita' sono righe da leggere una sotto l'altra: una lista, sempre, e di testo
+      if (p.activities != null) p.activities = Array.isArray(p.activities) ? p.activities.map(x => String(x ?? '')) : [];
       // un aggancio che punta nel vuoto lascia l'elemento dov'e' disegnato, invece di mandarlo all'origine
       ['attachedTo', 'lockTo'].forEach(k => { if (p[k] != null) { const t = ref(p[k]); if (live.has(t) && t !== el.id) p[k] = t; else delete p[k]; } });
-      if (p.link != null && !V.idOk(p.link)) delete p.link;
+      // Il link NON si giudica qui: sanitizeMap gira per mappa, prima che repairDoc rinomini gli id
+      // delle mappe fuori alfabeto — e buttarlo adesso uccideva un collegamento buono verso una
+      // mappa che di lì a un attimo sarebbe stata rinominata (verOf attraversava, props.link no).
+      // Chi punta al nulla lo scioglie repairDoc, dopo la rinomina.
+      if (p.link != null && typeof p.link !== 'string') delete p.link;
       // l'intento e' un segno dichiarato in legenda, non testo libero: fuori elenco si torna a «chiede»
       if (p.intent != null && !V.INTENTS.some(x => x.id === p.intent)) delete p.intent;
       // la tinta finisce dentro un attributo di stile del disegno: solo un numero la puo' scrivere,
       // normalizzato al giro 0-360. La descrizione finisce nel pop-up: solo testo, e mai vuoto
       // (vuota vorrebbe dire «ricalcola», che e' proprio il ripiego della chiave assente).
       if (p.tint != null) { const H = V.tintHue(p.tint); if (H == null) delete p.tint; else p.tint = H; }
+      // la forma del problema è un segno dichiarato in legenda, non testo libero: fuori elenco si torna alla nuvola
+      if (p.shape != null && !V.STORM_SHAPES.includes(p.shape)) delete p.shape;
       if (p.summary != null && (typeof p.summary !== 'string' || !p.summary.trim())) delete p.summary;
+      // le misure del cronometro: numeri veri, in secondi, mai negativi — da un file di fuori puo'
+      // arrivare qualunque cosa, e una media con dentro «due» non e' una media
+      if (p.times != null) { const t = Array.isArray(p.times) ? p.times.filter(x => typeof x === 'number' && isFinite(x) && x >= 0) : []; if (t.length) p.times = t; else delete p.times; }
       if (p.override && typeof p.override === 'object') {
         const o = {};
         if (okInk(p.override.stroke)) o.stroke = p.override.stroke;
@@ -192,6 +239,12 @@ window.VSM = window.VSM || {};
       if (!p) return;
       if (dipendeDa(el.id, trova(p), new Set([el.id]))) { delete el.props.lockTo; if (el.type === 'delta') delete el.props.attachedTo; }
     });
+    // Il giro del cronometro appeso a un passo (o a una freccia) che non c'e' piu' non e' un giro:
+    // si scioglie qui, come i legami che puntano nel vuoto. Il foglio si riapre e la misura riparte.
+    if (m.measure && typeof m.measure === 'object') {
+      const c_e = (id) => !id || live.has(id);
+      if (!c_e(m.measure.stepId) || !c_e(m.measure.connId) || !c_e(m.measure.fromId)) delete m.measure;
+    } else if (m.measure != null) delete m.measure;
     const sLive = new Set();
     m.strokes = m.strokes.filter(s => s && typeof s === 'object' && Array.isArray(s.points)).map(s => {
       let id = (V.idOk(s.id) && !sLive.has(s.id)) ? s.id : uid();
@@ -255,6 +308,31 @@ window.VSM = window.VSM || {};
   V.project = () => { const m = V.map(); return (m && V.doc.projects[m.projectId]) || V.doc.projects[V.doc.activeProjectId] || null; };
   V.mapsOfProject = (pid) => Object.values(V.doc.maps).filter(m => m.projectId === pid);
   V.addProject = (name) => { const p = V.newProject({ name: name || 'Progetto' }); V.doc.projects[p.id] = p; V.save(); return p; };
+  V.renameProject = (id, nome) => { const p = V.doc.projects[id]; if (!p) return false; p.name = String(nome || '').trim() || p.name; V.save(); emit({ label: 'progetto', ops: [] }); return true; };
+  /** Collega (o scollega) due progetti. Il collegamento vale nei DUE sensi: è una dichiarazione che i
+   *  due lavori si toccano, non una freccia. Finché non c'è, un passo non può puntare a una mappa
+   *  dell'altro — è la regola che tiene puliti gli elenchi. */
+  V.linkProjects = (a, b, on) => {
+    const pa = V.doc.projects[a], pb = V.doc.projects[b];
+    if (!pa || !pb || a === b) return false;
+    if (!Array.isArray(pa.links)) pa.links = []; if (!Array.isArray(pb.links)) pb.links = [];
+    const metti = (x, y) => { if (!x.links.includes(y)) x.links.push(y); };
+    const togli = (x, y) => { x.links = x.links.filter(i => i !== y); };
+    if (on) { metti(pa, b); metti(pb, a); } else { togli(pa, b); togli(pb, a); }
+    V.save(); emit({ label: 'collegamento fra progetti', ops: [] });
+    return true;
+  };
+  /** Elimina un progetto vuoto. Con le mappe dentro non si elimina: sarebbe la perdita più grossa che
+   *  l'app possa fare, e un tocco sbagliato non deve poterla causare. */
+  V.deleteProject = (id) => {
+    const p = V.doc.projects[id]; if (!p) return { ok: false, reason: 'assente' };
+    if (V.mapsOfProject(id).length) return { ok: false, reason: 'non vuoto' };
+    Object.values(V.doc.projects).forEach(q => { q.links = (q.links || []).filter(i => i !== id); });
+    delete V.doc.projects[id];
+    if (V.doc.activeProjectId === id) V.doc.activeProjectId = null;
+    V.repairDoc(); V.save(); emit({ label: 'progetto eliminato', ops: [] });
+    return { ok: true };
+  };
   V.byId = (id, map = V.map()) => map.elements.find(e => e.id === id);
 
   // ---------- undo a comandi ----------
@@ -346,7 +424,7 @@ window.VSM = window.VSM || {};
 
   // ---------- mappe: crea, cambia, elimina ----------
   /** le nuvole si alzano quanto serve al loro testo (stesse costanti del disegno): senza, il testo sforava */
-  const fitClouds = (m) => { const R2 = V.render; if (!m || !Array.isArray(m.elements) || !R2 || !R2.cloudFit) return m; m.elements.forEach(el => { if ((el.type === 'storm' || el.type === 'fluffy') && !el.props.collapsed && el.props.text) el.h = Math.max(el.h, R2.cloudFit(el.w, el.props.text)); }); return m; };
+  const fitClouds = (m) => { const R2 = V.render; if (!m || !Array.isArray(m.elements) || !R2 || !R2.cloudFit) return m; m.elements.forEach(el => { if ((el.type === 'storm' || el.type === 'fluffy') && !el.props.collapsed && el.props.text) el.h = Math.max(el.h, R2.cloudFit(el.w, el.props.text, el.type === 'storm' ? V.shapeOf(el) : 'nuvola')); }); return m; };
   V.addMap = (map) => {
     if (!map.projectId) {
       // da un progetto di esempio non si eredita mai: un foglio nuovo aperto mentre si guarda
@@ -447,6 +525,29 @@ window.VSM = window.VSM || {};
    *  gia' colorato usciva invece la tinta a caso di ogni mappa nuova. Un passo senza colore la
    *  tinta a caso se la tiene: serve a capire a colpo d'occhio su quale foglio si sta lavorando. */
   V.createDetail = (parent, title, stepId) => { const passo = stepId ? V.byId(stepId, parent) : null; const H = passo && passo.props ? V.tintHue(passo.props.tint) : null; const d = V.newMap(Object.assign({ kind: 'detail', parentId: parent.id, parentStepId: stepId || null, projectId: parent.projectId, title: title || ('Dettaglio di ' + (parent.title || 'mappa')), unit: parent.unit, authors: parent.authors }, H == null ? {} : { tint: H })); V.addMap(d); V.save(); return d; };
+  /** Appende un foglio esistente a un passo di un altro foglio: è il «processo 0» — l'intera mappa di
+   *  oggi diventa un passo di qualcosa di più grande. Ritorna l'esito invece di annunciare da sé: chi
+   *  chiama non deve dire «fatto» prima di aver letto. Si rifiuta quando creerebbe un anello (una
+   *  mappa sotto sé stessa non ha un «sopra») o quando attraverserebbe due progetti.
+   *  La risalita segna i fogli visti invece di contare i giri: un contatore che si ferma a N direbbe
+   *  «va bene» su una catena più lunga di N, ed è lo stesso errore dell'indirizzo che si fermava a 8. */
+  V.attachUnder = (map, parentMap, stepId) => {
+    if (!map || !parentMap) return { ok: false, reason: 'assente' };
+    if (map.id === parentMap.id) return { ok: false, reason: 'sé stessa' };
+    if (map.projectId !== parentMap.projectId) return { ok: false, reason: 'altro progetto' };
+    const visti = new Set();
+    for (let p = parentMap; p && !visti.has(p.id); p = p.parentId ? V.doc.maps[p.parentId] : null) {
+      if (p.id === map.id) return { ok: false, reason: 'anello' };
+      visti.add(p.id);
+    }
+    const step = parentMap.elements.find(e => e.id === stepId && e.type === 'box');
+    if (!step) return { ok: false, reason: 'passo assente' };
+    map.parentId = parentMap.id; map.parentStepId = step.id;
+    step.props.link = map.id;
+    map.updated = Date.now(); parentMap.updated = Date.now();
+    V.repairDoc(); V.save(); emit({ label: 'appesa', mapId: map.id, ops: [] });
+    return { ok: true };
+  };
   /** Il ponte macro→micro: le attività elencate nel passo sono già la scaletta del suo sotto-foglio.
    *  Crea il foglio (come createDetail) e dentro un passo per ogni attività scelta, in fila e già
    *  collegati da frecce di flusso nell'ordine dell'elenco. Regole (spec 2026-08-21): i tempi del
@@ -685,6 +786,15 @@ window.VSM = window.VSM || {};
       if (m.parentStepId) { const par = maps[m.parentId]; const vivo = par && par.elements.some(e => e.id === m.parentStepId && e.type === 'box'); if (!vivo) { m.parentStepId = null; fixes.push('parentStepId ' + m.id); } }
       if (m.pairId && !maps[m.pairId]) { m.pairId = null; fixes.push('pairId assente ' + m.id); }
     });
+    // Un ⇉ che punta a una mappa eliminata: il badge spariva gia' da solo a schermo (le guardie
+    // ci sono), ma l'id morto restava nel documento per sempre — anche dopo il reload — e finiva
+    // nel JSON esportato, dove un re-import con lo stesso id avrebbe «riacceso» un collegamento
+    // che nessuno ha piu' chiesto. Stessa stanghetta di pairId/parentId/verOf, qui invece che in
+    // deleteMap perche' repairDoc copre anche l'apertura di un file e l'import (R3, 2026-08-21).
+    // Sta DOPO la rinomina degli id: un link appena rinominato non e' un link morto.
+    all.forEach(m => (m.elements || []).forEach(el => {
+      if (el.props && el.props.link && !maps[el.props.link]) { delete el.props.link; fixes.push('collegamento morto in ' + m.id); }
+    }));
     // catene: nessun anello, altrimenti versionsOf girerebbe a vuoto
     all.forEach(m => { const seen = new Set([m.id]); let p = m.verOf; while (p && maps[p]) { if (seen.has(p)) { m.verOf = null; fixes.push('anello di giri ' + m.id); break; } seen.add(p); p = maps[p].verOf; } });
     // anelli di padri: una mappa figlia di sé stessa, anche per vie traverse, farebbe girare a vuoto
@@ -833,15 +943,32 @@ window.VSM = window.VSM || {};
     // ogni percorso alternativo prende una corsia sua: sulla timeline i rami stanno uno sotto l'altro,
     // invece di finire disegnati l'uno sopra l'altro alla stessa altezza
     let corsie = 0;
-    const visit = (b, ln) => {
-      if (seen.has(b.id)) return; seen.add(b.id); order.push(b); lane.set(b.id, ln);
-      const outs = outMap.get(b.id).slice().sort((p, q) => (V.byId(p.to.el, map)?.x || 0) - (V.byId(q.to.el, map)?.x || 0));
-      outs.forEach((f, i) => {
-        const t = V.byId(f.to.el, map); if (!t) return;
-        const ramo = i === 0 ? ln : ++corsie;
-        usedFlows.push(f); segments.push({ from: b, to: t, conn: f, lane: ramo });
-        visit(t, ramo);
-      });
+    // La visita e' in profondita' e va per pila esplicita, non per ricorsione: su una catena di
+    // qualche migliaio di passi lo stack finiva e partiva un RangeError non catturato, che portava
+    // giu' anche V.metrics e V.stepNumbers (R4, debug del 2026-08-21). Un contatore di profondita'
+    // non sarebbe stato una guardia: qui il problema non e' un anello (per quello c'e' `seen`), e'
+    // la profondita' vera.
+    // Ogni ripresa tiene il punto in cui era arrivata (`i` fra i suoi rami), cosi' la sequenza con
+    // cui si consumano le corsie resta IDENTICA a quella della ricorsione: il ramo successivo
+    // prende il suo numero solo dopo che tutto il sotto-albero del ramo precedente e' stato
+    // visitato. Mettere tutti i figli nella pila e poi toglierli ridisegnerebbe la timeline
+    // diversa — le corsie sono le corsie del disegno, non un dettaglio interno.
+    const visit = (b0, ln0) => {
+      const pila = [{ b: b0, ln: ln0, outs: null, i: 0 }];
+      while (pila.length) {
+        const f = pila[pila.length - 1];
+        if (f.outs === null) {
+          if (seen.has(f.b.id)) { pila.pop(); continue; }
+          seen.add(f.b.id); order.push(f.b); lane.set(f.b.id, f.ln);
+          f.outs = outMap.get(f.b.id).slice().sort((p, q) => (V.byId(p.to.el, map)?.x || 0) - (V.byId(q.to.el, map)?.x || 0));
+        }
+        if (f.i >= f.outs.length) { pila.pop(); continue; }
+        const c = f.outs[f.i], i = f.i++;
+        const t = V.byId(c.to.el, map); if (!t) continue;
+        const ramo = i === 0 ? f.ln : ++corsie;
+        usedFlows.push(c); segments.push({ from: f.b, to: t, conn: c, lane: ramo });
+        pila.push({ b: t, ln: ramo, outs: null, i: 0 });
+      }
     };
     // se ogni passo toccato ha un ingresso (le frecce girano in tondo) si parte comunque da sinistra
     (starts.length ? starts : boxes.filter(b => touched.has(b.id)).sort(byX)).forEach((b, i) => visit(b, i ? ++corsie : 0));
@@ -902,6 +1029,184 @@ window.VSM = window.VSM || {};
       ultimo = s.to.id;
     });
     return out;
+  };
+  /* ---------- il cronometro: misurare i tempi camminando il processo ----------
+   *  Dal libro (cap. 5): il tempo del passo va dalla PRIMA all'ULTIMA attività; l'attesa NON si
+   *  cronometra, si ottiene per differenza (fine del passo → inizio del successivo). Misurando in
+   *  sequenza, quindi, le attese escono da sole: è l'unico modo in cui il metodo vuole che nascano.
+   *  Le misure si salvano in SECONDI (props.times): l'unità del foglio (map.unit) può cambiare
+   *  dopo, e una misura registrata «in minuti» diventerebbe una bugia. Restano dentro il documento,
+   *  perché chi ha camminato il processo non deve perdere il giro se il tablet si spegne. */
+  const UNIT_SEC = { secondi: 1, minuti: 60, ore: 3600, giorni: 86400 };
+  V.unitSeconds = (unit) => UNIT_SEC[unit] || 60;
+  /** Sotto questa soglia una misura non è il tempo di un passo: è un tocco per sbaglio, o un giro
+   *  cominciato e chiuso per sbaglio. La soglia è in SECONDI e non nell'unità del foglio — due secondi
+   *  restano due secondi anche su un foglio in ore. L'app la SEGNALA e basta: scartarla è di chi ha
+   *  osservato, come per l'outlier eccezionale (spec: «l'app li mostra, non decide»). */
+  V.MISURA_BREVE = 5;
+  V.toUnit = (sec, unit) => sec / V.unitSeconds(unit);
+  /** Le misure buone di un elemento: numeri veri, mai negativi. Quello che arriva da un file di fuori
+   *  può essere qualunque cosa, e una media con dentro «due» non è una media. */
+  V.timesOf = (el) => (el && Array.isArray(el.props && el.props.times))
+    ? el.props.times.filter(x => typeof x === 'number' && isFinite(x) && x >= 0) : [];
+  /** Hi = massimo, Lo = minimo, Avg = media aritmetica (Fig. 5.1). Niente esclusione automatica degli
+   *  outlier: chi ha osservato sa se quel 19 era un caso eccezionale o il sintomo di un problema a
+   *  monte — l'app li mostra, non decide. */
+  V.timeStats = (times) => {
+    const t = (times || []).filter(x => typeof x === 'number' && isFinite(x) && x >= 0);
+    if (!t.length) return { hi: null, lo: null, avg: null, n: 0 };
+    return { hi: Math.max.apply(null, t), lo: Math.min.apply(null, t), avg: t.reduce((a, b) => a + b, 0) / t.length, n: t.length };
+  };
+  /** Che cosa c'è da scrivere, prima di scriverlo: un elenco di passi e attese con quante misure
+   *  hanno, i conti già nell'unità del foglio, se avevano tempi scritti a mano (non si sovrascrive in
+   *  silenzio) e se sono validati (quelli non si toccano). */
+  V.timesReport = (map) => {
+    if (!map) return [];
+    return map.elements.filter(e => (e.type === 'box' || e.type === 'delta') && V.timesOf(e).length).map(e => {
+      const t = V.timesOf(e); const s = V.timeStats(t);
+      return {
+        id: e.id, type: e.type, n: t.length, times: t, brevi: t.filter(x => x < V.MISURA_BREVE).length,
+        label: e.type === 'box' ? (String(e.props.title || '').trim() || 'passo senza nome') : (String(e.props.note || '').trim() || 'attesa'),
+        stats: { hi: V.toUnit(s.hi, map.unit), lo: V.toUnit(s.lo, map.unit), avg: V.toUnit(s.avg, map.unit), n: s.n },
+        manual: !!(e.props.hi || e.props.lo || e.props.avg),
+        validated: !!e.props.validated
+      };
+    });
+  };
+  /** «Calcola i tempi»: scrive Hi/Lo/Avg dove ci sono misure, in UNA sola voce di annulla. I passi
+   *  validati restano fuori (e chi chiama lo dice a chi guarda): mandarli dentro il commit avrebbe
+   *  fatto rifiutare l'intero blocco, e un solo passo validato avrebbe bloccato tutto il foglio. */
+  V.applyTimes = (map) => {
+    const rep = V.timesReport(map);
+    const ops = []; let validati = 0;
+    rep.forEach(r => {
+      if (r.validated) { validati++; return; }
+      ops.push({ t: 'props', id: r.id, after: { hi: fmt(r.stats.hi), lo: fmt(r.stats.lo), avg: fmt(r.stats.avg) } });
+    });
+    if (!ops.length) return { ok: false, written: 0, validati };
+    const ok = V.commit(ops, 'calcola i tempi', { map });
+    return { ok, written: ok ? ops.length : 0, validati };
+  };
+  /** Scarta una singola misura (il caso eccezionale che chi ha osservato riconosce). */
+  V.dropTime = (map, elId, i) => {
+    const el = V.byId(elId, map); if (!el) return false;
+    const t = V.timesOf(el); if (i < 0 || i >= t.length) return false;
+    const dopo = t.slice(0, i).concat(t.slice(i + 1));
+    return V.commit({ t: 'props', id: elId, after: { times: dopo } }, 'scarta una misura', { map });
+  };
+  /** La catena del giro: si seguono le frecce, un passo dopo l'altro, prendendo il primo ramo a ogni
+   *  biforcazione. I punti in cui il flusso si divide e i passi lasciati fuori si DICHIARANO: un giro
+   *  che salta metà foglio senza avvisare produce dati che sembrano completi e non lo sono.
+   *  Foglio senza frecce: la catena è l'ordine stimato da sinistra a destra, e fra un passo e l'altro
+   *  non c'è attesa da misurare (non c'è freccia a cui appenderla). */
+  V.measureChain = (map) => {
+    const vuoto = { chain: [], forks: [], fuori: [] };
+    if (!map) return vuoto;
+    const fo = V.flowOrder(map);
+    if (!fo.order.length) return vuoto;
+    if (!fo.segments.length) return { chain: fo.order.slice(), forks: [], fuori: [] };
+    const chain = [], forks = [], visti = new Set();
+    let cur = fo.order[0];
+    while (cur && !visti.has(cur.id)) {
+      visti.add(cur.id); chain.push(cur);
+      const outs = fo.segments.filter(s => s.from.id === cur.id);
+      if (outs.length > 1) forks.push(cur.id);
+      cur = outs.length ? outs[0].to : null;
+    }
+    return { chain, forks, fuori: fo.order.filter(b => !visti.has(b.id)) };
+  };
+  /** Il passo dopo, e la freccia da cui ci si passa (null se non c'è freccia: niente attesa). */
+  V.measureNext = (map, stepId) => {
+    const fo = V.flowOrder(map);
+    const seg = fo.segments.find(s => s.from.id === stepId);
+    if (seg) return { conn: seg.conn, next: seg.to };
+    if (!fo.segments.length) { const i = fo.order.findIndex(b => b.id === stepId); const n = fo.order[i + 1]; return n ? { conn: null, next: n } : null; }
+    return null;
+  };
+  /** Lo stato del giro vive nel foglio (map.measure), non in memoria: l'app si chiude, il tablet si
+   *  spegne, il giro si ritrova dov'era. Non passa dall'annulla — è dove sei, non che cosa hai
+   *  scritto — quindi si scrive diretto e si salva. */
+  const setMeasure = (map, s) => { if (s) map.measure = s; else delete map.measure; V.save(); return s || null; };
+  V.measureState = (map) => (map && map.measure) || null;
+  V.measureElapsed = (map, now) => { const s = V.measureState(map); return (s && s.t0) ? Math.max(0, Math.round(((now || Date.now()) - s.t0) / 1000)) : 0; };
+  /** Avvia la misura di un passo. mode 'giro' = la catena in sequenza (le attese nascono da sole);
+   *  mode 'singolo' = quel passo e basta, ripetuto quante volte si vuole (niente attese). */
+  V.measureStart = (map, stepId, mode = 'giro', now = Date.now()) => {
+    const el = V.byId(stepId, map);
+    if (!el || el.type !== 'box' || el.props.validated) return null;
+    // col lucchetto del foglio chiuso nessuna misura potra' essere registrata: far partire il giro
+    // vorrebbe dire far camminare qualcuno per niente
+    if (map.validated) return null;
+    const prec = V.measureState(map);
+    return setMeasure(map, { mode, giro: (prec && prec.giro) || 1, stepId, phase: 'box', t0: now, fromId: null, connId: null });
+  };
+  V.measureStop = (map) => setMeasure(map, null);
+  /** Butta via la misura in corso e riparte da adesso: chi cammina si accorge subito quando la misura
+   *  non vale (una telefonata, un'interruzione che non c'entra) e deve poterla annullare senza
+   *  perdere il giro. */
+  V.measureDiscard = (map, now = Date.now()) => {
+    const s = V.measureState(map); if (!s || !s.phase) return null;
+    return setMeasure(map, Object.assign({}, s, { t0: now }));
+  };
+  const addTime = (map, elId, sec) => {
+    const el = V.byId(elId, map); if (!el) return false;
+    return V.commit({ t: 'props', id: elId, after: { times: V.timesOf(el).concat([sec]) } }, 'misura', { map });
+  };
+  /** L'attesa su cui scrivere la differenza: quella già appesa a questa freccia, o una nuova, messa
+   *  fra i due passi. Nasce solo quando serve — misurare un passo alla volta non deve riempire il
+   *  foglio di attese che nessuno ha osservato. */
+  const attesaDi = (map, conn, from, to) => {
+    const gia = map.elements.find(e => e.type === 'delta' && e.props.attachedTo === conn.id);
+    if (gia) return gia;
+    const x = Math.round(((from.x + from.w) + to.x) / 2 - 15), y = Math.round(from.y + 26);
+    const d = V.newElement('delta', x, y, {}); d.props.attachedTo = conn.id;
+    if (!V.commit({ t: 'add', el: d }, 'attesa misurata', { map })) return null;
+    return V.byId(d.id, map);
+  };
+  /** Un tocco solo, che a seconda di dove sei vuol dire «passo finito» o «comincia il prossimo».
+   *  Chiude la misura in corso, la registra, e apre la successiva: passo → attesa → passo dopo.
+   *  Alla fine della catena il giro si chiude e il numero sale. */
+  V.measureAdvance = (map, now = Date.now()) => {
+    const s = V.measureState(map); if (!s || !s.phase || !s.t0) return null;
+    const sec = Math.max(0, Math.round((now - s.t0) / 1000));
+    // Il giro si chiude: non punta più a niente, il numero del giro resta. Il pannello torna a
+    // «comincia il giro», invece di tenere una misura appesa a un elemento che non c'è più.
+    const chiudi = () => setMeasure(map, { mode: s.mode, giro: s.giro || 1, stepId: null, phase: null, t0: null, fromId: null, connId: null });
+    if (s.phase === 'attesa') {
+      const from = V.byId(s.fromId, map), to = V.byId(s.stepId, map), conn = V.byId(s.connId, map);
+      // Il passo, la freccia o il passo d'arrivo cancellati mentre l'attesa correva: il tempo misurato
+      // non ha più dove essere scritto. Il giro si chiude e lo DICE — riavvolgere a 'box' in silenzio
+      // faceva ripartire un cronometro che non misurava più niente di vero.
+      // Tre cadaveri possibili, e vanno nominati per nome: dire «il passo non c'è più» mentre il
+      // passo sta nell'elenco lì sotto è una contraddizione a schermo — la stessa famiglia di R2.
+      if (!from || !to || !conn) { chiudi(); return { ko: 'sparito', cosa: !to ? 'passo' : (!conn ? 'freccia' : 'partenza') }; }
+      const d = attesaDi(map, conn, from, to);
+      if (d && !addTime(map, d.id, sec)) return { ko: 'validato' };
+      setMeasure(map, Object.assign({}, s, { phase: 'box', t0: now, fromId: null, connId: null }));
+      return { elId: d ? d.id : null, seconds: sec, phase: 'box' };
+    }
+    // Il passo CANCELLATO e il passo VALIDATO sono due «non si può» diversi, e vanno detti diversi:
+    // addTime torna false per tutti e due (l'elemento assente, e il commit rifiutato dal lucchetto ✓),
+    // quindi l'assenza si guarda PRIMA. Senza questa guardia il pannello annunciava «il passo è
+    // validato ✓» anche davanti a un passo cancellato, e il giro restava appeso al fantasma per
+    // sempre (R2 del debug 2026-08-21).
+    // Non basta che l'elemento esista: dev'essere ancora un passo. Un giro che punta a un in-box
+    // (un file confezionato ci arriva) scriveva la misura addosso a lui, dove nessun resoconto la
+    // mostra: una misura persa in silenzio dentro il documento.
+    const passo = V.byId(s.stepId, map);
+    if (!passo || passo.type !== 'box') { chiudi(); return { ko: 'sparito', cosa: 'passo' }; }
+    // Il lucchetto del FOGLIO e la ✓ del PASSO fermano tutti e due la scrittura, ma sono due cose
+    // diverse e vanno dette diverse: annunciare «il passo è validato ✓» davanti a un passo che la ✓
+    // non ce l'ha era di nuovo il foglio che dice il falso.
+    if (map.validated) return { ko: 'foglio' };
+    // il giro resta aperto: scartare la misura o riaprire il lucchetto del passo lo decide chi misura
+    if (!addTime(map, s.stepId, sec)) return { ko: 'validato' };
+    if (s.mode === 'singolo') { setMeasure(map, Object.assign({}, s, { phase: null, t0: null })); return { elId: s.stepId, seconds: sec, phase: null }; }
+    const dopo = V.measureNext(map, s.stepId);
+    if (!dopo) { setMeasure(map, { mode: s.mode, giro: (s.giro || 1) + 1, stepId: null, phase: null, t0: null, fromId: null, connId: null }); return { elId: s.stepId, seconds: sec, phase: null, chiuso: true }; }
+    if (!dopo.conn) { setMeasure(map, Object.assign({}, s, { stepId: dopo.next.id, phase: 'box', t0: now, fromId: null, connId: null })); return { elId: s.stepId, seconds: sec, phase: 'box' }; }
+    setMeasure(map, Object.assign({}, s, { phase: 'attesa', t0: now, fromId: s.stepId, connId: dopo.conn.id, stepId: dopo.next.id }));
+    return { elId: s.stepId, seconds: sec, phase: 'attesa' };
   };
   /** Indirizzo del foglio: quello del passo che lo contiene, PER INTERO. Vuoto per la radice del
    *  progetto. La guardia serve solo contro gli anelli di un documento arrivato da fuori e mai
@@ -969,6 +1274,127 @@ window.VSM = window.VSM || {};
     const ops = [{ t: 'props', id: boxId, after: { tint: H } }];
     if (V.linkKind(box, map) === 'figlia') ops.push({ t: 'mapfield', mapId: box.props.link, key: 'tint', after: H });
     return V.commit(ops, 'colore del passo');
+  };
+  /** Il problema ridotto al segno: sul foglio resta la sua forma, piccola, con una «i» dentro — il
+   *  testo non si perde, si legge toccandola. Serve quando i problemi sono tanti e il foglio non si
+   *  legge più: il libro chiede di segnarli TUTTI, e nasconderli non è cancellarli.
+   *  Riaprendolo torna alla misura di prima, e comunque alta quanto serve al suo testo: una nuvola
+   *  riaperta più bassa del suo testo lo avrebbe fatto sforare. */
+  V.setStormMark = (map, id, on, chi = 'segno') => {
+    const el = V.byId(id, map); if (!el || el.type !== 'storm') return false;
+    const R2 = V.render;
+    const props = on ? { collapsed: true, w0: el.w, h0: el.h } : { collapsed: false };
+    let size;
+    if (on) size = { w: 34, h: 30 };
+    else {
+      const w = el.props.w0 || V.TYPES.storm.w;
+      let h = el.props.h0 || V.TYPES.storm.h;
+      if (R2 && R2.cloudFit && el.props.text) h = Math.max(h, R2.cloudFit(w, el.props.text, V.shapeOf(el)));
+      size = { w, h };
+    }
+    return V.commit([
+      { t: 'props', id, after: props },
+      { t: 'update', id, after: size, before: { w: el.w, h: el.h } }
+    ], on ? 'riduci al segno' : 'riapri il problema', { map });
+  };
+  /** Cambiare forma può cambiare quanto testo ci sta (il triangolo è stretto in cima): l'altezza si
+   *  rifà nella stessa voce di annulla, o il testo sforerebbe fuori dal disegno. */
+  V.setStormShape = (map, id, shape) => {
+    const el = V.byId(id, map); if (!el || el.type !== 'storm') return false;
+    const f = V.STORM_SHAPES.includes(shape) ? shape : 'nuvola';
+    const ops = [{ t: 'props', id, after: { shape: f } }];
+    const R2 = V.render;
+    if (!el.props.collapsed && el.props.text && R2 && R2.cloudFit) {
+      const h = Math.max(V.TYPES.storm.h, R2.cloudFit(el.w, el.props.text, f));
+      if (h !== el.h) ops.push({ t: 'update', id, after: { h }, before: { h: el.h } });
+    }
+    return V.commit(ops, 'forma del problema', { map });
+  };
+  /** I PERCORSI del foglio, con i loro parziali.
+   *  Dove il flusso si divide, sommare i rami in un totale solo dice una cosa che non succede a
+   *  nessuno: sul foglio Accoglienza → (Prelievo | Visita) → Refertazione il totale unico vale 104
+   *  minuti, mentre chi passa dal prelievo ne impiega 39 e chi va alla visita 81. Il libro conta il
+   *  tempo che il PAZIENTE attraversa, e il paziente una strada sola la prende. Qui si elencano i
+   *  percorsi interi, ognuno coi suoi minuti; il tratto che fanno tutti si dice a parte.
+   *
+   *  Due bivi diversi si disegnano uguali — due frecce che escono dallo stesso passo — e l'app non
+   *  puo' sapere se sono alternative («o l'una o l'altra») o rami paralleli («tutti e due insieme»).
+   *  Invece di chiederlo si mostrano tutte e due le letture: i percorsi separati, e in `together`
+   *  l'attraversamento se i rami corrono insieme — dove il ramo lento detta il passo e quello veloce
+   *  RESTA FERMO ad aspettarlo. Quell'attesa (42 minuti nell'esempio) oggi non si vede da nessuna
+   *  parte, ed e' esattamente il tempo in cui nulla avanza che una value stream map deve mostrare.
+   *
+   *  Le attese contano solo se stanno sulle frecce di QUEL percorso. Il giro dei percorsi non
+   *  ripassa mai dallo stesso passo (una rilavorazione che torna indietro non deve girare a vuoto),
+   *  e sopra una manciata di percorsi si smette di elencarli dicendo quanti sono: con sei bivi in
+   *  fila sarebbero sessantaquattro, e un riquadro con sessantaquattro righe non lo legge nessuno. */
+  const MAX_PERCORSI = 8;
+  V.flowPaths = (map) => {
+    const vuoto = { paths: [], common: { boxes: [], va: 0, nva: 0 }, forks: [], count: 0, truncated: false, together: null };
+    if (!map) return vuoto;
+    const fo = V.flowOrder(map);
+    if (!fo.order.length) return vuoto;
+    const deltas = map.elements.filter(e => e.type === 'delta');
+    const attesaSu = (connId) => { const d = deltas.find(x => x.props.attachedTo === connId); const v = d ? num(d.props.avg) : null; return v == null ? 0 : v; };
+    const val = (b) => { const v = num(b.props.avg); return v == null ? 0 : v; };
+    const uscite = new Map();
+    fo.segments.forEach(s => { if (!uscite.has(s.from.id)) uscite.set(s.from.id, []); uscite.get(s.from.id).push(s); });
+    const inizi = fo.order.filter(b => !fo.segments.some(s => s.to.id === b.id));
+    const partenze = inizi.length ? inizi : [fo.order[0]];
+    // enumerazione in profondita', con i passi gia' visti dentro QUESTO percorso: un ritorno
+    // indietro chiude il percorso li', invece di ricominciare il giro
+    // Iterativa, con una pila di riprese: una catena di qualche migliaio di passi finirebbe lo
+    // stack, ed e' l'errore che flowOrder ha appena smesso di fare — non si reintroduce qui.
+    const paths = []; let count = 0, troncati = false;
+    const cammina = (p0) => {
+      const visti = new Set([p0.id]), boxes = [p0], conns = [];
+      const pila = [{ box: p0, out: null, i: 0 }];
+      while (pila.length) {
+        if (count > 4096) { troncati = true; return; }        // rete contro i fogli mostruosi
+        const f = pila[pila.length - 1];
+        if (f.out === null) {
+          f.out = (uscite.get(f.box.id) || []).filter(s => !visti.has(s.to.id));
+          if (!f.out.length) {                                 // qui il percorso finisce
+            count++;
+            if (paths.length < MAX_PERCORSI) paths.push({ boxes: boxes.slice(), conns: conns.slice() });
+            else troncati = true;
+          }
+        }
+        if (f.i >= f.out.length) {                             // tornando indietro si sfila il passo
+          pila.pop();
+          if (pila.length) { const uscito = boxes.pop(); conns.pop(); visti.delete(uscito.id); }
+          continue;
+        }
+        const s = f.out[f.i++];
+        if (visti.has(s.to.id)) continue;                      // un altro ramo ci e' gia' passato
+        visti.add(s.to.id); boxes.push(s.to); conns.push(s.conn);
+        pila.push({ box: s.to, out: null, i: 0 });
+      }
+    };
+    partenze.forEach(cammina);
+    if (!paths.length) return vuoto;
+    // i conti di ogni percorso, e il nome: il primo passo che NON fanno tutti
+    const inTutti = paths[0].boxes.filter(b => paths.every(p => p.boxes.some(x => x.id === b.id)));
+    const comuni = new Set(inTutti.map(b => b.id));
+    const conti = paths.map(p => {
+      const va = p.boxes.reduce((a, b) => a + val(b), 0);
+      const nva = p.conns.reduce((a, c) => a + attesaSu(c.id), 0);
+      const suo = p.boxes.find(b => !comuni.has(b.id));
+      return { boxes: p.boxes, conns: p.conns, va, nva, tot: va + nva,
+        vaPct: (va + nva) > 0 ? va / (va + nva) * 100 : null,
+        label: String((suo || p.boxes[p.boxes.length - 1] || {}).props?.title || '').trim() || 'percorso' };
+    });
+    const common = { boxes: inTutti, va: inTutti.reduce((a, b) => a + val(b), 0),
+      nva: paths[0].conns.filter(c => paths.every(p => p.conns.some(x => x.id === c.id))).reduce((a, c) => a + attesaSu(c.id), 0) };
+    // la lettura «se vanno insieme»: chi finisce prima aspetta il piu' lento
+    let together = null;
+    if (conti.length > 1) {
+      const lento = conti.reduce((a, b) => (b.tot > a.tot ? b : a));
+      together = { tot: lento.tot, slowest: lento.label,
+        waits: conti.filter(c => c !== lento && lento.tot - c.tot > 0).map(c => ({ label: c.label, sec: lento.tot - c.tot })) };
+    }
+    return { paths: conti, common, forks: fo.segments.length ? Array.from(uscite.entries()).filter(([, v]) => v.length > 1).map(([k]) => k) : [],
+      count: Math.max(count, conti.length), truncated: troncati, together };
   };
   V.metrics = (map) => {
     const boxes = map.elements.filter(e => e.type === 'box');

@@ -255,6 +255,44 @@
     if (g.type === 'via') { const c = V.byId(g.id, map); if (c) { c.props.via = g.before; R.updateEl(c.id, map); } }
     R.selection(I.selection, map);
   }
+  /** Mette un elemento nuovo nel punto w del foglio, con tutto quello che il gesto di creazione ha
+   *  sempre fatto: centrato sul punto e dentro il foglio, la corsia larga quanto la carta, l'attesa
+   *  agganciata alla freccia vicina, la persona che non ruba il posto al richiedente, il legame
+   *  automatico a chi sta sotto. Lo chiamano il gesto «crea» della palette e il menu del vuoto —
+   *  due strade sole, stesso risultato: quando la creazione viveva in un posto solo, la seconda
+   *  strada avrebbe rifatto le stesse regole a metà. */
+  I.placeKind = (kind, w, o = {}) => {
+    const map = V.map(); if (!map) return null;
+    const T = V.TYPES[kind]; if (!T) return null;
+    R.ghost('');
+    let el;
+    if (o.rect && o.rect.w > 20 && o.rect.h > 14) { el = V.newElement(kind, o.rect.x, o.rect.y); el.w = Math.round(o.rect.w); el.h = Math.round(o.rect.h); }
+    else {
+      const P = V.paperOf(map);
+      // la corsia è una fascia del reparto: nasce larga quanto il foglio, non con una larghezza fissa da A3
+      const tw = kind === 'lane' ? P.w - 80 : T.w;
+      const nx = Math.max(0, Math.min(P.w - tw, Math.round(w.x - tw / 2))), ny = Math.max(0, Math.min(P.h - T.h, Math.round(w.y - T.h / 2)));
+      el = V.newElement(kind, nx, ny); if (kind === 'lane') el.w = tw;
+    }
+    if (o.props) Object.assign(el.props, o.props);
+    if (kind === 'delta') {
+      // aggancia alla freccia di flusso più vicina (entro 40 unità)
+      let best = null, bd = 44 / I.view.k; // 44 px a schermo
+      // distanza misurata sul percorso disegnato (P.pts), non sulla corda a→b: con i gomiti la corda
+      // passa lontano dalla linea vera e il delta si agganciava alla freccia sbagliata
+      map.elements.filter(c => c.type === 'flow').forEach(c => { const P = R.connPath(c, map); if (!P.pts || P.pts.length < 2) return; let dd = Infinity; for (let i = 0; i < P.pts.length - 1; i++) dd = Math.min(dd, distToSeg(w, P.pts[i], P.pts[i + 1])); if (dd < bd) { bd = dd; best = c; } });
+      if (o.connHit) best = V.byId(o.connHit, map) || best;
+      if (best) { el.props.attachedTo = best.id; el.props.dx = 0; el.props.dy = 0; }
+    }
+    // un richiedente c'e' gia': la persona nuova non lo e'. L'etichetta pero' resta vuota — chi
+    // disegna scrive chi e' (paziente, segretaria, corriere), l'app non gli mette in bocca «operatore»
+    if (kind === 'person' && map.elements.some(x => x.type === 'person' && x.props.requestor)) el.props.requestor = false;
+    // creato sopra un passo/persona o vicino a una freccia → nasce già bloccato (come quando lo si lascia cadere)
+    if (kind !== 'delta') { const lk = I.findLockTarget(el, map); if (lk) I.lockOps(el, lk, map).forEach(op => Object.assign(op.t === 'props' ? el.props : el, op.after)); }
+    if (!V.commit({ t: 'add', el }, 'aggiungi ' + T.name)) return null;
+    I.setTool('select'); I.select([el.id], { keepPop: true }); V.pop.open(el.id);
+    return el;
+  };
   function startPan(e) { gesture = { type: 'pan', sx: e.clientX, sy: e.clientY, v0: clone(I.view), moved: false }; svg.style.cursor = 'grabbing'; }
 
   function move(e) {
@@ -320,7 +358,19 @@
     switch (g.type) {
       // col dito, toccare la carta vuota apre un pan: se non si è mosso è un tocco a vuoto → deseleziona e chiudi ciò che è aperto
       // (lo schermo intero si comanda solo dal pulsante: il foglio non deve cambiare da sé)
-      case 'pan': if (!g.moved) { if (I.selection.length || (V.pop && V.pop.current)) { I.select([]); V.pop.close(); } } else saveView(); break;
+      case 'pan': {
+        if (g.moved) { saveView(); break; }
+        // Prima cosa, sgomberare: deselezionare e chiudere è la ragione per cui questo tocco esiste.
+        if (I.selection.length || (V.pop && V.pop.current)) { I.select([]); V.pop.close(); break; }
+        // Con la MANO in mano non si aggiunge niente: chi l'ha scelta sta spostando il foglio, e un
+        // menu che compare a ogni tocco fermo sarebbe un dispetto.
+        if (I.tool !== 'select') break;
+        // Niente da sgomberare: si propone che cosa mettere qui. Solo al RILASCIO, e solo se il dito
+        // non si è mosso — far comparire dei bottoni sotto un dito che sta ancora trascinando è quello
+        // che trasformava il pan in zoom.
+        if (V.ui && V.ui.openInsertMenu) V.ui.openInsertMenu(e.clientX, e.clientY, w);
+        break;
+      }
       case 'link': V.ui.openMap(g.link); break;
       case 'peek': if (V.ui.showPeek) V.ui.showPeek(g.boxId, e.clientX, e.clientY); break;
       case 'legend': { const el = V.byId(g.id, map); if (!el) break; const collapsed = !el.props.collapsed; V.commit([{ t: 'props', id: el.id, after: { collapsed } }, { t: 'update', id: el.id, after: { w: collapsed ? 74 : 170, h: collapsed ? 18 : 104 } }], 'legenda'); break; }
@@ -363,6 +413,10 @@
         if (!g.moved) { // primo tap: seleziona (azioni rapide); tap su elemento già selezionato: popover
           if (g.wasSelected && I.selection.length === 1) { V.pop.open(g.hitId); break; }
           I.select([g.hitId]);
+          // un problema ridotto al segno mostra il suo testo al PRIMO tocco: la «i» è lì per questo
+          // (il secondo tocco apre il pannello, come per ogni altro elemento)
+          const st = V.byId(g.hitId, map);
+          if (st && st.type === 'storm' && st.props.collapsed && V.ui.showStormText) V.ui.showStormText(st, e.clientX, e.clientY);
           break;
         }
         const ops = g.before.filter(b => !b.skip).map(b => { const el = V.byId(b.id, map); return b.attached ? { t: 'props', id: b.id, after: { dx: el.props.dx, dy: el.props.dy }, before: { dx: b.dx, dy: b.dy } } : { t: 'update', id: b.id, after: { x: el.x, y: el.y }, before: { x: b.x, y: b.y } }; });
@@ -378,7 +432,14 @@
         V.commit({ t: 'update', id: el.id, after: { w: el.w, h: el.h }, before: { w: g.w0, h: g.h0 } }, 'ridimensiona'); break; }
       case 'lasso': {
         R.ghost('');
-        if (!g.rect || (g.rect.w < 4 && g.rect.h < 4)) { I.select([]); V.pop.close(); break; }
+        // col mouse il tocco sul vuoto apre un riquadro di selezione: fermo e senza niente da sgomberare,
+        // vale come il tocco a vuoto del dito e propone che cosa mettere qui
+        if (!g.rect || (g.rect.w < 4 && g.rect.h < 4)) {
+          const c_era = I.selection.length || (V.pop && V.pop.current);
+          I.select([]); V.pop.close();
+          if (!c_era && !g.fromTool && V.ui && V.ui.openInsertMenu) V.ui.openInsertMenu(e.clientX, e.clientY, w);
+          break;
+        }
         const inside = map.elements.filter(el => !V.isConnector(el)).filter(el => { const p = R.elPos(el, map); return p.x + el.w >= g.rect.x && p.x <= g.rect.x + g.rect.w && p.y + el.h >= g.rect.y && p.y <= g.rect.y + g.rect.h && el.type !== 'lane'; }).map(el => el.id);
         if (g.fromTool) I.setTool('select');
         I.select(g.shift ? [...I.selection, ...inside] : inside);
@@ -402,33 +463,7 @@
         }
         I.connectTo(g.from, toId, g.ctype); break;
       }
-      case 'create': {
-        R.ghost('');
-        const T = V.TYPES[g.ctype]; let el;
-        if (g.rect && g.rect.w > 20 && g.rect.h > 14) { el = V.newElement(g.ctype, g.rect.x, g.rect.y); el.w = Math.round(g.rect.w); el.h = Math.round(g.rect.h); }
-        else {
-          const P = V.paperOf(map);
-          // la corsia è una fascia del reparto: nasce larga quanto il foglio, non con una larghezza fissa da A3
-          const tw = g.ctype === 'lane' ? P.w - 80 : T.w;
-          const nx = Math.max(0, Math.min(P.w - tw, Math.round(g.start.x - tw / 2))), ny = Math.max(0, Math.min(P.h - T.h, Math.round(g.start.y - T.h / 2)));
-          el = V.newElement(g.ctype, nx, ny); if (g.ctype === 'lane') el.w = tw;
-        }
-        if (g.ctype === 'delta') {
-          // aggancia alla freccia di flusso più vicina (entro 40 unità)
-          let best = null, bd = 44 / I.view.k; // 44 px a schermo
-          // distanza misurata sul percorso disegnato (P.pts), non sulla corda a\u2192b: con i gomiti la corda
-          // passa lontano dalla linea vera e il delta si agganciava alla freccia sbagliata
-          map.elements.filter(c => c.type === 'flow').forEach(c => { const P = R.connPath(c, map); if (!P.pts || P.pts.length < 2) return; let dd = Infinity; for (let i = 0; i < P.pts.length - 1; i++) dd = Math.min(dd, distToSeg(g.start, P.pts[i], P.pts[i + 1])); if (dd < bd) { bd = dd; best = c; } });
-          if (g.connHit) best = V.byId(g.connHit, map) || best;
-          if (best) { el.props.attachedTo = best.id; el.props.dx = 0; el.props.dy = 0; }
-        }
-        // un richiedente c'e' gia': la persona nuova non lo e'. L'etichetta pero' resta vuota — chi
-        // disegna scrive chi e' (paziente, segretaria, corriere), l'app non gli mette in bocca «operatore»
-        if (g.ctype === 'person' && map.elements.some(x => x.type === 'person' && x.props.requestor)) el.props.requestor = false;
-        // creato sopra un passo/persona o vicino a una freccia → nasce già bloccato (come quando lo si lascia cadere)
-        if (g.ctype !== 'delta') { const lk = I.findLockTarget(el, map); if (lk) I.lockOps(el, lk, map).forEach(op => Object.assign(op.t === 'props' ? el.props : el, op.after)); }
-        V.commit({ t: 'add', el }, 'aggiungi ' + T.name); I.setTool('select'); I.select([el.id], { keepPop: true }); V.pop.open(el.id); break;
-      }
+      case 'create': I.placeKind(g.ctype, g.start, { rect: g.rect, connHit: g.connHit }); break;
     }
     // 'noop' copre i tocchi delle modalita' pickConn/pickLock: la selezione cambia al pointerdown,
     // ma il menu delle azioni (che si apre solo al rilascio) va richiamato da qui

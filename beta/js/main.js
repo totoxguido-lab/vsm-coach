@@ -109,6 +109,9 @@
     $('#drawer-close').onclick = UI.closeDrawer;
     ['coach', 'plan'].forEach(t => $('#tab-' + t).onclick = () => UI.showTab(t));
     $('#btn-maps').onclick = () => { UI.renderMaps(); $('#dlg-maps').showModal(); }; $('#maps-close').onclick = () => $('#dlg-maps').close();
+    $('#mis-close').onclick = () => UI.closeMisura();
+    // il cronometro non deve continuare a girare dietro un dialogo chiuso col tasto Esc
+    $('#dlg-misura').addEventListener('close', () => UI.closeMisura());
     const menuCheck = (id, on) => { const b = $(id); b.setAttribute('aria-pressed', on); b.textContent = (on ? '✓ ' : '○ ') + b.textContent.replace(/^[✓○] /, ''); };
     $('#btn-overlays').onclick = () => { const m = V.map(); V.commit({ t: 'meta', after: { overlays: m.overlays === false } }, 'riepilogo', { silent: true }); R.overlay(V.map(), V.map().overlays !== false); menuCheck('#btn-overlays', V.map().overlays !== false); };
     $('#btn-pen-mode').onclick = () => { I.penDraws = !I.penDraws; localStorage.setItem('vsm.penDraws', I.penDraws ? '1' : '0'); menuCheck('#btn-pen-mode', I.penDraws); UI.toast(I.penDraws ? 'Penna: sulla carta vuota scrive a matita.' : 'Penna: usa lo strumento scelto.'); };
@@ -152,7 +155,7 @@
     });
     // il menu resta aperto (si chiude toccando fuori): cosi' si spuntano piu' opzioni di fila.
     // Fa eccezione cio' che apre un'altra superficie in alto a destra (guida, legenda, dialoghi) o chiude la mappa.
-    const CLOSE_ON = ['legend', 'guide', 'maps', 'help', 'settings', 'coach', 'delete', 'reset', 'exit', 'giri', 'lock', 'info'];
+    const CLOSE_ON = ['legend', 'guide', 'maps', 'help', 'settings', 'coach', 'delete', 'reset', 'exit', 'giri', 'lock', 'info', 'misura', 'attach', 'projects'];
     $$('#menu [data-m]').forEach(b => b.onclick = () => { if (CLOSE_ON.includes(b.dataset.m)) menu.classList.add('hidden'); menuAction(b.dataset.m); });
     UI.loadExample = () => { UI.toggleGuide(false); menuAction('example'); };
     $('#file-open').addEventListener('change', (e) => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => { try { const n = V.importMaps(JSON.parse(r.result)); I.restoreView(); UI.toast(n + ' mappe importate.'); } catch (err) { UI.toast('File non valido: ' + err.message); } }; r.readAsText(f); e.target.value = ''; });
@@ -201,6 +204,9 @@
       case 'legend': UI.toggleGuide(true, 'simboli'); break;
       case 'guide': UI.toggleGuide(true); break;
       case 'maps': UI.renderMaps(); $('#dlg-maps').showModal(); break;
+      case 'misura': UI.openMisura(); break;
+      case 'attach': UI.askAttach(); break;
+      case 'projects': UI.askProjects(); break;
       case 'help': UI.toggleGuide(true, 'primi'); break;
       case 'coach': UI.showTab('coach'); break;
       case 'settings': C.openSettings(); break;
