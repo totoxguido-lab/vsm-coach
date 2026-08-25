@@ -264,6 +264,10 @@
   function avvisoLavoriInCorso() {
     const d = $('#dlg-wip'); if (!d || !d.showModal) return;
     if ((V.storage().canale || 'sviluppo') === 'stabile') return;
+    // Dopo un ricaricamento AUTOMATICO (aggiornamento del service worker, qui sotto) il cartello
+    // non si riapre: l'avvio l'ha fatto l'app, non la persona — sull'iPad il 25/8 tre pubblicazioni
+    // ravvicinate facevano rimbalzare cartello e ricaricamenti piu' volte alla stessa apertura.
+    try { if (Date.now() - (+sessionStorage.getItem('vsm.autoreload') || 0) < 15000) return; } catch (e) { /* storage bloccato */ }
     const vr = $('#wip-ver'); if (vr) vr.textContent = 'VSM Coach ' + V.versionLabel();
     const ok = $('#wip-ok'); if (ok) ok.onclick = () => d.close();
     try { d.showModal(); } catch (e) { /* già aperto */ }
@@ -307,7 +311,20 @@
       // Il ricaricamento aspetta che il salvataggio sia finito: era il modo piu' facile per perdere
       // l'ultima modifica proprio mentre si andava a verificare la versione nuova.
       let hadSW = !!navigator.serviceWorker.controller;
-      navigator.serviceWorker.addEventListener('controllerchange', () => { if (!hadSW) { hadSW = true; return; } hadSW = true; V.saveNow().then(() => location.reload(), () => location.reload()); });
+      // Al massimo UN ricaricamento automatico al minuto (bug visto sull'iPad il 25/8): con piu'
+      // pubblicazioni ravvicinate — o la CDN di Pages che serve byte diversi da edge diversi —
+      // controllerchange puo' scattare piu' volte di fila, e la pagina si riavviava a ripetizione,
+      // ogni volta col cartello di cantiere davanti. Il segno sta in sessionStorage: sopravvive al
+      // reload (e' la stessa scheda), muore chiudendo davvero l'app — al prossimo vero avvio
+      // l'aggiornamento si prende come sempre.
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!hadSW) { hadSW = true; return; }
+        hadSW = true;
+        let ultimo = 0; try { ultimo = +sessionStorage.getItem('vsm.autoreload') || 0; } catch (e) { /* storage bloccato */ }
+        if (Date.now() - ultimo < 60000) { UI.toast('C\'è un altro aggiornamento: chiudi davvero l\'app e riaprila per usarlo.'); return; }
+        try { sessionStorage.setItem('vsm.autoreload', String(Date.now())); } catch (e) { /* storage bloccato */ }
+        V.saveNow().then(() => location.reload(), () => location.reload());
+      });
     }
     let printViewBackup = null, printSafety = null;
     // «stampa in corso» (I.setPrinting): @media print ridimensiona davvero #stage, e il
