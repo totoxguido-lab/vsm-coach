@@ -1913,6 +1913,27 @@ window.VSM = window.VSM || {};
     return setMeasure(map, s);
   };
   V.measureStop = (map) => setMeasure(map, null);
+  /** Il percorso del giro lo sceglie CHI MISURA (esito Gt 25/8 sera): durante l'attesa, il tocco
+   *  sul cronometro di un passo dice «il prossimo e' questo». Se dal passo precedente parte una
+   *  freccia verso il passo scelto (bivio vero), l'attesa si scrive su QUELLA freccia e il passo
+   *  parte. Se la freccia non c'e', l'ordine di lavoro non e' stato rispettato: lo si DICE
+   *  (fuoriOrdine), l'attesa non ha dove essere scritta (attesaPersa, in secondi netti) e la
+   *  misura riparte comunque sul passo scelto — chi cammina decide, l'app non lo blocca. */
+  V.measureJump = (map, stepId, now = Date.now()) => {
+    const s = V.measureState(map); if (!s || !s.t0) return null;
+    const dest = V.byId(stepId, map);
+    if (!dest || dest.type !== 'box' || dest.props.validated) return null;
+    if (s.phase === 'box') return { ko: 'in-corso' };
+    if (s.phase !== 'attesa') return null;
+    const conn = map.elements.find(c => c.type === 'flow' && c.from && c.from.el === s.fromId && c.to && c.to.el === stepId);
+    if (conn) {
+      setMeasure(map, Object.assign({}, s, { stepId, connId: conn.id }));
+      return V.measureAdvance(map, now);
+    }
+    const persa = misuraNetta(s, now);
+    setMeasure(map, senzaPause(Object.assign({}, s, { phase: 'box', stepId, t0: now, fromId: null, connId: null })));
+    return { fuoriOrdine: true, attesaPersa: persa, phase: 'box', elId: stepId };
+  };
   /** Il turno del giro (F1): «mattina», «notte», quello che il reparto usa — dichiarato nel dialogo
    *  Misura, copiato da addTime su ogni osservazione del giro. Vive nel cronometro (fuori annulla,
    *  come il resto di measure); testo vuoto lo toglie. Senza cronometro non c'e' dove scriverlo. */
