@@ -1,0 +1,1915 @@
+{
+ "appVersion": "0.91",
+ "version": 2,
+ "activeMapId": "3n0lpy4",
+ "activeProjectId": "dc9frtg",
+ "projects": {
+  "dc9frtg": {
+   "id": "dc9frtg",
+   "name": "Progetto 1",
+   "links": [],
+   "sample": false,
+   "created": 1787590423984
+  },
+  "c6li4k6": {
+   "id": "c6li4k6",
+   "name": "Esempi",
+   "links": [],
+   "sample": true,
+   "created": 1787590498455
+  },
+  "g82ca45": {
+   "id": "g82ca45",
+   "name": "Pronto soccorso",
+   "links": [],
+   "sample": false,
+   "created": 1787590498480
+  }
+ },
+ "maps": {
+  "3n0lpy4": {
+   "id": "3n0lpy4",
+   "title": "Prericovero chirurgico (bozza)",
+   "date": "2026-08-24",
+   "authors": "GT",
+   "unitName": "Chirurgia day hospital",
+   "kind": "current",
+   "pairId": null,
+   "parentId": null,
+   "parentStepId": null,
+   "projectId": "dc9frtg",
+   "verOf": null,
+   "verName": "mappa iniziale",
+   "validated": false,
+   "tint": 198,
+   "unit": "minuti",
+   "samples": "",
+   "scope": "",
+   "ideal": "",
+   "requestor": "",
+   "elements": [
+    {
+     "id": "jgf7a9n",
+     "type": "box",
+     "x": 140,
+     "y": 300,
+     "w": 150,
+     "h": 170,
+     "z": 0,
+     "props": {
+      "title": "Richiesta ricovero",
+      "activities": [
+       "telefonata reparto"
+      ],
+      "hi": "",
+      "lo": "",
+      "avg": "",
+      "cc": "",
+      "owner": "",
+      "gateIn": "",
+      "gateOut": "",
+      "validated": false
+     }
+    },
+    {
+     "id": "u9pce9x",
+     "type": "box",
+     "x": 380,
+     "y": 300,
+     "w": 150,
+     "h": 170,
+     "z": 0,
+     "props": {
+      "title": "Visita anestesiologica",
+      "activities": [],
+      "hi": "",
+      "lo": "",
+      "avg": "",
+      "cc": "",
+      "owner": "",
+      "gateIn": "",
+      "gateOut": "",
+      "validated": false
+     }
+    },
+    {
+     "id": "i43vp6s",
+     "type": "box",
+     "x": 620,
+     "y": 300,
+     "w": 150,
+     "h": 170,
+     "z": 0,
+     "props": {
+      "title": "Conferma data",
+      "activities": [],
+      "hi": "",
+      "lo": "",
+      "avg": "",
+      "cc": "",
+      "owner": "",
+      "gateIn": "",
+      "gateOut": "",
+      "validated": false
+     }
+    },
+    {
+     "id": "m2l57ez",
+     "type": "flow",
+     "from": {
+      "el": "jgf7a9n"
+     },
+     "to": {
+      "el": "u9pce9x"
+     },
+     "props": {
+      "label": "",
+      "or": false,
+      "style": "solid"
+     }
+    },
+    {
+     "id": "6rk85ls",
+     "type": "flow",
+     "from": {
+      "el": "u9pce9x"
+     },
+     "to": {
+      "el": "i43vp6s"
+     },
+     "props": {
+      "label": "",
+      "or": false,
+      "style": "solid",
+      "via": [
+       {
+        "x": 560,
+        "y": 250
+       }
+      ],
+      "offset": 1
+     }
+    },
+    {
+     "id": "btm47uv",
+     "type": "flow",
+     "from": {
+      "el": "i43vp6s"
+     },
+     "to": {
+      "el": "jgf7a9n"
+     },
+     "props": {
+      "label": "",
+      "or": false,
+      "style": "solid"
+     }
+    },
+    {
+     "id": "j6c95s6",
+     "type": "storm",
+     "x": 700,
+     "y": 180,
+     "w": 120,
+     "h": 50,
+     "z": 0,
+     "props": {
+      "text": "date che saltano",
+      "muda": "attese",
+      "rule": "",
+      "a3": false,
+      "collapsed": false,
+      "shape": "nuvola"
+     }
+    },
+    {
+     "id": "yll0th8",
+     "type": "person",
+     "x": 1080,
+     "y": 110,
+     "w": 40,
+     "h": 78,
+     "z": 0,
+     "props": {
+      "label": "paziente",
+      "role": "",
+      "mood": "neutro",
+      "requestor": true
+     }
+    }
+   ],
+   "strokes": [],
+   "plan": [],
+   "prep": {
+    "observable": false,
+    "frequent": false,
+    "worthy": false,
+    "drawer": "",
+    "owner": "",
+    "physicians": false,
+    "stable": false,
+    "staffing": false
+   },
+   "validation": {
+    "walked": false,
+    "walkedBy": "",
+    "walkedDate": "",
+    "prepared": false,
+    "validatedBy": "",
+    "validatedDate": "",
+    "corrections": ""
+   },
+   "data": {
+    "tool": false,
+    "boundariesAgreed": false,
+    "feedback": false,
+    "notes": ""
+   },
+   "analysis": {
+    "goodEnough": "",
+    "questions": {}
+   },
+   "futureCheck": {
+    "people": false,
+    "sponsor": "",
+    "date": "",
+    "constraints": "",
+    "validatedBy": ""
+   },
+   "closure": {
+    "remeasureDate": "",
+    "notes": "",
+    "checks": {}
+   },
+   "guidePhase": 0,
+   "view": {
+    "x": -685.8744257274118,
+    "y": -40,
+    "k": 0.7420454545454546
+   },
+   "overlays": false,
+   "paper": {
+    "w": 2376,
+    "h": 1680
+   },
+   "links": {
+    "mode": "dritta"
+   },
+   "created": 1787590423984,
+   "updated": 1787590498454
+  },
+  "gak1fsm": {
+   "id": "gak1fsm",
+   "title": "Visita ambulatoriale (esempio dal libro)",
+   "date": "2026-08-24",
+   "authors": "AJ, CJ",
+   "unitName": "Ambulatorio",
+   "kind": "current",
+   "pairId": "kvsnwmy",
+   "parentId": null,
+   "parentStepId": null,
+   "projectId": "c6li4k6",
+   "verOf": null,
+   "verName": "mappa iniziale",
+   "validated": true,
+   "tint": 53,
+   "unit": "minuti",
+   "samples": "30",
+   "scope": "Dalla chiamata del paziente in sala d'attesa alla programmazione del follow-up",
+   "ideal": "Il paziente è visto all'orario previsto, una sola raccolta dati, nessuna attesa tra i passi.",
+   "requestor": "Paziente con appuntamento",
+   "elements": [
+    {
+     "id": "vcijh4s",
+     "type": "box",
+     "x": 110,
+     "y": 300,
+     "w": 150,
+     "h": 170,
+     "z": 0,
+     "props": {
+      "title": "Check-in",
+      "activities": [
+       "verifica nome, indirizzo, telefono, assicurazione",
+       "registrazione a sistema",
+       "stampa e posa della cartella",
+       "chiamata all'infermiere"
+      ],
+      "hi": "8",
+      "lo": "3",
+      "avg": "5,5",
+      "cc": "",
+      "owner": "",
+      "gateIn": "",
+      "gateOut": "",
+      "validated": false,
+      "times": []
+     }
+    },
+    {
+     "id": "xgzg5g7",
+     "type": "box",
+     "x": 350,
+     "y": 300,
+     "w": 150,
+     "h": 170,
+     "z": 0,
+     "props": {
+      "title": "Consulto infermiere",
+      "activities": [
+       "chiama il paziente",
+       "peso",
+       "allergie, dieta, farmaci, domande",
+       "pressione",
+       "polso",
+       "chiama il medico"
+      ],
+      "hi": "1,4",
+      "lo": "0,68",
+      "avg": "1,04",
+      "cc": "",
+      "owner": "",
+      "gateIn": "",
+      "gateOut": "",
+      "validated": false,
+      "times": [
+       41,
+       84
+      ]
+     }
+    },
+    {
+     "id": "larg586",
+     "type": "box",
+     "x": 590,
+     "y": 300,
+     "w": 150,
+     "h": 170,
+     "z": 0,
+     "props": {
+      "title": "Consulto medico",
+      "activities": [
+       "visita (slot da 20 min)"
+      ],
+      "hi": "0,88",
+      "lo": "0,88",
+      "avg": "0,88",
+      "cc": "",
+      "owner": "",
+      "gateIn": "",
+      "gateOut": "",
+      "validated": false,
+      "times": [
+       53
+      ]
+     }
+    },
+    {
+     "id": "nc9xcfk",
+     "type": "box",
+     "x": 830,
+     "y": 300,
+     "w": 150,
+     "h": 170,
+     "z": 0,
+     "props": {
+      "title": "Check-out",
+      "activities": [
+       "appuntamento di follow-up",
+       "programmazione esami"
+      ],
+      "hi": "1,07",
+      "lo": "1,07",
+      "avg": "1,07",
+      "cc": "",
+      "owner": "",
+      "gateIn": "",
+      "gateOut": "",
+      "validated": false,
+      "times": [
+       64
+      ]
+     }
+    },
+    {
+     "id": "ai8ygs1",
+     "type": "flow",
+     "from": {
+      "el": "vcijh4s"
+     },
+     "to": {
+      "el": "xgzg5g7"
+     },
+     "props": {
+      "label": "",
+      "or": false,
+      "style": "solid"
+     }
+    },
+    {
+     "id": "4kl21tf",
+     "type": "flow",
+     "from": {
+      "el": "xgzg5g7"
+     },
+     "to": {
+      "el": "larg586"
+     },
+     "props": {
+      "label": "",
+      "or": false,
+      "style": "solid"
+     }
+    },
+    {
+     "id": "qryd11x",
+     "type": "flow",
+     "from": {
+      "el": "larg586"
+     },
+     "to": {
+      "el": "nc9xcfk"
+     },
+     "props": {
+      "label": "",
+      "or": false,
+      "style": "solid"
+     }
+    },
+    {
+     "id": "rarxi1r",
+     "type": "delta",
+     "x": 290,
+     "y": 326,
+     "w": 30,
+     "h": 26,
+     "z": 0,
+     "props": {
+      "note": "paziente in sala d'attesa",
+      "kind": "sala d'attesa",
+      "hi": "0,6",
+      "lo": "0,6",
+      "avg": "0,6",
+      "attachedTo": "ai8ygs1",
+      "times": [
+       36
+      ]
+     }
+    },
+    {
+     "id": "ygdzwqk",
+     "type": "delta",
+     "x": 530,
+     "y": 326,
+     "w": 30,
+     "h": 26,
+     "z": 0,
+     "props": {
+      "note": "attesa del medico in ambulatorio",
+      "kind": "attesa",
+      "hi": "0,78",
+      "lo": "0,78",
+      "avg": "0,78",
+      "attachedTo": "4kl21tf",
+      "times": [
+       47
+      ]
+     }
+    },
+    {
+     "id": "g5jdzq9",
+     "type": "delta",
+     "x": 770,
+     "y": 326,
+     "w": 30,
+     "h": 26,
+     "z": 0,
+     "props": {
+      "note": "attesa allo sportello",
+      "kind": "attesa",
+      "hi": "0,97",
+      "lo": "0,97",
+      "avg": "0,97",
+      "attachedTo": "qryd11x",
+      "times": [
+       58
+      ]
+     }
+    },
+    {
+     "id": "gpx5dmy",
+     "type": "person",
+     "x": 1080,
+     "y": 100,
+     "w": 40,
+     "h": 78,
+     "z": 0,
+     "props": {
+      "label": "Paziente con appuntamento",
+      "role": "",
+      "mood": "triste",
+      "requestor": true
+     }
+    },
+    {
+     "id": "8np6y93",
+     "type": "request",
+     "from": {
+      "el": "gpx5dmy"
+     },
+     "to": {
+      "el": "vcijh4s"
+     },
+     "props": {
+      "channel": "di persona",
+      "intent": "chiede",
+      "to": "accettazione",
+      "hands": "",
+      "note": "si presenta allo sportello",
+      "offset": 0
+     }
+    },
+    {
+     "id": "3rlfbyh",
+     "type": "request",
+     "from": {
+      "el": "gpx5dmy"
+     },
+     "to": {
+      "el": "vcijh4s"
+     },
+     "props": {
+      "channel": "telefono",
+      "intent": "chiede",
+      "to": "segreteria",
+      "hands": "",
+      "note": "a volte chiama per confermare",
+      "offset": 1
+     }
+    },
+    {
+     "id": "ipewx7a",
+     "type": "storm",
+     "x": 640,
+     "y": 60,
+     "w": 120,
+     "h": 56,
+     "z": 0,
+     "props": {
+      "text": "conferme telefoniche non registrate",
+      "muda": "confusione",
+      "rule": "2 richiesta semplice e diretta",
+      "a3": false,
+      "collapsed": false,
+      "shape": "nuvola"
+     }
+    },
+    {
+     "id": "slf1344",
+     "type": "storm",
+     "x": 150,
+     "y": 225,
+     "w": 120,
+     "h": 56,
+     "z": 0,
+     "props": {
+      "text": "stampa solo dalla postazione in area visite",
+      "muda": "movimento/trasporto",
+      "rule": "3 flusso semplice e diretto",
+      "a3": false,
+      "collapsed": false,
+      "shape": "nuvola"
+     }
+    },
+    {
+     "id": "vjvcehg",
+     "type": "storm",
+     "x": 600,
+     "y": 225,
+     "w": 120,
+     "h": 56,
+     "z": 0,
+     "props": {
+      "text": "alle 11 tutti gli ambulatori pieni",
+      "muda": "attesa",
+      "rule": "1 attività specificate",
+      "a3": false,
+      "collapsed": false,
+      "shape": "nuvola"
+     }
+    },
+    {
+     "id": "k3gm0le",
+     "type": "fluffy",
+     "x": 850,
+     "y": 225,
+     "w": 120,
+     "h": 56,
+     "z": 0,
+     "props": {
+      "text": "check-out rapido e costante: da replicare"
+     }
+    },
+    {
+     "id": "c0pb5kj",
+     "type": "text",
+     "x": 60,
+     "y": 560,
+     "w": 140,
+     "h": 24,
+     "z": 0,
+     "props": {
+      "text": "Come accade il lavoro adesso. È abbastanza buono?",
+      "size": 13
+     }
+    }
+   ],
+   "strokes": [],
+   "plan": [],
+   "prep": {
+    "observable": true,
+    "frequent": true,
+    "worthy": true,
+    "drawer": "CJ",
+    "owner": "Direttore ambulatori",
+    "physicians": true,
+    "stable": true,
+    "staffing": true
+   },
+   "validation": {
+    "walked": true,
+    "walkedBy": "CJ",
+    "walkedDate": "2026-08-24",
+    "prepared": true,
+    "validatedBy": "staff ambulatorio (2 RN, 1 MD, 1 segretaria)",
+    "validatedDate": "2026-08-24",
+    "corrections": "aggiunta la conferma telefonica come seconda via di richiesta"
+   },
+   "data": {
+    "tool": true,
+    "boundariesAgreed": true,
+    "feedback": true,
+    "notes": "i massimi del consulto medico coincidono con la fascia 11-12"
+   },
+   "analysis": {
+    "goodEnough": "No: circa il 60% del tempo del paziente è attesa; la variazione maggiore è prima del consulto medico (1-84 min).",
+    "questions": {
+     "q0": true,
+     "q1": true
+    }
+   },
+   "futureCheck": {
+    "people": false,
+    "sponsor": "",
+    "date": "",
+    "constraints": "",
+    "validatedBy": ""
+   },
+   "closure": {
+    "remeasureDate": "",
+    "notes": "",
+    "checks": {}
+   },
+   "guidePhase": 0,
+   "view": null,
+   "overlays": true,
+   "paper": {
+    "w": 1188,
+    "h": 840
+   },
+   "links": {
+    "mode": "dritta"
+   },
+   "created": 1787590498455,
+   "updated": 1787590498478,
+   "measure": {
+    "mode": "giro",
+    "giro": 2,
+    "stepId": "larg586",
+    "phase": "box",
+    "t0": 1787580531990,
+    "fromId": null,
+    "connId": null
+   }
+  },
+  "k3zxqy1": {
+   "id": "k3zxqy1",
+   "title": "Dettaglio: Check-in",
+   "date": "2026-08-24",
+   "authors": "AJ, CJ",
+   "unitName": "",
+   "kind": "detail",
+   "pairId": null,
+   "parentId": "gak1fsm",
+   "parentStepId": "vcijh4s",
+   "projectId": "c6li4k6",
+   "verOf": null,
+   "verName": "mappa iniziale",
+   "validated": false,
+   "tint": 353,
+   "unit": "minuti",
+   "samples": "",
+   "scope": "",
+   "ideal": "",
+   "requestor": "",
+   "elements": [
+    {
+     "id": "z1dhy1k",
+     "type": "box",
+     "x": 140,
+     "y": 300,
+     "w": 150,
+     "h": 170,
+     "z": 0,
+     "props": {
+      "title": "verifica nome, indirizzo, telefono, assicurazione",
+      "activities": [],
+      "hi": "",
+      "lo": "",
+      "avg": "",
+      "cc": "",
+      "owner": "",
+      "gateIn": "",
+      "gateOut": "",
+      "validated": false
+     }
+    },
+    {
+     "id": "gyvjgd7",
+     "type": "box",
+     "x": 400,
+     "y": 300,
+     "w": 150,
+     "h": 170,
+     "z": 0,
+     "props": {
+      "title": "registrazione a sistema",
+      "activities": [],
+      "hi": "",
+      "lo": "",
+      "avg": "",
+      "cc": "",
+      "owner": "",
+      "gateIn": "",
+      "gateOut": "",
+      "validated": false
+     }
+    },
+    {
+     "id": "rq8vdk3",
+     "type": "flow",
+     "from": {
+      "el": "z1dhy1k"
+     },
+     "to": {
+      "el": "gyvjgd7"
+     },
+     "props": {
+      "label": "",
+      "or": false,
+      "style": "solid"
+     }
+    },
+    {
+     "id": "ru7jfg2",
+     "type": "box",
+     "x": 660,
+     "y": 300,
+     "w": 150,
+     "h": 170,
+     "z": 0,
+     "props": {
+      "title": "stampa e posa della cartella",
+      "activities": [],
+      "hi": "",
+      "lo": "",
+      "avg": "",
+      "cc": "",
+      "owner": "",
+      "gateIn": "",
+      "gateOut": "",
+      "validated": false
+     }
+    },
+    {
+     "id": "xhfj2bo",
+     "type": "flow",
+     "from": {
+      "el": "gyvjgd7"
+     },
+     "to": {
+      "el": "ru7jfg2"
+     },
+     "props": {
+      "label": "",
+      "or": false,
+      "style": "solid"
+     }
+    },
+    {
+     "id": "sa45xup",
+     "type": "box",
+     "x": 920,
+     "y": 300,
+     "w": 150,
+     "h": 170,
+     "z": 0,
+     "props": {
+      "title": "chiamata all'infermiere",
+      "activities": [],
+      "hi": "",
+      "lo": "",
+      "avg": "",
+      "cc": "",
+      "owner": "",
+      "gateIn": "",
+      "gateOut": "",
+      "validated": false
+     }
+    },
+    {
+     "id": "44bzxd4",
+     "type": "flow",
+     "from": {
+      "el": "ru7jfg2"
+     },
+     "to": {
+      "el": "sa45xup"
+     },
+     "props": {
+      "label": "",
+      "or": false,
+      "style": "solid"
+     }
+    }
+   ],
+   "strokes": [],
+   "plan": [],
+   "prep": {
+    "observable": false,
+    "frequent": false,
+    "worthy": false,
+    "drawer": "",
+    "owner": "",
+    "physicians": false,
+    "stable": false,
+    "staffing": false
+   },
+   "validation": {
+    "walked": false,
+    "walkedBy": "",
+    "walkedDate": "",
+    "prepared": false,
+    "validatedBy": "",
+    "validatedDate": "",
+    "corrections": ""
+   },
+   "data": {
+    "tool": false,
+    "boundariesAgreed": false,
+    "feedback": false,
+    "notes": ""
+   },
+   "analysis": {
+    "goodEnough": "",
+    "questions": {}
+   },
+   "futureCheck": {
+    "people": false,
+    "sponsor": "",
+    "date": "",
+    "constraints": "",
+    "validatedBy": ""
+   },
+   "closure": {
+    "remeasureDate": "",
+    "notes": "",
+    "checks": {}
+   },
+   "guidePhase": 0,
+   "view": null,
+   "overlays": true,
+   "paper": {
+    "w": 2376,
+    "h": 1680
+   },
+   "links": {
+    "mode": "dritta"
+   },
+   "created": 1787590498474,
+   "updated": 1787590498474
+  },
+  "w7qlon9": {
+   "id": "w7qlon9",
+   "title": "Visita ambulatoriale (esempio dal libro)",
+   "date": "2026-08-24",
+   "authors": "AJ, CJ",
+   "unitName": "Ambulatorio",
+   "kind": "current",
+   "pairId": null,
+   "parentId": null,
+   "parentStepId": null,
+   "projectId": "c6li4k6",
+   "verOf": "gak1fsm",
+   "verName": "secondo giro",
+   "validated": false,
+   "tint": 108,
+   "unit": "minuti",
+   "samples": "30",
+   "scope": "Dalla chiamata del paziente in sala d'attesa alla programmazione del follow-up",
+   "ideal": "Il paziente è visto all'orario previsto, una sola raccolta dati, nessuna attesa tra i passi.",
+   "requestor": "Paziente con appuntamento",
+   "elements": [
+    {
+     "id": "vcijh4s",
+     "type": "box",
+     "x": 110,
+     "y": 300,
+     "w": 150,
+     "h": 170,
+     "z": 0,
+     "props": {
+      "title": "Check-in",
+      "activities": [
+       "verifica nome, indirizzo, telefono, assicurazione",
+       "registrazione a sistema",
+       "stampa e posa della cartella",
+       "chiamata all'infermiere"
+      ],
+      "hi": "8",
+      "lo": "3",
+      "avg": "5,5",
+      "cc": "",
+      "owner": "",
+      "gateIn": "",
+      "gateOut": "",
+      "validated": false,
+      "times": []
+     }
+    },
+    {
+     "id": "xgzg5g7",
+     "type": "box",
+     "x": 350,
+     "y": 300,
+     "w": 150,
+     "h": 170,
+     "z": 0,
+     "props": {
+      "title": "Consulto infermiere",
+      "activities": [
+       "chiama il paziente",
+       "peso",
+       "allergie, dieta, farmaci, domande",
+       "pressione",
+       "polso",
+       "chiama il medico"
+      ],
+      "hi": "1,4",
+      "lo": "0,68",
+      "avg": "1,04",
+      "cc": "",
+      "owner": "",
+      "gateIn": "",
+      "gateOut": "",
+      "validated": false,
+      "times": [
+       41,
+       84
+      ]
+     }
+    },
+    {
+     "id": "larg586",
+     "type": "box",
+     "x": 590,
+     "y": 300,
+     "w": 150,
+     "h": 170,
+     "z": 0,
+     "props": {
+      "title": "Consulto medico",
+      "activities": [
+       "visita (slot da 20 min)"
+      ],
+      "hi": "0,88",
+      "lo": "0,88",
+      "avg": "0,88",
+      "cc": "",
+      "owner": "",
+      "gateIn": "",
+      "gateOut": "",
+      "validated": false,
+      "times": [
+       53
+      ]
+     }
+    },
+    {
+     "id": "nc9xcfk",
+     "type": "box",
+     "x": 830,
+     "y": 300,
+     "w": 150,
+     "h": 170,
+     "z": 0,
+     "props": {
+      "title": "Check-out",
+      "activities": [
+       "appuntamento di follow-up",
+       "programmazione esami"
+      ],
+      "hi": "1,07",
+      "lo": "1,07",
+      "avg": "1,07",
+      "cc": "",
+      "owner": "",
+      "gateIn": "",
+      "gateOut": "",
+      "validated": false,
+      "times": [
+       64
+      ]
+     }
+    },
+    {
+     "id": "ai8ygs1",
+     "type": "flow",
+     "from": {
+      "el": "vcijh4s"
+     },
+     "to": {
+      "el": "xgzg5g7"
+     },
+     "props": {
+      "label": "",
+      "or": false,
+      "style": "solid"
+     }
+    },
+    {
+     "id": "4kl21tf",
+     "type": "flow",
+     "from": {
+      "el": "xgzg5g7"
+     },
+     "to": {
+      "el": "larg586"
+     },
+     "props": {
+      "label": "",
+      "or": false,
+      "style": "solid"
+     }
+    },
+    {
+     "id": "qryd11x",
+     "type": "flow",
+     "from": {
+      "el": "larg586"
+     },
+     "to": {
+      "el": "nc9xcfk"
+     },
+     "props": {
+      "label": "",
+      "or": false,
+      "style": "solid"
+     }
+    },
+    {
+     "id": "rarxi1r",
+     "type": "delta",
+     "x": 290,
+     "y": 326,
+     "w": 30,
+     "h": 26,
+     "z": 0,
+     "props": {
+      "note": "paziente in sala d'attesa",
+      "kind": "sala d'attesa",
+      "hi": "0,6",
+      "lo": "0,6",
+      "avg": "0,6",
+      "attachedTo": "ai8ygs1",
+      "times": [
+       36
+      ]
+     }
+    },
+    {
+     "id": "ygdzwqk",
+     "type": "delta",
+     "x": 530,
+     "y": 326,
+     "w": 30,
+     "h": 26,
+     "z": 0,
+     "props": {
+      "note": "attesa del medico in ambulatorio",
+      "kind": "attesa",
+      "hi": "0,78",
+      "lo": "0,78",
+      "avg": "0,78",
+      "attachedTo": "4kl21tf",
+      "times": [
+       47
+      ]
+     }
+    },
+    {
+     "id": "g5jdzq9",
+     "type": "delta",
+     "x": 770,
+     "y": 326,
+     "w": 30,
+     "h": 26,
+     "z": 0,
+     "props": {
+      "note": "attesa allo sportello",
+      "kind": "attesa",
+      "hi": "0,97",
+      "lo": "0,97",
+      "avg": "0,97",
+      "attachedTo": "qryd11x",
+      "times": [
+       58
+      ]
+     }
+    },
+    {
+     "id": "gpx5dmy",
+     "type": "person",
+     "x": 1080,
+     "y": 100,
+     "w": 40,
+     "h": 78,
+     "z": 0,
+     "props": {
+      "label": "Paziente con appuntamento",
+      "role": "",
+      "mood": "triste",
+      "requestor": true
+     }
+    },
+    {
+     "id": "8np6y93",
+     "type": "request",
+     "from": {
+      "el": "gpx5dmy"
+     },
+     "to": {
+      "el": "vcijh4s"
+     },
+     "props": {
+      "channel": "di persona",
+      "intent": "chiede",
+      "to": "accettazione",
+      "hands": "",
+      "note": "si presenta allo sportello",
+      "offset": 0
+     }
+    },
+    {
+     "id": "3rlfbyh",
+     "type": "request",
+     "from": {
+      "el": "gpx5dmy"
+     },
+     "to": {
+      "el": "vcijh4s"
+     },
+     "props": {
+      "channel": "telefono",
+      "intent": "chiede",
+      "to": "segreteria",
+      "hands": "",
+      "note": "a volte chiama per confermare",
+      "offset": 1
+     }
+    },
+    {
+     "id": "ipewx7a",
+     "type": "storm",
+     "x": 640,
+     "y": 60,
+     "w": 120,
+     "h": 56,
+     "z": 0,
+     "props": {
+      "text": "conferme telefoniche non registrate",
+      "muda": "confusione",
+      "rule": "2 richiesta semplice e diretta",
+      "a3": false,
+      "collapsed": false,
+      "shape": "nuvola"
+     }
+    },
+    {
+     "id": "slf1344",
+     "type": "storm",
+     "x": 150,
+     "y": 225,
+     "w": 120,
+     "h": 56,
+     "z": 0,
+     "props": {
+      "text": "stampa solo dalla postazione in area visite",
+      "muda": "movimento/trasporto",
+      "rule": "3 flusso semplice e diretto",
+      "a3": false,
+      "collapsed": false,
+      "shape": "nuvola"
+     }
+    },
+    {
+     "id": "vjvcehg",
+     "type": "storm",
+     "x": 600,
+     "y": 225,
+     "w": 120,
+     "h": 56,
+     "z": 0,
+     "props": {
+      "text": "alle 11 tutti gli ambulatori pieni",
+      "muda": "attesa",
+      "rule": "1 attività specificate",
+      "a3": false,
+      "collapsed": false,
+      "shape": "nuvola"
+     }
+    },
+    {
+     "id": "k3gm0le",
+     "type": "fluffy",
+     "x": 850,
+     "y": 225,
+     "w": 120,
+     "h": 56,
+     "z": 0,
+     "props": {
+      "text": "check-out rapido e costante: da replicare"
+     }
+    },
+    {
+     "id": "c0pb5kj",
+     "type": "text",
+     "x": 60,
+     "y": 560,
+     "w": 140,
+     "h": 24,
+     "z": 0,
+     "props": {
+      "text": "Come accade il lavoro adesso. È abbastanza buono?",
+      "size": 13
+     }
+    }
+   ],
+   "strokes": [],
+   "plan": [],
+   "prep": {
+    "observable": true,
+    "frequent": true,
+    "worthy": true,
+    "drawer": "CJ",
+    "owner": "Direttore ambulatori",
+    "physicians": true,
+    "stable": true,
+    "staffing": true
+   },
+   "validation": {
+    "walked": true,
+    "walkedBy": "CJ",
+    "walkedDate": "2026-08-24",
+    "prepared": true,
+    "validatedBy": "staff ambulatorio (2 RN, 1 MD, 1 segretaria)",
+    "validatedDate": "2026-08-24",
+    "corrections": "aggiunta la conferma telefonica come seconda via di richiesta"
+   },
+   "data": {
+    "tool": true,
+    "boundariesAgreed": true,
+    "feedback": true,
+    "notes": "i massimi del consulto medico coincidono con la fascia 11-12"
+   },
+   "analysis": {
+    "goodEnough": "No: circa il 60% del tempo del paziente è attesa; la variazione maggiore è prima del consulto medico (1-84 min).",
+    "questions": {
+     "q0": true,
+     "q1": true
+    }
+   },
+   "futureCheck": {
+    "people": false,
+    "sponsor": "",
+    "date": "",
+    "constraints": "",
+    "validatedBy": ""
+   },
+   "closure": {
+    "remeasureDate": "",
+    "notes": "",
+    "checks": {}
+   },
+   "guidePhase": 0,
+   "view": null,
+   "overlays": true,
+   "paper": {
+    "w": 1188,
+    "h": 840
+   },
+   "links": {
+    "mode": "dritta"
+   },
+   "created": 1787590498475,
+   "updated": 1787590498475,
+   "measure": {
+    "mode": "giro",
+    "giro": 2,
+    "stepId": "larg586",
+    "phase": "box",
+    "t0": 1787580531990,
+    "fromId": null,
+    "connId": null
+   }
+  },
+  "kvsnwmy": {
+   "id": "kvsnwmy",
+   "title": "Visita ambulatoriale (esempio dal libro)",
+   "date": "2026-08-24",
+   "authors": "AJ, CJ",
+   "unitName": "Ambulatorio",
+   "kind": "future",
+   "pairId": "gak1fsm",
+   "parentId": null,
+   "parentStepId": null,
+   "projectId": "c6li4k6",
+   "verOf": null,
+   "verName": "ideale",
+   "validated": true,
+   "tint": 13,
+   "unit": "minuti",
+   "samples": "30",
+   "scope": "Dalla chiamata del paziente in sala d'attesa alla programmazione del follow-up",
+   "ideal": "Il paziente è visto all'orario previsto, una sola raccolta dati, nessuna attesa tra i passi.",
+   "requestor": "Paziente con appuntamento",
+   "elements": [
+    {
+     "id": "vcijh4s",
+     "type": "box",
+     "x": 110,
+     "y": 300,
+     "w": 150,
+     "h": 170,
+     "z": 0,
+     "props": {
+      "title": "Check-in",
+      "activities": [
+       "verifica nome, indirizzo, telefono, assicurazione",
+       "registrazione a sistema",
+       "stampa e posa della cartella",
+       "chiamata all'infermiere"
+      ],
+      "hi": "8",
+      "lo": "3",
+      "avg": "5,5",
+      "cc": "",
+      "owner": "",
+      "gateIn": "",
+      "gateOut": "",
+      "validated": false,
+      "times": []
+     }
+    },
+    {
+     "id": "xgzg5g7",
+     "type": "box",
+     "x": 350,
+     "y": 300,
+     "w": 150,
+     "h": 170,
+     "z": 0,
+     "props": {
+      "title": "Consulto infermiere",
+      "activities": [
+       "chiama il paziente",
+       "peso",
+       "allergie, dieta, farmaci, domande",
+       "pressione",
+       "polso",
+       "chiama il medico"
+      ],
+      "hi": "1,4",
+      "lo": "0,68",
+      "avg": "1,04",
+      "cc": "",
+      "owner": "",
+      "gateIn": "",
+      "gateOut": "",
+      "validated": false,
+      "times": [
+       41,
+       84
+      ]
+     }
+    },
+    {
+     "id": "larg586",
+     "type": "box",
+     "x": 590,
+     "y": 300,
+     "w": 150,
+     "h": 170,
+     "z": 0,
+     "props": {
+      "title": "Consulto medico",
+      "activities": [
+       "visita (slot da 20 min)"
+      ],
+      "hi": "0,88",
+      "lo": "0,88",
+      "avg": "0,88",
+      "cc": "",
+      "owner": "",
+      "gateIn": "",
+      "gateOut": "",
+      "validated": false,
+      "times": [
+       53
+      ]
+     }
+    },
+    {
+     "id": "nc9xcfk",
+     "type": "box",
+     "x": 830,
+     "y": 300,
+     "w": 150,
+     "h": 170,
+     "z": 0,
+     "props": {
+      "title": "Check-out",
+      "activities": [
+       "appuntamento di follow-up",
+       "programmazione esami"
+      ],
+      "hi": "1,07",
+      "lo": "1,07",
+      "avg": "1,07",
+      "cc": "",
+      "owner": "",
+      "gateIn": "",
+      "gateOut": "",
+      "validated": false,
+      "times": [
+       64
+      ]
+     }
+    },
+    {
+     "id": "ai8ygs1",
+     "type": "flow",
+     "from": {
+      "el": "vcijh4s"
+     },
+     "to": {
+      "el": "xgzg5g7"
+     },
+     "props": {
+      "label": "",
+      "or": false,
+      "style": "solid"
+     }
+    },
+    {
+     "id": "4kl21tf",
+     "type": "flow",
+     "from": {
+      "el": "xgzg5g7"
+     },
+     "to": {
+      "el": "larg586"
+     },
+     "props": {
+      "label": "",
+      "or": false,
+      "style": "solid"
+     }
+    },
+    {
+     "id": "qryd11x",
+     "type": "flow",
+     "from": {
+      "el": "larg586"
+     },
+     "to": {
+      "el": "nc9xcfk"
+     },
+     "props": {
+      "label": "",
+      "or": false,
+      "style": "solid"
+     }
+    },
+    {
+     "id": "rarxi1r",
+     "type": "delta",
+     "x": 290,
+     "y": 326,
+     "w": 30,
+     "h": 26,
+     "z": 0,
+     "props": {
+      "note": "paziente in sala d'attesa",
+      "kind": "sala d'attesa",
+      "hi": "0,6",
+      "lo": "0,6",
+      "avg": "0,6",
+      "attachedTo": "ai8ygs1",
+      "times": [
+       36
+      ]
+     }
+    },
+    {
+     "id": "ygdzwqk",
+     "type": "delta",
+     "x": 530,
+     "y": 326,
+     "w": 30,
+     "h": 26,
+     "z": 0,
+     "props": {
+      "note": "attesa del medico in ambulatorio",
+      "kind": "attesa",
+      "hi": "0,78",
+      "lo": "0,78",
+      "avg": "0,78",
+      "attachedTo": "4kl21tf",
+      "times": [
+       47
+      ]
+     }
+    },
+    {
+     "id": "g5jdzq9",
+     "type": "delta",
+     "x": 770,
+     "y": 326,
+     "w": 30,
+     "h": 26,
+     "z": 0,
+     "props": {
+      "note": "attesa allo sportello",
+      "kind": "attesa",
+      "hi": "0,97",
+      "lo": "0,97",
+      "avg": "0,97",
+      "attachedTo": "qryd11x",
+      "times": [
+       58
+      ]
+     }
+    },
+    {
+     "id": "gpx5dmy",
+     "type": "person",
+     "x": 1080,
+     "y": 100,
+     "w": 40,
+     "h": 78,
+     "z": 0,
+     "props": {
+      "label": "Paziente con appuntamento",
+      "role": "",
+      "mood": "triste",
+      "requestor": true
+     }
+    },
+    {
+     "id": "8np6y93",
+     "type": "request",
+     "from": {
+      "el": "gpx5dmy"
+     },
+     "to": {
+      "el": "vcijh4s"
+     },
+     "props": {
+      "channel": "di persona",
+      "intent": "chiede",
+      "to": "accettazione",
+      "hands": "",
+      "note": "si presenta allo sportello",
+      "offset": 0
+     }
+    },
+    {
+     "id": "3rlfbyh",
+     "type": "request",
+     "from": {
+      "el": "gpx5dmy"
+     },
+     "to": {
+      "el": "vcijh4s"
+     },
+     "props": {
+      "channel": "telefono",
+      "intent": "chiede",
+      "to": "segreteria",
+      "hands": "",
+      "note": "a volte chiama per confermare",
+      "offset": 1
+     }
+    },
+    {
+     "id": "ipewx7a",
+     "type": "storm",
+     "x": 640,
+     "y": 60,
+     "w": 120,
+     "h": 56,
+     "z": 0,
+     "props": {
+      "text": "conferme telefoniche non registrate",
+      "muda": "confusione",
+      "rule": "2 richiesta semplice e diretta",
+      "a3": false,
+      "collapsed": false,
+      "shape": "nuvola"
+     }
+    },
+    {
+     "id": "slf1344",
+     "type": "storm",
+     "x": 150,
+     "y": 225,
+     "w": 120,
+     "h": 56,
+     "z": 0,
+     "props": {
+      "text": "stampa solo dalla postazione in area visite",
+      "muda": "movimento/trasporto",
+      "rule": "3 flusso semplice e diretto",
+      "a3": false,
+      "collapsed": false,
+      "shape": "nuvola"
+     }
+    },
+    {
+     "id": "vjvcehg",
+     "type": "storm",
+     "x": 600,
+     "y": 225,
+     "w": 120,
+     "h": 56,
+     "z": 0,
+     "props": {
+      "text": "alle 11 tutti gli ambulatori pieni",
+      "muda": "attesa",
+      "rule": "1 attività specificate",
+      "a3": false,
+      "collapsed": false,
+      "shape": "nuvola"
+     }
+    },
+    {
+     "id": "k3gm0le",
+     "type": "fluffy",
+     "x": 850,
+     "y": 225,
+     "w": 120,
+     "h": 56,
+     "z": 0,
+     "props": {
+      "text": "check-out rapido e costante: da replicare"
+     }
+    },
+    {
+     "id": "c0pb5kj",
+     "type": "text",
+     "x": 60,
+     "y": 560,
+     "w": 140,
+     "h": 24,
+     "z": 0,
+     "props": {
+      "text": "Come accade il lavoro adesso. È abbastanza buono?",
+      "size": 13
+     }
+    }
+   ],
+   "strokes": [],
+   "plan": [],
+   "prep": {
+    "observable": true,
+    "frequent": true,
+    "worthy": true,
+    "drawer": "CJ",
+    "owner": "Direttore ambulatori",
+    "physicians": true,
+    "stable": true,
+    "staffing": true
+   },
+   "validation": {
+    "walked": false,
+    "walkedBy": "",
+    "walkedDate": "",
+    "prepared": false,
+    "validatedBy": "",
+    "validatedDate": "",
+    "corrections": ""
+   },
+   "data": {
+    "tool": true,
+    "boundariesAgreed": true,
+    "feedback": true,
+    "notes": "i massimi del consulto medico coincidono con la fascia 11-12"
+   },
+   "analysis": {
+    "goodEnough": "No: circa il 60% del tempo del paziente è attesa; la variazione maggiore è prima del consulto medico (1-84 min).",
+    "questions": {
+     "q0": true,
+     "q1": true
+    }
+   },
+   "futureCheck": {
+    "people": false,
+    "sponsor": "",
+    "date": "",
+    "constraints": "",
+    "validatedBy": ""
+   },
+   "closure": {
+    "remeasureDate": "",
+    "notes": "",
+    "checks": {}
+   },
+   "guidePhase": 0,
+   "view": null,
+   "overlays": true,
+   "paper": {
+    "w": 1188,
+    "h": 840
+   },
+   "links": {
+    "mode": "dritta"
+   },
+   "created": 1787590498475,
+   "updated": 1787590498475,
+   "measure": {
+    "mode": "giro",
+    "giro": 2,
+    "stepId": "larg586",
+    "phase": "box",
+    "t0": 1787580531990,
+    "fromId": null,
+    "connId": null
+   }
+  },
+  "kljqks8": {
+   "id": "kljqks8",
+   "title": "Triage PS (camminata)",
+   "date": "2026-08-24",
+   "authors": "",
+   "unitName": "Pronto soccorso",
+   "kind": "current",
+   "pairId": null,
+   "parentId": null,
+   "parentStepId": null,
+   "projectId": "g82ca45",
+   "verOf": null,
+   "verName": "mappa iniziale",
+   "validated": false,
+   "tint": 288,
+   "unit": "minuti",
+   "samples": "",
+   "scope": "",
+   "ideal": "",
+   "requestor": "",
+   "elements": [
+    {
+     "id": "1o0x8ze",
+     "type": "box",
+     "x": 140,
+     "y": 300,
+     "w": 150,
+     "h": 170,
+     "z": 0,
+     "props": {
+      "title": "Arrivo e triage",
+      "activities": [],
+      "hi": "",
+      "lo": "",
+      "avg": "",
+      "cc": "",
+      "owner": "",
+      "gateIn": "",
+      "gateOut": "",
+      "validated": false
+     }
+    },
+    {
+     "id": "r49fk95",
+     "type": "box",
+     "x": 380,
+     "y": 300,
+     "w": 150,
+     "h": 170,
+     "z": 0,
+     "props": {
+      "title": "Attesa visita",
+      "activities": [],
+      "hi": "",
+      "lo": "",
+      "avg": "",
+      "cc": "",
+      "owner": "",
+      "gateIn": "",
+      "gateOut": "",
+      "validated": false
+     }
+    },
+    {
+     "id": "cohfeh8",
+     "type": "flow",
+     "from": {
+      "el": "1o0x8ze"
+     },
+     "to": {
+      "el": "r49fk95"
+     },
+     "props": {
+      "label": "",
+      "or": false,
+      "style": "solid"
+     }
+    }
+   ],
+   "strokes": [],
+   "plan": [],
+   "prep": {
+    "observable": false,
+    "frequent": false,
+    "worthy": false,
+    "drawer": "",
+    "owner": "",
+    "physicians": false,
+    "stable": false,
+    "staffing": false
+   },
+   "validation": {
+    "walked": true,
+    "walkedBy": "GT",
+    "walkedDate": "2026-08-23",
+    "prepared": true,
+    "validatedBy": "",
+    "validatedDate": "",
+    "corrections": ""
+   },
+   "data": {
+    "tool": false,
+    "boundariesAgreed": false,
+    "feedback": false,
+    "notes": ""
+   },
+   "analysis": {
+    "goodEnough": "",
+    "questions": {}
+   },
+   "futureCheck": {
+    "people": false,
+    "sponsor": "",
+    "date": "",
+    "constraints": "",
+    "validatedBy": ""
+   },
+   "closure": {
+    "remeasureDate": "",
+    "notes": "",
+    "checks": {}
+   },
+   "guidePhase": 0,
+   "view": null,
+   "overlays": true,
+   "paper": {
+    "w": 2376,
+    "h": 1680
+   },
+   "links": {
+    "mode": "dritta"
+   },
+   "created": 1787590498480,
+   "updated": 1787590498488,
+   "measure": {
+    "mode": "giro",
+    "giro": 1,
+    "stepId": "1o0x8ze",
+    "phase": "box",
+    "t0": 1787589898488,
+    "fromId": null,
+    "connId": null
+   }
+  }
+ }
+}
