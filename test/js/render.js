@@ -176,6 +176,13 @@
   // i controlli UI (il cronometro grande dei passi) vivono SOLO a schermo: l'export e la stampa
   // restituiscono il documento VSM, non lo stato transitorio dell'interfaccia (finding P2 Codex)
   let uiVivo = true;
+  // numeri della catena (esito Gt 25/8 sera): calcolati una volta per giro di render, chiave id+rev
+  let numsCache = { key: null, nums: null };
+  const numeriPassi = (map) => {
+    const k = map.id + ':' + (map.rev || 0);
+    if (numsCache.key !== k) numsCache = { key: k, nums: V.stepNumbers(map) };
+    return numsCache.nums;
+  };
   R.elMarkup = (el, map) => drawEl(el, map);   // la via «a schermo» per le prove
   function drawEl(el, map) {
     // la mappa serve al badge del collegamento (figlia o riferimento); la legenda disegna elementi
@@ -205,6 +212,10 @@
         const blk = R.activityBlock(p.activities, w, h, roomForOwner);
         s += `<text class="hand" x="8" y="${blk.y0}" font-size="${blk.size}">${tspans(fitLines(blk.lines, blk.max), 8, blk.y0, blk.lineH)}</text>`;
         if (p.owner) s += `<text class="hand muted" x="${w - 6}" y="${h - 6}" text-anchor="end" font-size="9">${esc(p.owner)}</text>`;
+        // il NUMERO del passo lungo la catena (esito Gt 25/8 sera): tondo blu in alto a sinistra,
+        // cosi' anche solo guardando il foglio si capisce quali passi sono sequenziali (1, 2, 2.1…)
+        const numPasso = numeriPassi(map).get(el.id);
+        if (numPasso) s += `<g class="step-num"><circle cx="0" cy="0" r="13" fill="#1f4e79" stroke="#fffdf7" stroke-width="1.6"/><text x="0" y="4.6" text-anchor="middle" font-size="${String(numPasso).length > 2 ? 9.5 : 13}" font-weight="700" fill="#fff" font-family="var(--ui, sans-serif)">${esc(String(numPasso))}</text></g>`;
         const hasData = p.hi !== '' || p.lo !== '' || p.avg !== '';
         // in DISEGNA i numeri non ci sono per definizione: al posto della targhetta vuota un
         // orologino tenue ricorda che i tempi arriveranno dal cronometro (esito stazione 1, 25/8)
@@ -219,14 +230,20 @@
           const ms = map.measure;
           const attivo = !!(ms && ms.phase === 'box' && ms.stepId === el.id);
           const nMis = V.timesOf(el).length;
-          const cx2 = w - 2, ink2 = attivo ? '#fff' : '#2b2b2b';
+          // orologio «stile emoticon», PIENO (esito Gt 25/8 sera): corpo solido, lancette bianche,
+          // corona e nasi ai lati — grafite da fermo, verde mentre misura
+          const cx2 = w - 2, corpo = attivo ? '#2e7d32' : '#2b2b2b';
           s += `<g class="mis-clock${attivo ? ' mis-attivo' : ''}" data-mis="${esc(el.id)}">`
             + `<circle class="mis-hit" cx="${cx2}" cy="2" r="24" fill="transparent"/>`
-            + `<circle cx="${cx2}" cy="2" r="15" fill="${attivo ? '#2e7d32' : '#fffdf7'}" stroke="${attivo ? '#2e7d32' : '#2b2b2b'}" stroke-width="1.6"/>`
-            + `<g fill="none" stroke="${ink2}" stroke-width="1.8" stroke-linecap="round">`
-            + `<circle cx="${cx2}" cy="3.4" r="7"/>`
-            + `<path d="M${cx2 - 2.6} -6.4 h5.2 M${cx2} -6 v2.2 M${cx2} 3.4 v-4 M${cx2} 3.4 l2.8 1.9"/>`
+            + `<g fill="${corpo}">`
+            + `<rect x="${cx2 - 3.2}" y="-13.5" width="6.4" height="4" rx="1.4"/>`
+            + `<rect x="${cx2 + 6.5}" y="-9.8" width="5.4" height="3.2" rx="1.4" transform="rotate(45 ${cx2 + 9} -8)"/>`
+            + `<rect x="${cx2 - 11.9}" y="-9.8" width="5.4" height="3.2" rx="1.4" transform="rotate(-45 ${cx2 - 9} -8)"/>`
+            + `<circle cx="${cx2}" cy="2" r="12.5"/>`
             + `</g>`
+            + `<circle cx="${cx2}" cy="2" r="10" fill="${corpo}" stroke="#fffdf7" stroke-width="1.4"/>`
+            + `<path d="M${cx2} 2 V-5 M${cx2} 2 l4.6 3" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>`
+            + `<circle cx="${cx2}" cy="2" r="1.6" fill="#fff"/>`
             + (nMis ? `<text class="hand" x="${cx2}" y="28" text-anchor="middle" font-size="9">${nMis}×</text>` : '')
             + `</g>`;
         }

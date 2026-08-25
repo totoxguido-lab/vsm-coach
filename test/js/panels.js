@@ -565,7 +565,7 @@
   const MIS_IC = {
     pause: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M8.5 5v14M15.5 5v14"/></svg>',
     play: '<svg viewBox="0 0 24 24"><path d="M7.5 4.8l11.5 7.2-11.5 7.2z" fill="currentColor"/></svg>',
-    lap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5l5 5L19.5 7"/></svg>',
+    lap: '<svg viewBox="0 0 24 24"><path d="M3.5 5.5l8 6.5-8 6.5z M12 5.5l8 6.5-8 6.5z" fill="currentColor"/></svg>',
     next: '<svg viewBox="0 0 24 24"><path d="M5.5 5l9.5 7-9.5 7z" fill="currentColor"/><path d="M18.5 5v14" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>',
     stop: '<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg>',
     no: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>'
