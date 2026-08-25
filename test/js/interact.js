@@ -220,6 +220,11 @@
     }
     if (I.pickLock) { const kids = I.pickLock; if (hit && !kids.includes(hit.id)) { I.cancelPickLock(); if (!I.lockMany(kids, hit.id)) I.hint('Non si può legare a questo elemento.', 2500); } else if (!hit) I.cancelPickLock(); gesture = { type: 'noop' }; return; }
     if (e.target.closest && e.target.closest('[data-toggle-legend]')) { gesture = { type: 'legend', id: e.target.closest('[data-toggle-legend]').dataset.toggleLegend }; return; }
+    // il cronometro grande sul passo (Misura, stazione 3): il tocco parte/avanza la misura
+    if (t === 'select' && e.target.closest && e.target.closest('[data-mis]')) {
+      const mid = e.target.closest('[data-mis]').dataset.mis;
+      if (V.ui && V.ui.misTap && V.ui.misTap(mid)) { gesture = { type: 'noop' }; return; }
+    }
     // i segnaposti «Chi chiede? / Primo passo» non esistono più (esito stazione 1, 25/8): il tocco
     // sul vuoto apre il menu rotondo, la palette resta l'altra strada — niente gesto 'place'.
     if (t === 'whatis') { // modalita' «?»: il tocco spiega l'elemento invece di selezionarlo; sul vuoto si sposta il foglio.
@@ -261,13 +266,14 @@
       const el = V.byId(hit.id, map); const wasSelected = I.selection.includes(hit.id);
       if (!wasSelected) I.select([hit.id], { keepPop: true });
       // gli elementi col lucchetto chiuso (pinned) non si trascinano: proteggono dagli spostamenti per sbaglio
-      const moving = frozen ? [] : I.selection.map(id => V.byId(id, map)).filter(x => x && !V.isConnector(x) && !x.props.pinned);
+      const misuraFerma = ['misura', 'analizza'].includes(map.phase);
+      const moving = frozen ? [] : I.selection.map(id => V.byId(id, map)).filter(x => x && !V.isConnector(x) && !x.props.pinned && (!misuraFerma || V.MISURA_LIBERI.includes(x.type)));
       // il blocco 🔒 vince sulla catena ⛓ (esito stazione 1, 25/8): foto della posizione VISTA di
       // ogni elemento bloccato-e-legato fuori dal gruppo che si muove — a ogni frame R.freezePinned
       // compensa dx/dy perche' resti dov'era, anche se il suo genitore (o la sua freccia) si sposta
       const pinFrozen = frozen ? [] : map.elements.filter(x => x.props && x.props.pinned && (x.props.lockTo || (x.type === 'delta' && x.props.attachedTo)) && !moving.some(m => m.id === x.id)).map(x => ({ id: x.id, dx0: x.props.dx || 0, dy0: x.props.dy || 0, pos0: R.elPos(x, map) }));
       const pinPos0 = {}; pinFrozen.forEach(f => { pinPos0[f.id] = f.pos0; });
-      gesture = { type: 'drag', wasSelected, ids: moving.map(x => x.id), start: w, startClient: { x: e.clientX, y: e.clientY }, before: moving.map(x => (x.props.lockTo || (x.type === 'delta' && x.props.attachedTo)) && !moving.some(p => p.id === (x.props.lockTo || x.props.attachedTo)) ? { id: x.id, dx: x.props.dx || 0, dy: x.props.dy || 0, attached: true } : (x.props.lockTo || (x.type === 'delta' && x.props.attachedTo)) ? { id: x.id, skip: true } : { id: x.id, x: x.x, y: x.y }), moved: false, hitId: hit.id, isConn: V.isConnector(el), hitPinned: !!(el && el.props && el.props.pinned), pinFrozen, pinPos0 };
+      gesture = { type: 'drag', wasSelected, ids: moving.map(x => x.id), start: w, startClient: { x: e.clientX, y: e.clientY }, before: moving.map(x => (x.props.lockTo || (x.type === 'delta' && x.props.attachedTo)) && !moving.some(p => p.id === (x.props.lockTo || x.props.attachedTo)) ? { id: x.id, dx: x.props.dx || 0, dy: x.props.dy || 0, attached: true } : (x.props.lockTo || (x.type === 'delta' && x.props.attachedTo)) ? { id: x.id, skip: true } : { id: x.id, x: x.x, y: x.y }), moved: false, hitId: hit.id, isConn: V.isConnector(el), hitPinned: !!(el && el.props && el.props.pinned), hitMisFermo: !!(el && !V.isConnector(el) && ['misura', 'analizza'].includes(map.phase) && !V.MISURA_LIBERI.includes(el.type)), pinFrozen, pinPos0 };
       return;
     }
     gesture = { type: 'lasso', start: w, startClient: { x: e.clientX, y: e.clientY }, shift: e.shiftKey };
@@ -468,14 +474,15 @@
         (g.pinFrozen || []).forEach(f => { const el = V.byId(f.id, map); if (!el) return; if ((el.props.dx || 0) !== f.dx0 || (el.props.dy || 0) !== f.dy0) ops.push({ t: 'props', id: f.id, after: { dx: el.props.dx, dy: el.props.dy }, before: { dx: f.dx0, dy: f.dy0 } }); });
         // legame smart: un solo elemento legabile e non legato lasciato sopra/vicino a un genitore
         if (g.before.length === 1 && !g.before[0].attached) { const el = V.byId(g.before[0].id, map); const lk = I.findLockTarget(el, map); if (lk) ops.push(...I.lockOps(el, lk, map)); }
-        if (ops.length) V.commit(ops, 'sposta');
+        if (ops.length) { if (!V.commit(ops, 'sposta')) rollback(g); }
         else if (g.hitPinned) I.hint('Bloccato sul foglio \u{1F512}: per spostarlo tocca «Sblocca» nelle azioni rapide.', 2500);
+        else if (g.hitMisFermo) I.hint('In Misura il flusso \u00e8 fermo \u23F1: si spostano solo nuvole, note e icone. Per ridisegnare serve un nuovo giro.', 3000);
         break;
       }
       case 'resize': { const el = V.byId(g.id, map);
         // la nuvola non si stringe sotto il suo testo: niente troncamenti, l'altezza minima è quella che serve
         if ((el.type === 'storm' || el.type === 'fluffy') && !el.props.collapsed && el.props.text && R.cloudFit) el.h = Math.max(el.h, R.cloudFit(el.w, el.props.text));
-        V.commit({ t: 'update', id: el.id, after: { w: el.w, h: el.h }, before: { w: g.w0, h: g.h0 } }, 'ridimensiona'); break; }
+        if (!V.commit({ t: 'update', id: el.id, after: { w: el.w, h: el.h }, before: { w: g.w0, h: g.h0 } }, 'ridimensiona')) { el.w = g.w0; el.h = g.h0; R.updateEl(el.id, map); } break; }
       case 'lasso': {
         R.ghost('');
         // col mouse il tocco sul vuoto apre un riquadro di selezione: fermo e senza niente da sgomberare,

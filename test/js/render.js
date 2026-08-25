@@ -207,6 +207,23 @@
         if (!hasData && map.phase === 'disegna') s += clockHint(w / 2, h + 14);
         else s += `<text class="hand ${hasData ? '' : 'muted'}" x="${w / 2}" y="${h + 14}" text-anchor="middle" font-size="10">${hasData ? tspans(['Hi: ' + fmt(num(p.hi)), 'Lo: ' + fmt(num(p.lo)), 'Avg: ' + fmt(num(p.avg))], w / 2, h + 14, 12) : `<tspan x="${w / 2}" y="${h + 14}">Hi / Lo / Avg ?</tspan>`}</text>`;
         if (p.cc !== '' && p.cc != null) s += `<text class="hand" x="${w / 2}" y="${h + 52}" text-anchor="middle" font-size="9">C&amp;C ${esc(p.cc)} %</text>`;
+        // In Misura/Analizza ogni passo porta il suo CRONOMETRO grande e toccabile (esito
+        // stazione 3, 25/8): il tocco fa partire (o riprendere) la misura di quel passo — il
+        // cablaggio sta in interact (data-mis). Verde pieno = sta misurando QUI; il conteggio
+        // vivo (mm:ss) lo scrive il ticker (R.misuraOverlay), non questo render statico.
+        if (map.phase === 'misura' || map.phase === 'analizza') {
+          const ms = map.measure;
+          const attivo = !!(ms && ms.phase === 'box' && ms.stepId === el.id);
+          const nMis = V.timesOf(el).length;
+          s += `<g class="mis-clock${attivo ? ' mis-attivo' : ''}" data-mis="${esc(el.id)}">`
+            + `<circle class="mis-hit" cx="${w - 2}" cy="2" r="24" fill="transparent"/>`
+            + `<circle class="pencil" cx="${w - 2}" cy="2" r="15" fill="${attivo ? '#2e7d32' : '#fffdf7'}"/>`
+            + (attivo
+              ? `<g stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M${w - 2} 2 V-6 M${w - 2} 2 H${w + 5}" /></g>`
+              : `<g class="pencil-thin"><circle cx="${w - 2}" cy="2" r="8.5" fill="none"/><path d="M${w - 2} 2 V-5 M${w - 2} 2 H${w + 4}"/></g>`)
+            + (nMis ? `<text class="hand" x="${w - 2}" y="28" text-anchor="middle" font-size="9">${nMis}×</text>` : '')
+            + `</g>`;
+        }
         break;
       }
       case 'delta': {
@@ -565,7 +582,11 @@
     if (c.type === 'flow') {
       s += `<path class="pencil" d="${P.d}" ${R.connAttrs(c)}/>`;
       if (p.or) s += `<text class="hand" x="${P.mid.x}" y="${P.mid.y - 8}" text-anchor="middle" font-size="10" font-style="italic">or</text>`;
-      if (p.label) s += `<text class="hand muted" x="${P.mid.x}" y="${P.mid.y + 14}" text-anchor="middle" font-size="9">${esc(p.label)}</text>`;
+      // l'etichetta sta SOPRA la linea (esito stazione 2, 25/8): il triangolo rosso dell'attesa
+      // pende dal punto di mezzo verso il basso e la copriva; sopra resta sempre leggibile, e
+      // l'alone di carta (conn-label, app.css) la difende dalle linee che incrociano. Con «or»
+      // presente sale di un altro gradino per non pestarlo.
+      if (p.label) s += `<text class="hand muted conn-label" x="${P.mid.x}" y="${P.mid.y - (p.or ? 20 : 10)}" text-anchor="middle" font-size="9">${esc(p.label)}</text>`;
     } else {
       s += `<path class="pencil" d="${P.d}" ${R.connAttrs(c)}/>`;
       // «si reca»: il pallino alla partenza (il piede di chi si muove) affianca la punta a V — due segni
