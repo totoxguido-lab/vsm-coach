@@ -322,8 +322,12 @@
     // un richiedente c'e' gia': la persona nuova non lo e'. L'etichetta pero' resta vuota — chi
     // disegna scrive chi e' (paziente, segretaria, corriere), l'app non gli mette in bocca «operatore»
     if (kind === 'person' && map.elements.some(x => x.type === 'person' && x.props.requestor)) el.props.requestor = false;
-    // creato sopra un passo/persona o vicino a una freccia → nasce già bloccato (come quando lo si lascia cadere)
-    if (kind !== 'delta') { const lk = I.findLockTarget(el, map); if (lk) I.lockOps(el, lk, map).forEach(op => Object.assign(op.t === 'props' ? el.props : el, op.after)); }
+    // creato sopra un passo/persona o vicino a una freccia → nasce già bloccato (come quando lo si
+    // lascia cadere). MA non dal menu del vuoto (o.senzaLegame): lì il tocco è per definizione su
+    // un punto libero, e il legame scattava solo per l'alone dei margini di findLockTarget — un
+    // problema creato VICINO alla persona «chi chiede» le si incatenava da solo e si muovevano
+    // insieme (bug iPad 25/8). Il legame resta un gesto: trascinare sopra, o «Lega a…».
+    if (kind !== 'delta' && !o.senzaLegame) { const lk = I.findLockTarget(el, map); if (lk) I.lockOps(el, lk, map).forEach(op => Object.assign(op.t === 'props' ? el.props : el, op.after)); }
     if (!V.commit({ t: 'add', el }, 'aggiungi ' + T.name)) return null;
     I.setTool('select'); I.select([el.id], { keepPop: true }); V.pop.open(el.id);
     return el;

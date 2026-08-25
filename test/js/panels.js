@@ -312,7 +312,7 @@
       if (id === 'g:primi') return mostra(INS_PRIMI);
       if (id === 'g:facce') { UI.closePlaceMenu(); return UI.openFaceMenu(clientX, clientY, w); }
       UI.closePlaceMenu();
-      I.placeKind(id.slice(2), w);
+      I.placeKind(id.slice(2), w, { senzaLegame: true }); // dal menu del vuoto: niente legame automatico (bug iPad 25/8)
     }, hint);
     mostra(INS_PRIMI, 'Che cosa metti qui? Tocca fuori per lasciare il foglio com’è.');
   };
@@ -331,7 +331,7 @@
     const cw = card.offsetWidth, ch = card.offsetHeight;
     m.style.left = Math.round(Math.min(Math.max(clientX - r.left, cw / 2 + 8), Math.max(cw / 2 + 8, r.width - cw / 2 - 8))) + 'px';
     m.style.top = Math.round(Math.min(Math.max(clientY - r.top, ch / 2 + 8), Math.max(ch / 2 + 8, r.height - ch / 2 - 8))) + 'px';
-    $$('[data-mood]', card).forEach(b => b.onclick = (ev) => { ev.stopPropagation(); UI.closePlaceMenu(); I.placeKind('face', w, { props: { mood: b.dataset.mood } }); });
+    $$('[data-mood]', card).forEach(b => b.onclick = (ev) => { ev.stopPropagation(); UI.closePlaceMenu(); I.placeKind('face', w, { props: { mood: b.dataset.mood }, senzaLegame: true }); });
     $('[data-pm]', card).onclick = (ev) => { ev.stopPropagation(); UI.closePlaceMenu(); UI.openInsertMenu(clientX, clientY, w); };
     chiudiToccandoFuori();
   };
