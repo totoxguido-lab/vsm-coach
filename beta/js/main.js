@@ -15,14 +15,17 @@
     // (si dividono il bordo alto del passo): vanno ridisegnate tutte, o restano sovrapposte fino al
     // prossimo disegno completo
     const toccaVie = ops.some(o => { const el = o.id && V.byId(o.id, map); return el && el.type === 'request'; });
-    if (onlyProps && !info.undo && !info.redo) { ops.forEach(o => R.updateEl(o.id, map)); if (toccaVie) map.elements.filter(e => e.type === 'request').forEach(r => R.updateEl(r.id, map)); R.overlay(map, map.overlays !== false); R.selection(I.selection, map); UI.renderHeader(); if (V.pop.current && V.pop.current !== '__title__' && ops.some(o => o.id === V.pop.current)) { if (ops.every(o => o.t === 'update')) V.pop.place(V.byId(V.pop.current, map)); V.pop.refresh && V.pop.refresh(V.pop.current); } }
+    if (onlyProps && !info.undo && !info.redo) { ops.forEach(o => R.updateEl(o.id, map)); if (toccaVie) map.elements.filter(e => e.type === 'request').forEach(r => R.updateEl(r.id, map)); R.overlay(map); R.selection(I.selection, map); UI.renderHeader(); if (V.pop.current && V.pop.current !== '__title__' && ops.some(o => o.id === V.pop.current)) { if (ops.every(o => o.t === 'update')) V.pop.place(V.byId(V.pop.current, map)); V.pop.refresh && V.pop.refresh(V.pop.current); } }
     else if (ops.length && ops.every(o => o.t === 'stroke_add' || o.t === 'stroke_remove') && !info.undo && !info.redo) { R.strokes(map); UI.renderHeader(); }
     // cambiare il tratto dei collegamenti tocca ogni freccia del foglio: il ramo leggero dei meta
     // ridisegnava solo carta e riepilogo, e la modalità nuova si vedeva solo alla prossima modifica
-    else if (ops.length && ops.every(o => o.t === 'meta') && ops.some(o => o.after && o.after.links) && !info.undo && !info.redo) { R.paper(map); R.elements(map); R.overlay(map, map.overlays !== false); R.selection(I.selection, map); UI.renderHeader(); }
-    else if (ops.length && ops.every(o => o.t === 'meta') && !info.undo && !info.redo) { R.paper(map); R.overlay(map, map.overlays !== false); UI.renderHeader(); /* la guida non si ridisegna sui meta: chi scrive nei suoi campi non deve perdere il cursore */ }
+    else if (ops.length && ops.every(o => o.t === 'meta') && ops.some(o => o.after && o.after.links) && !info.undo && !info.redo) { R.paper(map); R.elements(map); R.overlay(map); R.selection(I.selection, map); UI.renderHeader(); }
+    else if (ops.length && ops.every(o => o.t === 'meta') && !info.undo && !info.redo) { R.paper(map); R.overlay(map); UI.renderHeader(); /* la guida non si ridisegna sui meta: chi scrive nei suoi campi non deve perdere il cursore */ }
     else fullRender();
     if ((info.undo || info.redo) && V.pop.current && V.pop.current !== '__title__' && !V.byId(V.pop.current, map)) V.pop.close();
+    // il pop-up SOPRAVVISSUTO a un annulla mostrava ancora i valori di prima (visto dal vivo su F1:
+    // la classificazione annullata restava scritta nella sezione) — un refresh, non una chiusura
+    else if ((info.undo || info.redo) && V.pop.current && V.pop.current !== '__title__' && V.pop.refresh) V.pop.refresh(V.pop.current);
     if (info.undo || info.redo) { I.selection = I.selection.filter(id => V.byId(id, map)); R.selection(I.selection, map); UI.onSelection(I.selection); }
     if (UI.guideVisible && UI.guideVisible() && !(ops.length && ops.every(o => o.t === 'meta'))) UI.renderGuide();
     clearTimeout(sugTimer); sugTimer = setTimeout(UI.evalSuggest, 1800);
@@ -43,6 +46,17 @@
   function download(name, content, type) { const blob = new Blob([content], { type }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000); }
   const slug = (s) => (s || 'vsm').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 40) || 'vsm';
 
+  /** Le note di V.migrate (spec fondamenta A8) in una frase per il toast: 'cronometro-chiuso:<mapId>'
+   *  per ogni giro che aveva un cronometro rimasto aperto e non e' sopravvissuto alla migrazione
+   *  (V.migrate, model.js: scartato perche' la fase risultante non e' 'misura'). Prima non la mostrava
+   *  nessuno: chi riapriva o importava un file cosi' non sapeva che il cronometro s'era chiuso (rilievo
+   *  del revisore finale). UNA frase sola anche con piu' mappe: si conta, non si elenca un giro per riga.*/
+  function notaCronometriChiusi(note) {
+    const n = (note || []).filter(x => typeof x === 'string' && x.indexOf('cronometro-chiuso:') === 0).length;
+    if (!n) return '';
+    return n === 1 ? 'Un cronometro rimasto aperto è stato chiuso.' : (n + ' cronometri rimasti aperti sono stati chiusi.');
+  }
+
   function bindHeader() {
     // il titolo non si scrive piu' inline: il blocco in barra apre il pop-up con tutti i dati (e la modifica)
     $('#map-head').onclick = () => { if (V.pop.current === '__title__') V.pop.close(); else V.pop.openTitle(); };
@@ -61,7 +75,7 @@
         const v = V.doc.maps[b.dataset.rn]; if (!v) return; const row = b.closest('.vrow');
         row.innerHTML = `<input value="${escT(v.verName || '')}" maxlength="40" aria-label="Nome del giro">`;
         const inp = row.querySelector('input'); inp.focus(); inp.select();
-        const done = () => { const nv = inp.value.trim(); if (nv) { v.verName = nv; V.save(); } renderVers(); UI.renderHeader(); };
+        const done = () => { const nv = inp.value.trim(); if (nv) { v.verName = nv; v.rev = (v.rev | 0) + 1; V.save(); } renderVers(); UI.renderHeader(); };
         inp.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') inp.blur(); if (ev.key === 'Escape') { inp.value = v.verName || ''; inp.blur(); } });
         inp.addEventListener('blur', done);
       });
@@ -100,6 +114,10 @@
       if (m.kind === 'current') { const nf = V.createFuture(m); UI.openMap(nf.id); UI.toast('Ideale creato come copia dell’attuale: disegna dove volete arrivare, poi validalo col lucchetto.'); }
       else UI.toast('I sotto-fogli non hanno un Ideale: torna alla mappa madre.');
     };
+    $('#mh-phase').onclick = () => UI.openFase();
+    $('#fase-close').onclick = () => $('#dlg-fase').close();
+    // il «?» del dialogo delle fasi: mostra/nasconde la spiegazione (prova iPad 25/8)
+    const fh = $('#fase-help'); if (fh) fh.onclick = () => { UI._faseAiuto = !UI._faseAiuto; UI.renderFase(); };
     $('#tab-lock').onclick = () => {
       const m = V.map(); if (m.kind !== 'future') return;
       V.setValidated(m, !m.validated);
@@ -108,12 +126,17 @@
     $('#btn-undo').onclick = () => V.undo(); $('#btn-redo').onclick = () => V.redo();
     $('#drawer-close').onclick = UI.closeDrawer;
     ['coach', 'plan'].forEach(t => $('#tab-' + t).onclick = () => UI.showTab(t));
-    $('#btn-maps').onclick = () => { UI.renderMaps(); $('#dlg-maps').showModal(); }; $('#maps-close').onclick = () => $('#dlg-maps').close();
+    // il bottone «Mappe» in barra non c'e' piu' (feedback iPad 25/8): la libreria vive in ⋯ → «Le tue mappe»
+    $('#maps-close').onclick = () => $('#dlg-maps').close();
     $('#mis-close').onclick = () => UI.closeMisura();
     // il cronometro non deve continuare a girare dietro un dialogo chiuso col tasto Esc
     $('#dlg-misura').addEventListener('close', () => UI.closeMisura());
     const menuCheck = (id, on) => { const b = $(id); b.setAttribute('aria-pressed', on); b.textContent = (on ? '✓ ' : '○ ') + b.textContent.replace(/^[✓○] /, ''); };
-    $('#btn-overlays').onclick = () => { const m = V.map(); V.commit({ t: 'meta', after: { overlays: m.overlays === false } }, 'riepilogo', { silent: true }); R.overlay(V.map(), V.map().overlays !== false); menuCheck('#btn-overlays', V.map().overlays !== false); };
+    $('#btn-overlays').onclick = () => { const m = V.map(); V.layers.toggle(m, 'riepilogo'); R.overlay(m); menuCheck('#btn-overlays', !!(m.layers && m.layers.riepilogo)); };
+    // il menu dei livelli (spec D): elenca solo quelli ammessi dalla fase corrente, in ordine di
+    // registrazione — in fase 0 c'e' solo il riepilogo (gia' nel bottone sopra), ma il meccanismo
+    // e' quello che ospitera' F1-F10 senza altre modifiche a questo file.
+    $('#btn-layers-menu').onclick = () => { $('#menu').classList.add('hidden'); UI.layersMenu(); };
     $('#btn-pen-mode').onclick = () => { I.penDraws = !I.penDraws; localStorage.setItem('vsm.penDraws', I.penDraws ? '1' : '0'); menuCheck('#btn-pen-mode', I.penDraws); UI.toast(I.penDraws ? 'Penna: sulla carta vuota scrive a matita.' : 'Penna: usa lo strumento scelto.'); };
     $('#btn-tools-left').onclick = () => { UI.setToolsLeft(!$('#app').classList.contains('tools-left')); };
     // aspetto dei collegamenti: si cicla fra le modalità, così si confronta a colpo d'occhio quale si legge meglio
@@ -158,7 +181,7 @@
     const CLOSE_ON = ['legend', 'guide', 'maps', 'help', 'settings', 'coach', 'delete', 'reset', 'exit', 'giri', 'lock', 'info', 'misura', 'attach', 'projects'];
     $$('#menu [data-m]').forEach(b => b.onclick = () => { if (CLOSE_ON.includes(b.dataset.m)) menu.classList.add('hidden'); menuAction(b.dataset.m); });
     UI.loadExample = () => { UI.toggleGuide(false); menuAction('example'); };
-    $('#file-open').addEventListener('change', (e) => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => { try { const n = V.importMaps(JSON.parse(r.result)); I.restoreView(); UI.toast(n + ' mappe importate.'); } catch (err) { UI.toast('File non valido: ' + err.message); } }; r.readAsText(f); e.target.value = ''; });
+    $('#file-open').addEventListener('change', (e) => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => { try { const res = V.importMaps(JSON.parse(r.result)); I.restoreView(); const cron = notaCronometriChiusi(res.note); UI.toast(res.count + ' mappe importate' + (res.note && res.note.includes('v2') ? ' (convertito dalla 0.9)' : '') + '.' + (cron ? ' ' + cron : '')); } catch (err) { UI.toast('File non valido: ' + err.message); } }; r.readAsText(f); e.target.value = ''; });
   }
   function menuAction(a) {
     const map = V.map();
@@ -194,7 +217,7 @@
         break;
       }
       case 'af': { if (map.kind === 'future') { const chain = V.versionsOf(map); if (chain.length) UI.openMap(chain[chain.length - 1].id); } else { const f = V.idealOf(map); if (f && f !== map) UI.openMap(f.id); else if (map.kind === 'current') { const nf = V.createFuture(map); UI.openMap(nf.id); UI.toast('Ideale creato come copia: disegna dove volete arrivare.'); } else UI.toast('I sotto-fogli non hanno un Ideale.'); } break; }
-      case 'detail': { const d = V.createDetail(map, ''); UI.openMap(d.id); I.fit(); UI.toast('Mappa di dettaglio: collegala da un box (pop-up → Collega a un\'altra mappa).'); break; }
+      case 'detail': { const d = V.createDetail(map, ''); if (!d) { UI.toast(V.DENIED_MSG.fase); break; } UI.openMap(d.id); I.fit(); UI.toast('Mappa di dettaglio: collegala da un box (pop-up → Collega a un\'altra mappa).'); break; }
       case 'example': { const m = V.addMap(V.example()); UI.openMap(m.id); I.fit(); UI.toast('Esempio caricato (numeri dalla Fig. 5.1 del libro).'); break; }
       case 'open': $('#file-open').click(); break;
       // il file porta con sé la versione che l'ha scritto: aprendo un JSON di mesi fa si sa con che build è nato
@@ -222,7 +245,7 @@
         V.azzeraSpazio().then(() => location.reload()).catch(() => location.reload());
         break;
       }
-      case 'delete': if (confirm(`Eliminare la mappa "${map.title || 'senza titolo'}"? Non si può annullare.`)) { const r = deleteMapAsked(map); if (r.ok) { I.restoreView(); V.saveNow(); UI.toast(r.withPair ? 'Attuale e Ideale eliminati.' : 'Mappa eliminata.'); } } break;
+      case 'delete': { const nFigli = Object.values(V.doc.maps).filter(o => o.parentId === map.id).length; const codaFigli = nFigli ? (nFigli === 1 ? '\n\nIl suo sotto-foglio non si perde: si riappende più in alto.' : `\n\nI suoi ${nFigli} sotto-fogli non si perdono: si riappendono più in alto.`) : ''; if (confirm(`Eliminare la mappa "${map.title || 'senza titolo'}"? Non si può annullare.${codaFigli}`)) { const r = deleteMapAsked(map); if (r.ok) { I.restoreView(); V.saveNow(); UI.toast(r.withPair ? 'Attuale e Ideale eliminati.' : 'Mappa eliminata.'); } } break; }
       case 'exit': { // nell'app Android chiude davvero; nel browser/PWA la scheda non si puo' chiudere da codice
         const cap = window.Capacitor;
         if (cap && cap.Plugins && cap.Plugins.App && cap.Plugins.App.exitApp) { cap.Plugins.App.exitApp(); break; }
@@ -241,6 +264,10 @@
   function avvisoLavoriInCorso() {
     const d = $('#dlg-wip'); if (!d || !d.showModal) return;
     if ((V.storage().canale || 'sviluppo') === 'stabile') return;
+    // Dopo un ricaricamento AUTOMATICO (aggiornamento del service worker, qui sotto) il cartello
+    // non si riapre: l'avvio l'ha fatto l'app, non la persona — sull'iPad il 25/8 tre pubblicazioni
+    // ravvicinate facevano rimbalzare cartello e ricaricamenti piu' volte alla stessa apertura.
+    try { if (Date.now() - (+sessionStorage.getItem('vsm.autoreload') || 0) < 15000) return; } catch (e) { /* storage bloccato */ }
     const vr = $('#wip-ver'); if (vr) vr.textContent = 'VSM Coach ' + V.versionLabel();
     const ok = $('#wip-ok'); if (ok) ok.onclick = () => d.close();
     try { d.showModal(); } catch (e) { /* già aperto */ }
@@ -253,7 +280,7 @@
     UI.guideOn = localStorage.getItem('vsm.guideOn') !== '0';
     try { R.traceOn = localStorage.getItem('vsm.trace') !== '0'; } catch (e) { /* storage bloccato */ }
     { const vl = $('#ver-label'); if (vl) vl.textContent = 'VSM Coach ' + V.VERSION + (location.pathname.includes('/beta/') ? ' beta' : '') + ' · ' + V.BUILD; }
-    UI.buildPalette(); bindHeader(); UI.bindCartina(); UI.renderCartina(); C.init(); UI.menuCheck('#btn-pen-mode', I.penDraws); UI.menuCheck('#btn-overlays', V.map().overlays !== false); UI.menuCheck('#btn-trace', R.traceOn);
+    UI.buildPalette(); bindHeader(); UI.bindCartina(); UI.renderCartina(); C.init(); UI.menuCheck('#btn-pen-mode', I.penDraws); UI.menuCheck('#btn-overlays', !!(V.map() && V.map().layers && V.map().layers.riepilogo)); UI.menuCheck('#btn-trace', R.traceOn);
     { let chrome = '1', tools = '0'; try { chrome = localStorage.getItem('vsm.chrome') ?? '1'; tools = localStorage.getItem('vsm.toolsLeft') ?? '0'; } catch (e) { /* storage bloccato */ }
       UI.setToolsLeft(tools === '1'); if (chrome === '0') UI.setChrome(false, { hint: false }); }
     try { if (localStorage.getItem('vsm.paletteHidden') === '1') UI.setPaletteHidden(true, { quiet: true }); } catch (e) { /* storage bloccato */ }
@@ -262,6 +289,12 @@
     // cosi' nessuno puo' cancellare per sbaglio le mappe vere cercando di ripulire una prova
     if ((V.storage().canale || 'sviluppo') === 'stabile') $$('.prova-only').forEach(n => n.classList.add('hidden'));
     avvisoLavoriInCorso();
+    // il documento aperto veniva dalla 0.9 (V.migrate, dentro V.load): lo si dice una volta, allo
+    // stesso modo in cui lo dice «Apri JSON» — chi ritrova le sue mappe deve sapere che sono state convertite
+    { const cron = notaCronometriChiusi(V.migrationNotes);
+      const v2 = V.migrationNotes && V.migrationNotes.includes('v2') ? 'Documento convertito dalla 0.9.' : '';
+      const msg = [v2, cron].filter(Boolean).join(' ');
+      if (msg) UI.toast(msg); }
     if (!V.map().elements.length && Object.keys(V.doc.maps).length === 1) I.hint('Foglio nuovo: tocca il titolo in alto a destra, poi metti il richiedente e i process box. La Guida pratica (menu ⋯) ti accompagna se vuoi.', 6000);
     // Il foglio si scrive con un attimo di ritardo (V.save): ogni volta che l'app puo' sparire da sotto
     // i piedi — scheda chiusa, app mandata in sottofondo, iPadOS che libera memoria — si riversa subito
@@ -278,11 +311,52 @@
       // Il ricaricamento aspetta che il salvataggio sia finito: era il modo piu' facile per perdere
       // l'ultima modifica proprio mentre si andava a verificare la versione nuova.
       let hadSW = !!navigator.serviceWorker.controller;
-      navigator.serviceWorker.addEventListener('controllerchange', () => { if (!hadSW) { hadSW = true; return; } hadSW = true; V.saveNow().then(() => location.reload(), () => location.reload()); });
+      // Al massimo UN ricaricamento automatico al minuto (bug visto sull'iPad il 25/8): con piu'
+      // pubblicazioni ravvicinate — o la CDN di Pages che serve byte diversi da edge diversi —
+      // controllerchange puo' scattare piu' volte di fila, e la pagina si riavviava a ripetizione,
+      // ogni volta col cartello di cantiere davanti. Il segno sta in sessionStorage: sopravvive al
+      // reload (e' la stessa scheda), muore chiudendo davvero l'app — al prossimo vero avvio
+      // l'aggiornamento si prende come sempre.
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!hadSW) { hadSW = true; return; }
+        hadSW = true;
+        let ultimo = 0; try { ultimo = +sessionStorage.getItem('vsm.autoreload') || 0; } catch (e) { /* storage bloccato */ }
+        if (Date.now() - ultimo < 60000) { UI.toast('C\'è un altro aggiornamento: chiudi davvero l\'app e riaprila per usarlo.'); return; }
+        try { sessionStorage.setItem('vsm.autoreload', String(Date.now())); } catch (e) { /* storage bloccato */ }
+        V.saveNow().then(() => location.reload(), () => location.reload());
+      });
     }
-    let printViewBackup = null;
-    window.addEventListener('beforeprint', () => { printViewBackup = clone(I.view); I.fit({ paper: true }); });
-    window.addEventListener('afterprint', () => { if (!printViewBackup) return; I.view = printViewBackup; printViewBackup = null; I.applyView(); const m = V.map(); if (m) { m.view = clone(I.view); V.save(); } });
+    let printViewBackup = null, printSafety = null;
+    // «stampa in corso» (I.setPrinting): @media print ridimensiona davvero #stage, e il
+    // ResizeObserver che lo osserva riscriverebbe il viewBox col rapporto dello schermo SOPRA
+    // quello della carta appena scritto da I.fit({paper:true}) — rilievo Important della
+    // revisione. Il flag si spegne in afterprint, PRIMA di I.applyView() (che deve tornare a
+    // scrivere col rapporto dello schermo, stavolta di proposito).
+    // Su iPad 'afterprint' a volte non scatta affatto (bug noto della piattaforma: capita quando si
+    // stampa dal foglio di condivisione invece che dal tasto nativo, o se lo si annulla in certi modi):
+    // senza una seconda strada il flag restava alzato per sempre, il ResizeObserver dello stage
+    // restava muto fino al prossimo reload, e un cambio orientamento o l'apertura della tastiera
+    // lasciavano il foglio storto (rilievo del revisore finale). Due reti, la prima che scatta chiude
+    // la stampa — finishPrint e' idempotente (printViewBackup a null la seconda volta non fa nulla):
+    //   - un timeout di sicurezza: piu' lungo del tempo di un dialogo di stampa vero, cosi' da non
+    //     scattare mentre chi stampa sta ancora scegliendo la stampante;
+    //   - il ritorno in primo piano (visibilitychange -> visible): su iPad il foglio di condivisione
+    //     nasconde la pagina, e il suo ritorno e' un segnale forte che l'interazione e' comunque
+    //     finita (stampato, condiviso o annullato) — di solito arriva PRIMA del timeout.
+    const PRINT_SAFETY_MS = 12000;
+    function finishPrint() {
+      if (printSafety) { clearTimeout(printSafety); printSafety = null; }
+      I.setPrinting(false);
+      if (!printViewBackup) return;
+      I.view = printViewBackup; printViewBackup = null; I.applyView();
+      const m = V.map(); if (m) { m.view = clone(I.view); V.save(); }
+    }
+    window.addEventListener('beforeprint', () => {
+      printViewBackup = clone(I.view); I.setPrinting(true); I.fit({ paper: true });
+      clearTimeout(printSafety); printSafety = setTimeout(finishPrint, PRINT_SAFETY_MS);
+    });
+    window.addEventListener('afterprint', finishPrint);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && printViewBackup) finishPrint(); });
     setTimeout(UI.evalSuggest, 2500);
     if (!localStorage.getItem('vsm.welcomed')) setTimeout(() => { UI.toggleGuide(true, 'primi'); localStorage.setItem('vsm.welcomed', '1'); }, 400);
   }

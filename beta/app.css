@@ -35,9 +35,13 @@ a{color:var(--accent)}
 
 /* ---------- shell ---------- */
 #app{height:100%;display:grid;grid-template-rows:auto 1fr;padding-top:env(safe-area-inset-top)}
-header.bar{display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--panel);border-bottom:1px solid var(--line);min-height:48px;flex-wrap:wrap}
+header.bar{display:flex;align-items:center;gap:6px;padding:2px 8px;background:var(--panel);border-bottom:1px solid var(--line);min-height:40px;flex-wrap:wrap}
 header .brand{font-weight:700;display:flex;align-items:center;gap:6px;flex:none}
 header .brand svg{width:22px;height:22px}
+/* spia del salvataggio (spec fondamenta F): nascosta = 'ok', gialla = 'fallback' (solo
+   localStorage), rossa = 'failed' (non scritto da nessuna parte) — v. UI.saveState in panels.js */
+#save-dot{width:9px;height:9px;border-radius:50%;flex:none;background:var(--warn)}
+#save-dot.failed{background:var(--bad)}
 .spacer{flex:1}
 .btn{border:1px solid var(--line);background:var(--panel-2);border-radius:10px;padding:0 12px;min-height:36px;color:var(--ink);display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .btn:hover{border-color:var(--muted)}
@@ -86,7 +90,9 @@ main{position:relative;min-height:0;display:grid;grid-template-columns:1fr auto}
 #canvas.tool-connect{cursor:alias}
 #canvas.tool-whatis{cursor:help}
 #canvas.picking{cursor:cell}
-#canvas.picking .el-box,#canvas.picking .el-person,#canvas.picking .el-lane,#canvas.picking .el-inventory{filter:drop-shadow(0 0 4px rgba(31,78,121,.5))}
+#canvas.picking .el-box,#canvas.picking .el-person,#canvas.picking .el-lane,#canvas.picking .el-inventory{animation:legapulse 1.1s ease-in-out infinite}
+/* i legabili si riconoscono a colpo d'occhio: bordo ombreggiato che lampeggia piano (esito stazione 1) */
+@keyframes legapulse{0%,100%{filter:drop-shadow(0 0 3px rgba(31,78,121,.35))}50%{filter:drop-shadow(0 0 7px rgba(31,78,121,.75))}}
 
 /* svg map styles (also embedded in export) */
 svg .hand{font-family:var(--hand)}
@@ -118,9 +124,6 @@ svg .chan{fill:#fff;stroke:var(--pencil-2);stroke-width:1}
 svg .chan-handle{cursor:grab}
 svg .chan-handle:hover .chan{stroke:var(--sel);stroke-width:1.6}
 svg .handle.end{cursor:crosshair}
-svg .placeholder:hover rect{fill:rgba(31,78,121,.09)}
-/* lo strato del riepilogo è inerte (vedi R.init): i riquadri d'invito sono l'eccezione, si toccano */
-svg .placeholder{pointer-events:auto}
 /* bersagli evidenziati quando lo strumento li richiede */
 svg.t-delta .conn[data-type="flow"] .conn-hit{stroke:rgba(200,50,30,.16)}
 svg.t-delta .conn[data-type="flow"] .pencil{stroke:#c8321e}
@@ -144,6 +147,7 @@ svg .lock-count rect{fill:#fff;stroke:var(--sel);stroke-width:1}
 svg .lock-count text{fill:var(--sel);font-size:10px;font-weight:700;font-family:var(--ui)}
 #canvas.picking .el-box .box,#canvas.picking .el-person .pencil,#canvas.picking .el-lane .lane,#canvas.picking .el-inventory .inv{stroke:var(--sel);stroke-width:2.2}
 #canvas.picking .conn .pencil{stroke:var(--sel);stroke-width:2.4}
+#canvas.picking .conn{animation:legapulse 1.1s ease-in-out infinite}
 svg .handle{fill:#fff;stroke:var(--sel);stroke-width:1.5;cursor:nwse-resize}
 svg .lasso{fill:rgba(31,78,121,.08);stroke:var(--sel);stroke-dasharray:4 4;stroke-width:1}
 svg .ghost{stroke:var(--sel);stroke-dasharray:5 4;stroke-width:1.5;fill:none;pointer-events:none}
@@ -213,6 +217,27 @@ header .btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
 #pop details.adv{margin:2px 0 8px;border-top:1px dashed var(--line);padding-top:6px}
 #pop details.adv summary{cursor:pointer;font-size:12px;color:var(--accent);font-weight:600;padding:4px 0;list-style-position:inside}
 #pop details.adv[open] summary{margin-bottom:6px}
+/* le sezioni dei livelli di analisi (spec D, F1+): stesso idioma di details.adv — l'obbligo F1
+   del ledger: uscivano senza stile */
+#pop details.pop-section{margin:2px 0 8px;border-top:1px dashed var(--line);padding-top:6px}
+#pop details.pop-section summary{cursor:pointer;font-size:12px;color:var(--accent);font-weight:600;padding:4px 0;list-style-position:inside}
+#pop details.pop-section[open] summary{margin-bottom:6px}
+/* F1 — la sezione «Tempi e variabilità» */
+.tmp-stats{display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;margin-bottom:6px}
+.tmp-riga{display:flex;justify-content:space-between;gap:8px;font-size:12px}
+.tmp-riga span{color:var(--muted)}
+.tmp-classe{font-weight:700}
+.tmp-classe.stabile{color:#3f7d5a}
+.tmp-classe.moderata{color:#b98900}
+.tmp-classe.alta{color:#c8321e}
+.tmp-histo,.tmp-spark{display:block;width:100%;height:auto;margin:4px 0;background:var(--paper,#fffdf7);border:1px solid var(--line);border-radius:6px}
+.tmp-obs-list{margin:6px 0 2px}
+.tmp-obs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:3px 0;border-bottom:1px dashed var(--line);font-size:12px}
+.tmp-obs:last-child{border-bottom:0}
+.tmp-obs .k{color:var(--muted);flex:1;overflow-wrap:anywhere}
+.tmp-obs .tmp-nota{flex-basis:100%;font-size:11px;color:var(--muted);padding-left:2px;overflow-wrap:anywhere}
+.tmp-soglie{margin-top:6px}
+.mis-turno{margin:8px 0}
 #pop .lockrow{margin:-2px 0 8px}
 #pop .pop-actions{border-top:1px solid var(--line);padding-top:8px;margin-top:4px}
 #pop.sheet{left:8px!important;right:8px;top:auto!important;bottom:calc(84px + env(safe-area-inset-bottom));width:auto;max-width:none;max-height:min(55vh,520px);border-radius:14px}
@@ -261,7 +286,8 @@ header .btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
 .field input,.field select,.field textarea{border:1px solid var(--line);background:var(--panel-2);color:var(--ink);border-radius:8px;padding:7px 9px;width:100%;min-height:36px}
 .field input:hover,.field select:hover,.field textarea:hover{border-color:var(--muted)}
 .field textarea{min-height:60px;resize:vertical}
-.row{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px}
+.row input,.row select{min-width:0;width:100%;box-sizing:border-box}
 .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
 .check{display:flex;gap:8px;align-items:flex-start;margin:5px 0;font-size:13px}
 .check input{margin-top:3px;width:18px;height:18px}
@@ -445,6 +471,11 @@ dialog .d-foot{padding:10px 16px;border-top:1px solid var(--line);display:flex;g
 .maprow .k{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
 #toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--desk);padding:8px 14px;border-radius:999px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:50}
 #toast.show{opacity:1}
+/* UI.toastAction (proposte di fase, spec fondamenta D): il toast normale non riceve tocchi
+   (pointer-events:none, sopra) perché nessuno ha mai dovuto toccarlo — qui dentro c'è un bottone
+   vero, e SOLO lui deve tornare toccabile (il resto della pillola resta passante come sempre). */
+#toast.toast-action{border-radius:16px;display:inline-flex;align-items:center;gap:8px}
+#toast.toast-action button{pointer-events:auto}
 
 /* schermo stretto oppure basso (telefono in orizzontale: ~950x430): il cassetto si sovrappone invece di rubare spazio */
 @media (max-width:900px),(max-height:560px){
@@ -594,3 +625,30 @@ svg .handle.via{fill:var(--panel);stroke:var(--sel);stroke-width:2;pointer-event
 #subtabs .st-lead{color:var(--muted);flex:none}
 #subtabs button{flex:none;display:flex;align-items:baseline;border:1px solid var(--line);background:var(--panel-2);border-radius:999px;padding:3px 10px;min-height:30px;font:inherit;font-size:12px;color:var(--ink);cursor:pointer;white-space:nowrap}
 #subtabs button:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ---------- il selettore delle fasi, ridisegnato (prova iPad 25/8, due giri di feedback) ----------
+   Icona + nome e basta (niente sottotitoli: le frasi vivono nel title= e nella nuvoletta del «?»);
+   Valida è il pulsante blu FRA i due blocchi; la fase attuale in verde («✔ sei qui»); la conferma
+   della porta di Misura in evidenza. */
+#mh-phase{border-color:var(--ok);color:var(--ok);font-weight:600}
+#mh-phase small{opacity:.75;font-weight:400}
+#dlg-fase{width:min(440px,94vw)}
+#dlg-fase .d-body{position:relative}
+#fase-head{justify-content:space-between}
+.fase-gruppo{border:1px solid var(--line);border-radius:12px;padding:8px;background:var(--panel-2)}
+.fase-gruppo-t{font-weight:700;font-size:13px;margin:0 2px 6px}
+.fase-riga{display:flex;align-items:center;gap:10px;width:100%;text-align:left;margin-bottom:4px;white-space:normal;padding:8px 12px}
+.fase-riga:last-child{margin-bottom:0}
+.fase-riga.cur,.fase-riga.cur[disabled]{border:2px solid var(--ok);opacity:1;color:var(--ink);background:color-mix(in srgb,var(--ok) 10%,var(--panel))}
+.fase-icona{font-size:18px;flex:none}
+.fase-qui{margin-left:auto;color:var(--ok);font-size:12px;font-weight:700;white-space:nowrap}
+.fase-valida-blocco{display:flex;flex-direction:column;align-items:center;gap:2px;margin:4px 0}
+.fase-valida{width:auto;min-width:220px;justify-content:center}
+.fase-valida.cur .fase-qui{margin-left:8px}
+.fase-freccia{color:var(--muted);font-size:12px;line-height:1.2}
+.fase-conferma{border:2px solid var(--warn);border-radius:12px;padding:10px;margin:8px 0}
+.fase-conferma .actions{margin-top:8px;display:flex;gap:8px}
+/* la nuvoletta del «?»: appesa in alto a destra del corpo, con la punta verso il bottone */
+.fase-nuvola{position:absolute;top:10px;right:10px;z-index:3;max-width:320px;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:2px 12px}
+.fase-nuvola::before{content:'';position:absolute;top:-6px;right:14px;width:10px;height:10px;background:var(--panel);border-left:1px solid var(--line);border-top:1px solid var(--line);transform:rotate(45deg)}
+.fase-nuvola p{margin:8px 0;font-size:13px}

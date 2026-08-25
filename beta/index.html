@@ -6,8 +6,12 @@
      provare a infilare un pezzo di pagina nel disegno. Gli id in arrivo vengono gia' riscritti
      (V.sanitizeMap), ma qui il browser vieta comunque codice scritto dentro la pagina e attributi
      tipo onerror: nessuno script che non venga dai file dell'app puo' partire. Il coach parla con
-     l'API scelta (connect-src), le immagini possono essere dati inline (icone, export). -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https:; object-src 'none'; base-uri 'none'; form-action 'none'">
+     l'API scelta (connect-src), le immagini possono essere dati inline (icone, export).
+     L'hash sha256 in script-src apre UNA porta sola, cucita sul contenuto esatto del loader qui
+     sotto (js/manifest.js → document.write dei moduli): un payload iniettato da un JSON non può
+     avere questo hash, quindi la regola di sopra resta vera. Se il loader cambia anche di un
+     carattere, l'hash non torna più e la pagina resta bianca — test/build.test.js lo controlla. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-UM11sE/aSI91/puMNQK3QURTOmwqVkRIFalW3amJkuQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -25,10 +29,11 @@
 <body>
 <div id="app">
   <header class="bar">
-    <div class="brand" title="VSM Coach"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 12h4M14 12h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M10.5 10.5 12 13.5 13.5 10.5z" fill="#c8321e"/></svg></div>
     <button class="btn icon hidden" id="btn-up" title="Sali al foglio che contiene questo" aria-label="Sali di un livello">↑</button>
     <div id="crumbs"></div>
     <button id="map-head" title="Titolo, data, autori — tocca per vedere e modificare"><span class="ind" id="mh-ind"></span><span class="mh-txt"><b id="mh-title"></b><small id="mh-sub"></small></span><span class="mh-pen" aria-hidden="true">✎</span></button>
+    <button class="btn small" id="mh-phase" title="Fase del foglio: tocca per vederla o cambiarla"><small>Fase:</small> Disegna</button>
+    <span id="save-dot" class="hidden" title=""></span>
     <div class="spacer"></div>
     <button class="btn icon" id="btn-undo" title="Annulla (Cmd/Ctrl+Z)" aria-label="Annulla">↶</button>
     <button class="btn icon" id="btn-redo" title="Ripeti (Cmd/Ctrl+Shift+Z)" aria-label="Ripeti">↷</button>
@@ -38,7 +43,6 @@
       <button id="tab-lock" class="hidden" title="Lucchetto dell'Ideale: chiuso = validato, nessuna modifica" aria-label="Lucchetto dell'Ideale">🔓</button>
     </div>
     <div id="vers-list" class="hidden" role="menu" aria-label="Giri dello stato attuale"></div>
-    <button class="btn" id="btn-maps" title="Le tue mappe">Mappe</button>
     <button class="btn icon" id="btn-menu" title="Menu" aria-label="Menu" aria-haspopup="menu">⋯</button>
     <div id="subtabs" role="navigation" aria-label="Sotto-fogli di questa mappa"></div>
   </header>
@@ -100,7 +104,7 @@
   <button class="compact-only" data-m="af"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13M14 4l4 4-4 4M20 16H7M10 12l-4 4 4 4"/></svg>Attuale ⇄ Ideale</button>
   <button class="compact-only" data-m="giri"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h10M4 12h13M4 18h8"/><circle cx="19" cy="6" r="2"/></svg>Giri dell'attuale…</button>
   <button class="compact-only" data-m="lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Lucchetto dell'Ideale</button>
-  <button class="compact-only" data-m="maps"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>Le tue mappe</button>
+  <button data-m="maps"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>Le tue mappe</button>
   <hr>
   <button class="sub-head" data-sub="file" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 5a1 1 0 0 1 1-1h11l4 4v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M8 4v5h7V4M7 20v-7h10v7"/></svg>File e stampa<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
   <div class="submenu hidden" id="sub-file">
@@ -115,6 +119,7 @@
     <button id="btn-trace" aria-pressed="true">✓ Evidenzia il percorso</button>
     <button id="btn-tools-left" aria-pressed="false">○ Strumenti a sinistra</button>
     <button id="btn-overlays" aria-pressed="true">✓ Riepilogo sul foglio</button>
+    <button id="btn-layers-menu">Livelli di analisi…</button>
     <button id="btn-pen-mode" aria-pressed="true">✓ Penna Apple = matita</button>
     <button data-m="clear-ink">Cancella l'inchiostro</button>
   </div>
@@ -140,6 +145,16 @@
   <div class="d-head" id="mis-head">Misura</div>
   <div class="d-body"><div id="mis-body"></div></div>
   <div class="d-foot"><button class="btn" id="mis-close">Chiudi</button></div>
+</dialog>
+
+<!-- Fase del foglio (spec fondamenta A1, ridisegnato dalla prova iPad 25/8): due blocchi
+     (Pianificazione / Misura e analisi), la fase attuale evidenziata, la porta di Misura con
+     conferma. Le fasi non raggiungibili restano in lista, disabilitate col perché sotto il nome.
+     Il «?» apre la spiegazione delle fasi dentro il dialogo. -->
+<dialog id="dlg-fase" aria-labelledby="fase-head">
+  <div class="d-head" id="fase-head">Fasi di lavoro <button class="btn small" id="fase-help" title="Che cosa sono le fasi e che cosa comporta cambiarle" aria-label="Spiegazione delle fasi">?</button></div>
+  <div class="d-body"><div id="fase-body"></div></div>
+  <div class="d-foot"><button class="btn" id="fase-close">Chiudi</button></div>
 </dialog>
 
 <dialog id="dlg-maps">
@@ -188,14 +203,9 @@
 
 <div id="toast" role="status" aria-live="polite"></div>
 
-<script src="js/version.js"></script>
-<script src="prompt.js"></script>
-<script src="js/model.js"></script>
-<script src="js/render.js"></script>
-<script src="js/interact.js"></script>
-<script src="js/panels.js"></script>
-<script src="js/legend.js"></script>
-<script src="js/coach.js"></script>
-<script src="js/main.js"></script>
+<script src="js/manifest.js"></script>
+<script>/* i moduli si inseriscono dal manifest, nell'ordine: document.write è sincrono e
+  mantiene l'ordine di esecuzione, come i tag che c'erano scritti a mano */
+self.VSM_FILES.forEach(function (f) { document.write("<script src='" + f + "'><\/script>"); });</script>
 </body>
 </html>

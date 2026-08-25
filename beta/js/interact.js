@@ -1,4 +1,14 @@
 /* VSM Coach v2 — interact.js: vista (pan/zoom), strumenti, gesti penna/dito/mouse, creazione, trascinamento, inchiostro. */
+/* SCRITTURE FUORI COMMIT (censimento, spec fondamenta A6). Il trascinamento in corso scrive
+ * x/y (o props.dx/dy per i bloccati) direttamente a ogni movimento (case 'drag', ~riga 326)
+ * e committa al rilascio; idem 'via' (pieghe), 'chan' (props.t) e 'resize' (w/h). In quel
+ * tratto map.rev NON si muove: il riepilogo si ridisegna con la chiave rev+':drag' (render).
+ * Fuori dal gesto, chi scrive senza commit DEVE alzare rev da sé: attachUnder (model),
+ * la rinomina del giro (main.js), sanitizeMap, buildDetailFromActivities (model.js) e
+ * I.groupToDetail qui sotto (elements/parentStepId del sotto-foglio appena nato).
+ * Unica eccezione dichiarata: i fogli appena nati, popolati prima del primo indice (V.example) —
+ * V.index(map) non ha ancora nessuna memo per quell'oggetto, quindi la prima lettura e' già
+ * fresca da sé e un bump non cambierebbe niente. Nessun'altra scrittura fuori censimento. */
 (function (V) {
   'use strict';
   const R = V.render; const { uid, clone } = V.util;
@@ -29,6 +39,14 @@
   // ---------- vista ----------
   const applyView = () => { const W = stage.clientWidth || 800, H = stage.clientHeight || 600; svg.setAttribute('viewBox', `${I.view.x} ${I.view.y} ${W / I.view.k} ${H / I.view.k}`); if (V.ui && V.ui.onView) V.ui.onView(); };
   I.applyView = applyView;
+  // «stampa in corso» (spec C, R7 del rapporto dom — rilievo Important della revisione): @media
+  // print cambia davvero la misura di #stage (app.css: #stage{position:static}), e il
+  // ResizeObserver qui sotto richiamava applyView() — che scrive il viewBox dal RAPPORTO DELLO
+  // STAGE (W/I.view.k, H/I.view.k) — SOPRA il viewBox della carta appena scritto da I.fit({paper:
+  // true}). Fra beforeprint e afterprint (main.js) il ResizeObserver dello stage non tocca piu'
+  // il viewBox: la carta resta la carta finche' la stampa non e' finita.
+  let printing = false;
+  I.setPrinting = (on) => { printing = on; };
   I.toWorld = (cx, cy) => { const p = svg.createSVGPoint(); p.x = cx; p.y = cy; const m = svg.getScreenCTM(); if (!m) return { x: 0, y: 0 }; const q = p.matrixTransform(m.inverse()); return { x: q.x, y: q.y }; };
   I.toScreen = (x, y) => { const p = svg.createSVGPoint(); p.x = x; p.y = y; const q = p.matrixTransform(svg.getScreenCTM()); const r = stage.getBoundingClientRect(); return { x: q.x - r.left, y: q.y - r.top }; };
   I.zoomAt = (factor, cx, cy) => { const w0 = I.toWorld(cx, cy); I.view.k = Math.min(6, Math.max(0.15, I.view.k * factor)); applyView(); const w1 = I.toWorld(cx, cy); I.view.x += w0.x - w1.x; I.view.y += w0.y - w1.y; applyView(); saveView(); };
@@ -51,8 +69,22 @@
     if (box) { const m = 60; box = { x: box.x - m, y: box.y - m, w: box.w + m * 2, h: box.h + m * 2 }; }
     else box = { x: -40, y: -40, w: P.w + 80, h: P.h + 80 };
     const k = Math.min(W / box.w, H / box.h);
-    I.view.k = k; I.view.x = box.x - (W / k - box.w) / 2; I.view.y = box.y - (H / k - box.h) / 2;
-    applyView(); saveView();
+    I.view.k = k;
+    if (opts.paper) {
+      // La stampa inquadra le proporzioni della CARTA (spec C, R7 del rapporto dom), non quelle
+      // dello schermo: applyView() scrive nel viewBox il rapporto W/H dello STAGE (e' giusto per
+      // lo schermo, dove lo svg riempie proprio lo stage) — su un iPad in verticale (834×1112) il
+      // foglio 2376×1680 veniva tagliato invece di stare intero. Qui il viewBox si scrive
+      // DIRETTAMENTE dal box, che ha gia' il rapporto della carta (paper + margine), bypassando
+      // il W/H dello schermo.
+      I.view.x = box.x; I.view.y = box.y;
+      svg.setAttribute('viewBox', `${box.x} ${box.y} ${box.w} ${box.h}`);
+      if (V.ui && V.ui.onView) V.ui.onView();
+    } else {
+      I.view.x = box.x - (W / k - box.w) / 2; I.view.y = box.y - (H / k - box.h) / 2;
+      applyView();
+    }
+    saveView();
   };
   const saveView = () => { const m = V.map(); if (m) { m.view = clone(I.view); V.save(); } };
   I.restoreView = () => { const m = V.map(); if (m && m.view) { I.view = clone(m.view); applyView(); } else I.fit(); };
@@ -171,6 +203,9 @@
     // al RILASCIO (case 'peek' in up): mai interfaccia nuova sotto il dito a meta' gesto.
     if (e.target.closest && e.target.closest('[data-peek]')) { const g2 = e.target.closest('[data-peek]'); gesture = { type: 'peek', boxId: g2.dataset.box, link: g2.dataset.peek }; return; }
     if (e.target.closest && e.target.closest('[data-link]')) { const link = e.target.closest('[data-link]').dataset.link; gesture = { type: 'link', link }; return; }
+    // il badge di un livello (spec C): si apre al RILASCIO, come l'occhio e il collegamento — mai
+    // un pop-up nuovo sotto il dito a meta' gesto.
+    if (e.target.closest && e.target.closest('.badge[data-el]')) { const g2 = e.target.closest('.badge[data-el]'); gesture = { type: 'badge', elId: g2.dataset.el, layer: g2.dataset.layer }; return; }
     if (I.pickConn && !V.byId(I.pickConn.from, map)) I.cancelPickConnect(); // la partenza non c'e' piu' (undo/elimina): il tocco prosegue normale
     if (I.pickConn) {
       const pc = I.pickConn;
@@ -185,7 +220,8 @@
     }
     if (I.pickLock) { const kids = I.pickLock; if (hit && !kids.includes(hit.id)) { I.cancelPickLock(); if (!I.lockMany(kids, hit.id)) I.hint('Non si può legare a questo elemento.', 2500); } else if (!hit) I.cancelPickLock(); gesture = { type: 'noop' }; return; }
     if (e.target.closest && e.target.closest('[data-toggle-legend]')) { gesture = { type: 'legend', id: e.target.closest('[data-toggle-legend]').dataset.toggleLegend }; return; }
-    if (e.target.closest && e.target.closest('[data-place]')) { const g = e.target.closest('[data-place]'); gesture = { type: 'place', kind: g.dataset.place, x: +g.dataset.px, y: +g.dataset.py }; return; }
+    // i segnaposti «Chi chiede? / Primo passo» non esistono più (esito stazione 1, 25/8): il tocco
+    // sul vuoto apre il menu rotondo, la palette resta l'altra strada — niente gesto 'place'.
     if (t === 'whatis') { // modalita' «?»: il tocco spiega l'elemento invece di selezionarlo; sul vuoto si sposta il foglio.
       // La scheda si apre al RILASCIO: aperta al pointerdown finiva sotto il dito e si mangiava il
       // pointerup dell'svg — il puntatore restava appeso e il pan successivo diventava un pinch.
@@ -226,7 +262,12 @@
       if (!wasSelected) I.select([hit.id], { keepPop: true });
       // gli elementi col lucchetto chiuso (pinned) non si trascinano: proteggono dagli spostamenti per sbaglio
       const moving = frozen ? [] : I.selection.map(id => V.byId(id, map)).filter(x => x && !V.isConnector(x) && !x.props.pinned);
-      gesture = { type: 'drag', wasSelected, ids: moving.map(x => x.id), start: w, startClient: { x: e.clientX, y: e.clientY }, before: moving.map(x => (x.props.lockTo || (x.type === 'delta' && x.props.attachedTo)) && !moving.some(p => p.id === (x.props.lockTo || x.props.attachedTo)) ? { id: x.id, dx: x.props.dx || 0, dy: x.props.dy || 0, attached: true } : (x.props.lockTo || (x.type === 'delta' && x.props.attachedTo)) ? { id: x.id, skip: true } : { id: x.id, x: x.x, y: x.y }), moved: false, hitId: hit.id, isConn: V.isConnector(el), hitPinned: !!(el && el.props && el.props.pinned) };
+      // il blocco 🔒 vince sulla catena ⛓ (esito stazione 1, 25/8): foto della posizione VISTA di
+      // ogni elemento bloccato-e-legato fuori dal gruppo che si muove — a ogni frame R.freezePinned
+      // compensa dx/dy perche' resti dov'era, anche se il suo genitore (o la sua freccia) si sposta
+      const pinFrozen = frozen ? [] : map.elements.filter(x => x.props && x.props.pinned && (x.props.lockTo || (x.type === 'delta' && x.props.attachedTo)) && !moving.some(m => m.id === x.id)).map(x => ({ id: x.id, dx0: x.props.dx || 0, dy0: x.props.dy || 0, pos0: R.elPos(x, map) }));
+      const pinPos0 = {}; pinFrozen.forEach(f => { pinPos0[f.id] = f.pos0; });
+      gesture = { type: 'drag', wasSelected, ids: moving.map(x => x.id), start: w, startClient: { x: e.clientX, y: e.clientY }, before: moving.map(x => (x.props.lockTo || (x.type === 'delta' && x.props.attachedTo)) && !moving.some(p => p.id === (x.props.lockTo || x.props.attachedTo)) ? { id: x.id, dx: x.props.dx || 0, dy: x.props.dy || 0, attached: true } : (x.props.lockTo || (x.type === 'delta' && x.props.attachedTo)) ? { id: x.id, skip: true } : { id: x.id, x: x.x, y: x.y }), moved: false, hitId: hit.id, isConn: V.isConnector(el), hitPinned: !!(el && el.props && el.props.pinned), pinFrozen, pinPos0 };
       return;
     }
     gesture = { type: 'lasso', start: w, startClient: { x: e.clientX, y: e.clientY }, shift: e.shiftKey };
@@ -249,7 +290,7 @@
   }
   function rollback(g) {
     const map = V.map();
-    if (g.type === 'drag') { g.before.forEach(b => { if (b.skip) return; const el = V.byId(b.id, map); if (!el) return; if (b.attached) { el.props.dx = b.dx; el.props.dy = b.dy; } else { el.x = b.x; el.y = b.y; } R.updateEl(el.id, map); }); }
+    if (g.type === 'drag') { g.before.forEach(b => { if (b.skip) return; const el = V.byId(b.id, map); if (!el) return; if (b.attached) { el.props.dx = b.dx; el.props.dy = b.dy; } else { el.x = b.x; el.y = b.y; } R.updateEl(el.id, map); }); (g.pinFrozen || []).forEach(f => { const el = V.byId(f.id, map); if (!el) return; el.props.dx = f.dx0; el.props.dy = f.dy0; R.updateEl(el.id, map); }); }
     if (g.type === 'resize') { const el = V.byId(g.id, map); if (el) { el.w = g.w0; el.h = g.h0; R.updateEl(el.id, map); } }
     if (g.type === 'chan') { const c = V.byId(g.id, map); if (c) { c.props.t = g.t0; R.updateEl(c.id, map); } }
     if (g.type === 'via') { const c = V.byId(g.id, map); if (c) { c.props.via = g.before; R.updateEl(c.id, map); } }
@@ -287,8 +328,12 @@
     // un richiedente c'e' gia': la persona nuova non lo e'. L'etichetta pero' resta vuota — chi
     // disegna scrive chi e' (paziente, segretaria, corriere), l'app non gli mette in bocca «operatore»
     if (kind === 'person' && map.elements.some(x => x.type === 'person' && x.props.requestor)) el.props.requestor = false;
-    // creato sopra un passo/persona o vicino a una freccia → nasce già bloccato (come quando lo si lascia cadere)
-    if (kind !== 'delta') { const lk = I.findLockTarget(el, map); if (lk) I.lockOps(el, lk, map).forEach(op => Object.assign(op.t === 'props' ? el.props : el, op.after)); }
+    // creato sopra un passo/persona o vicino a una freccia → nasce già bloccato (come quando lo si
+    // lascia cadere). MA non dal menu del vuoto (o.senzaLegame): lì il tocco è per definizione su
+    // un punto libero, e il legame scattava solo per l'alone dei margini di findLockTarget — un
+    // problema creato VICINO alla persona «chi chiede» le si incatenava da solo e si muovevano
+    // insieme (bug iPad 25/8). Il legame resta un gesto: trascinare sopra, o «Lega a…».
+    if (kind !== 'delta' && !o.senzaLegame) { const lk = I.findLockTarget(el, map); if (lk) I.lockOps(el, lk, map).forEach(op => Object.assign(op.t === 'props' ? el.props : el, op.after)); }
     if (!V.commit({ t: 'add', el }, 'aggiungi ' + T.name)) return null;
     I.setTool('select'); I.select([el.id], { keepPop: true }); V.pop.open(el.id);
     return el;
@@ -327,6 +372,7 @@
         if (!gesture.moved && Math.hypot(e.clientX - gesture.startClient.x, e.clientY - gesture.startClient.y) < 5) return;
         gesture.moved = true; V.ui.hideQuick && V.ui.hideQuick(); V.pop.close();
         gesture.before.forEach(b => { if (b.skip) return; const el = V.byId(b.id, map); if (!el) return; if (b.attached) { el.props.dx = b.dx + dx; el.props.dy = b.dy + dy; } else { el.x = b.x + dx; el.y = b.y + dy; } R.updateEl(el.id, map, false, null, { soloPosizione: true }); });
+        if (gesture.pinFrozen && gesture.pinFrozen.length) R.freezePinned(map, gesture.pinPos0).forEach(c => R.updateEl(c.id, map, false, null, { soloPosizione: true }));
         R.selection(I.selection, map);
         // i gradini della timeline seguono il passo mentre lo si sposta, invece di restare indietro
         // fino al rilascio: e' il numero che si sta guardando proprio mentre si sistema il foglio
@@ -373,10 +419,8 @@
       }
       case 'link': V.ui.openMap(g.link); break;
       case 'peek': if (V.ui.showPeek) V.ui.showPeek(g.boxId, e.clientX, e.clientY); break;
+      case 'badge': if (V.byId(g.elId, map) && V.pop && V.pop.open) { I.select([g.elId], { keepPop: true }); V.pop.open(g.elId, { section: g.layer }); } break;
       case 'legend': { const el = V.byId(g.id, map); if (!el) break; const collapsed = !el.props.collapsed; V.commit([{ t: 'props', id: el.id, after: { collapsed } }, { t: 'update', id: el.id, after: { w: collapsed ? 74 : 170, h: collapsed ? 18 : 104 } }], 'legenda'); break; }
-      // stessa regola del rilascio dopo il trascinamento: il richiedente e' uno solo, e chi arriva dopo
-      // nasce senza la spunta (ma con l'etichetta vuota: chi e', lo scrive chi disegna)
-      case 'place': { const T = V.TYPES[g.kind]; const el = V.newElement(g.kind, g.kind === 'person' ? g.x + 55 : g.x, g.kind === 'person' ? g.y + 8 : g.y); if (g.kind === 'person' && map.elements.some(x => x.type === 'person' && x.props.requestor)) el.props.requestor = false; V.commit({ t: 'add', el }, 'aggiungi ' + T.name); I.select([el.id], { keepPop: true }); V.pop.open(el.id); break; }
       case 'chan': { const c = V.byId(g.id, map); if (!g.moved) { I.select([c.id], { keepPop: true }); V.pop.open(c.id); break; } V.commit({ t: 'props', id: c.id, after: { t: c.props.t }, before: { t: g.t0 } }, 'sposta icona'); break; }
       case 'reconnect': {
         R.ghost(''); const c = V.byId(g.id, map); if (!c) break;
@@ -420,6 +464,8 @@
           break;
         }
         const ops = g.before.filter(b => !b.skip).map(b => { const el = V.byId(b.id, map); return b.attached ? { t: 'props', id: b.id, after: { dx: el.props.dx, dy: el.props.dy }, before: { dx: b.dx, dy: b.dy } } : { t: 'update', id: b.id, after: { x: el.x, y: el.y }, before: { x: b.x, y: b.y } }; });
+        // i bloccati-e-legati compensati durante il drag (blocco > catena) entrano nello stesso undo
+        (g.pinFrozen || []).forEach(f => { const el = V.byId(f.id, map); if (!el) return; if ((el.props.dx || 0) !== f.dx0 || (el.props.dy || 0) !== f.dy0) ops.push({ t: 'props', id: f.id, after: { dx: el.props.dx, dy: el.props.dy }, before: { dx: f.dx0, dy: f.dy0 } }); });
         // legame smart: un solo elemento legabile e non legato lasciato sopra/vicino a un genitore
         if (g.before.length === 1 && !g.before[0].attached) { const el = V.byId(g.before[0].id, map); const lk = I.findLockTarget(el, map); if (lk) ops.push(...I.lockOps(el, lk, map)); }
         if (ops.length) V.commit(ops, 'sposta');
@@ -633,6 +679,11 @@
    *  visto da sopra — chiamarli diversamente farebbe sembrare la cartina un elenco di estranei. */
   I.groupToDetail = (ids, nomeFoglio) => {
     const map = V.map();
+    // la porta unica anche qui (rilievo: non si aggira passando fuori da commit): il settore che
+    // migra in un sotto-foglio e' struttura pura (un passo nuovo, dei remove, un link) — se la fase
+    // la ferma, si dice subito, prima di spostare niente.
+    const g = V.allowed({ t: 'add', el: { type: 'box' } }, map);
+    if (!g.ok) { if (V.ui && V.ui.toast) V.ui.toast(V.DENIED_MSG[g.reason] || 'Non si può, in questa fase.'); return; }
     const inside = new Set(ids.filter(id => { const el = V.byId(id, map); return el && !V.isConnector(el) && el.type !== 'lane'; }));
     if (inside.size < 2) { I.hint('Seleziona almeno due elementi (con lo strumento Area) per farne un sotto-foglio.', 3000); return; }
     // i figli bloccati/agganciati a chi migra vengono con lui (finche' l'insieme non cresce piu')
@@ -662,6 +713,10 @@
     const sx = 120 - x0, sy = 140 - y0;
     const shift = (o) => { const n = clone(o); if (!V.isConnector(n)) { n.x += sx; n.y += sy; } else { if (!n.from.el) { n.from.x += sx; n.from.y += sy; } if (!n.to.el) { n.to.x += sx; n.to.y += sy; } if (Array.isArray(n.props.via)) n.props.via = n.props.via.map(v2 => ({ x: v2.x + sx, y: v2.y + sy })); } return n; };
     d.elements = movingEls.map(shift).concat(moveConns.map(shift));
+    // scrittura fuori commit sull'array degli elementi (censimento A6, in testa a questo file):
+    // d.rev DEVE alzarsi da sé, come fa model.js con bump() sulle sue scritture dirette — bump e'
+    // privato a model.js, quindi qui l'effetto si espone a mano.
+    d.rev = (d.rev | 0) + 1;
     V.save();
     // nel foglio madre: un passo con il link, e le operazioni di sostituzione in UNA voce di undo
     const T = V.TYPES.box;
@@ -670,6 +725,7 @@
     // niente V.save() qui: salva già il commit subito sotto (e se il commit venisse rifiutato,
     // repairDoc azzera da sé un parentStepId che punta a un box mai nato)
     d.parentStepId = nb.id;
+    d.rev = (d.rev | 0) + 1;   // altra scrittura fuori commit sullo stesso foglio (censimento A6)
     const ops = [{ t: 'add', el: nb }];
     movingEls.forEach(el => ops.push({ t: 'remove', el: clone(el) }));
     moveConns.forEach(c => ops.push({ t: 'remove', el: clone(c) }));
@@ -695,6 +751,11 @@
     V.pop.close();
     if (!V.commit(ops, 'elimina')) return;
     I.selection = [];
+    // P.close() qui sopra ha appena RIFATTO comparire il menu rapido per l'elemento ancora
+    // selezionato (e' la sua regola: chiuso il pop-up, il menu torna) — ma l'elemento sta per
+    // sparire: senza questo, «Blocca» ed «Elimina» restavano orfani sul foglio (bug iPad 25/8,
+    // visto eliminando un reparto dal suo pannello).
+    V.ui.onSelection && V.ui.onSelection([]);
   };
   /** duplica uno o più elementi; se un figlio bloccato/agganciato e il suo genitore sono entrambi nel gruppo, il legame viene ricreato tra le copie */
   I.duplicateMany = (ids) => {
@@ -728,7 +789,7 @@
     svg.addEventListener('lostpointercapture', (e) => { if (!gesture || !ptrs.has(e.pointerId)) return; if (gesture.type === 'pan' || gesture.type === 'pinch') return; ptrs.delete(e.pointerId); const g = gesture; gesture = null; abortGesture(g); });
     svg.addEventListener('wheel', (e) => { e.preventDefault(); const p = stagePt(e); if (e.ctrlKey || e.metaKey) I.zoomAt(e.deltaY < 0 ? 1.1 : 0.9, e.clientX, e.clientY); else { I.view.x += e.deltaX / I.view.k; I.view.y += e.deltaY / I.view.k; applyView(); saveView(); } }, { passive: false });
     svg.addEventListener('contextmenu', (e) => e.preventDefault());
-    new ResizeObserver(() => applyView()).observe(stage);
+    new ResizeObserver(() => { if (!printing) applyView(); }).observe(stage);
     document.addEventListener('keydown', (e) => {
       const tag = (e.target.tagName || '').toLowerCase();
       if (['input', 'textarea', 'select'].includes(tag) || e.target.isContentEditable) { if (e.key === 'Escape') { e.target.blur(); if (e.target.closest('#pop')) V.pop.close(); } return; }

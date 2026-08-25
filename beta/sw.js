@@ -10,9 +10,12 @@ const FAMILY = 'vsm-coach-beta';
 // dispositivi continuavano a servire dalla cache la build precedente. publish_beta.py controlla che i
 // due timbri coincidano, cosi' non possono separarsi.
 importScripts('./js/version.js');
-const BUILD = '20260822-1224';
+importScripts('./js/manifest.js');
+const BUILD = '20260825-1507';
 const CACHE = FAMILY + '-v' + self.VSM_VERSION + '-' + BUILD;
-const FILES = ['./', './index.html', './app.css', './prompt.js', './js/version.js', './js/model.js', './js/render.js', './js/interact.js', './js/panels.js', './js/legend.js', './js/coach.js', './js/main.js', './manifest.webmanifest', './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
+const FILES = ['./', './index.html', './app.css', './manifest.webmanifest', './icon.svg',
+  './icon-180.png', './icon-192.png', './icon-512.png', './js/manifest.js']
+  .concat(self.VSM_FILES.map((f) => './' + f));
 // Install atomico, di proposito: se un file manca, l'install FALLISCE e restano in servizio il service
 // worker e la cache precedenti, completi e funzionanti. La variante "tollerante" (cache file per file)
 // era peggio del male: una cache parziale si installava "con successo" e l'activate cancellava quella

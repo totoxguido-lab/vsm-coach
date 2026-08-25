@@ -97,7 +97,7 @@
     ops.forEach(o => {
       try {
         switch (o.op) {
-          case 'create_future_map': { const cur = V.currentOf(map) || map; const gia = V.idealOf(cur); futureMap = V.createFuture(cur); if (!gia) n++; break; }
+          case 'create_future_map': { const cur = V.currentOf(map) || map; const gia = V.idealOf(cur); futureMap = V.createFuture(cur); if (!futureMap) break; if (!gia) n++; break; }
           case 'add_element': { const m = target(o); if (!V.TYPES[o.type] || V.isConnector({ type: o.type })) break; let x = o.x, y = o.y; if (o.near) { const ne = V.byId(o.near, m); if (ne) { const p = R.elPos(ne, m); x = p.x + (o.type === 'storm' || o.type === 'fluffy' ? ne.w - 60 : ne.w + 40); y = p.y + (o.type === 'storm' || o.type === 'fluffy' ? -60 : 0); } } if (x == null || y == null) { const P = V.paperOf(m); const boxes = m.elements.filter(e => e.type === 'box'); x = boxes.length ? Math.max(...boxes.map(b => b.x + b.w)) + 60 : 120; y = 300; if (o.type === 'person') { x = P.w - 108; y = 100; } if (o.type === 'storm') { y = 220; } x = Math.max(20, Math.min(x, P.w - 160)); y = Math.max(20, Math.min(y, P.h - 120)); } const el = V.newElement(o.type, Math.round(x), Math.round(y), o.props || {}); STRUTTURA.forEach(k => { if (el.props && k in el.props && k !== 'attachedTo') delete el.props[k]; }); if (o.id && V.idOk(String(o.id)) && !V.byId(String(o.id), m)) el.id = String(o.id); push(m, { t: 'add', el }); n++; break; }
           // il coach descrive il contenuto, non l'impianto del foglio: catena, chiodo, agganci e badge
           // restano all'utente. Una patch che scriveva lockTo senza scostamento faceva saltare

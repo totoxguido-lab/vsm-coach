@@ -6,6 +6,16 @@
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const R = V.render = {};
   let svg, L = {};
+  // Il registro dei livelli disegna a gruppi (spec fondamenta C): un <g data-layer> per livello,
+  // ridisegnato solo quando la sua chiave cambia. layerKeys e' AZZERATA in R.init (dopo L = nuovi):
+  // l'svg staccato dell'export e il cambio di svg ripartono da zero, cosi' il primo R.overlay del
+  // foglio vero dopo un giro di R.exportSVG/peekSVG ridisegna sempre (nessuna chiave stantia puo'
+  // fargli "saltare" un gruppo che in realta' sta su un altro <g data-layer> — rilievo GRAVE della
+  // revisione). I gruppi non si tengono in cache per riferimento (un Map id->elemento sopravviverebbe
+  // allo scambio di svg e punterebbe a nodi staccati): si cercano ogni volta dentro L.layersG.children,
+  // una manciata di nodi, costo trascurabile.
+  let layerKeys = new Map();
+  R._draws = {};   // contatore di ridisegni per livello (prova del drag: solo il riepilogo si muove)
 
   // ---------- aspetto dei collegamenti (deriva dal significato) ----------
   // due famiglie di punte: piena (la richiesta, com'e' sempre stata) e aperta a V (chi si reca di persona)
@@ -51,11 +61,17 @@
     const nuovi = {};
     ['paper', 'lanes', 'ink', 'conn', 'el', 'hand', 'overlay', 'ui'].forEach(k => { const g = document.createElementNS(NS, 'g'); g.id = 'L-' + k; svg.appendChild(g); nuovi[k] = g; });
     L = nuovi;
+    layerKeys = new Map();
     L.ink.setAttribute('pointer-events', 'none');
     // Il riepilogo e la timeline sono un calcolo disegnato sopra il foglio, non roba da toccare: il
     // rettangolo pieno della card rubava il tocco a quello che ci stava sotto (note, nuvole) e faceva
-    // partire il trascinamento della vista. I riquadri tratteggiati d'invito restano toccabili.
+    // partire il trascinamento della vista. I riquadri tratteggiati d'invito restano toccabili
+    // (svg .placeholder{pointer-events:auto}, app.css) e i badge dei livelli pure (in linea, sotto).
     L.overlay.setAttribute('pointer-events', 'none');
+    // dentro l'overlay: il gruppo dei livelli — <g class="layers"> con un <g data-layer="id"> per
+    // livello (spec C). I segnaposti «① Chi chiede? / ② Primo passo» non esistono più: il foglio
+    // vuoto è vuoto, punto (esito stazione 1, 25/8) — si comincia dal menu del vuoto o dalla palette.
+    const layersG = document.createElementNS(NS, 'g'); layersG.setAttribute('class', 'layers'); L.overlay.appendChild(layersG); L.layersG = layersG;
   };
   R.layers = () => L;
 
@@ -142,14 +158,21 @@
     const tint = map.tint == null ? null : ((+map.tint || 0) % 360 + 360) % 360;
     if (tint != null) g += `<rect x="0" y="0" width="${w}" height="${h}" rx="2" fill="hsl(${tint} 40% 62%)" opacity="0.08"/>`;
     g += `<line class="fold" x1="${w / 2}" y1="0" x2="${w / 2}" y2="${h}"/><line class="fold" x1="${w * 0.75}" y1="0" x2="${w * 0.75}" y2="${h}"/>`;
-    // niente blocco titolo sul foglio (titolo, data e autori vivono in barra); in basso, semitrasparente,
-    // il nome della mappa: il giro dell'attuale, «ideale» (con lo stato del lucchetto) o «dettaglio»
-    const lbl = V.kindLabel(map) + (map.kind === 'future' ? (map.validated ? ' · validato \u{1F512}' : ' · da validare') : '');
-    g += `<text class="hand" x="30" y="${h - 26}" font-size="58" font-weight="800" fill="hsl(${tint == null ? 210 : tint} 45% 35%)" opacity="0.14">${esc(lbl)}</text>`;
+    // in basso a sinistra, semitrasparente, l'identità del foglio (feedback iPad 25/8): titolo,
+    // data e iniziali degli autori, poi il nome della mappa — il giro dell'attuale, «ideale» (con
+    // lo stato del lucchetto) o «dettaglio»
+    const giro = V.kindLabel(map) + (map.kind === 'future' ? (map.validated ? ' · validato \u{1F512}' : ' · da validare') : '');
+    const dataIt = map.date ? String(map.date).split('-').reverse().join('/') : '';
+    const lbl = [map.title, dataIt, map.authors].filter(Boolean).join(' · ') + ((map.title || dataIt || map.authors) ? ' — ' : '') + giro;
+    g += `<text class="hand" x="30" y="${h - 26}" font-size="46" font-weight="800" fill="hsl(${tint == null ? 210 : tint} 45% 35%)" opacity="0.14">${esc(lbl)}</text>`;
     L.paper.innerHTML = g;
   };
 
   // ---------- elementi ----------
+  /** Orologino tenue (stesso tratto del glifo «sala d'attesa»): sta al posto delle targhette
+   *  «Hi / Lo / Avg ?» e «attesa ?» in fase disegna — ricorda che i tempi arriveranno dal
+   *  cronometro senza chiedere numeri in una fase in cui non esistono. */
+  const clockHint = (cx, cy) => `<g class="clock-hint pencil-thin" opacity=".5"><circle cx="${cx}" cy="${cy - 4}" r="6.5" fill="none"/><path d="M${cx} ${cy - 4} V${cy - 8.5} M${cx} ${cy - 4} H${cx + 3.5}"/></g>`;
   function drawEl(el, map) {
     // la mappa serve al badge del collegamento (figlia o riferimento); la legenda disegna elementi
     // che non stanno in nessuna mappa, e per quelli vale il ripiego sulla mappa attiva
@@ -179,7 +202,10 @@
         s += `<text class="hand" x="8" y="${blk.y0}" font-size="${blk.size}">${tspans(fitLines(blk.lines, blk.max), 8, blk.y0, blk.lineH)}</text>`;
         if (p.owner) s += `<text class="hand muted" x="${w - 6}" y="${h - 6}" text-anchor="end" font-size="9">${esc(p.owner)}</text>`;
         const hasData = p.hi !== '' || p.lo !== '' || p.avg !== '';
-        s += `<text class="hand ${hasData ? '' : 'muted'}" x="${w / 2}" y="${h + 14}" text-anchor="middle" font-size="10">${hasData ? tspans(['Hi: ' + fmt(num(p.hi)), 'Lo: ' + fmt(num(p.lo)), 'Avg: ' + fmt(num(p.avg))], w / 2, h + 14, 12) : `<tspan x="${w / 2}" y="${h + 14}">Hi / Lo / Avg ?</tspan>`}</text>`;
+        // in DISEGNA i numeri non ci sono per definizione: al posto della targhetta vuota un
+        // orologino tenue ricorda che i tempi arriveranno dal cronometro (esito stazione 1, 25/8)
+        if (!hasData && map.phase === 'disegna') s += clockHint(w / 2, h + 14);
+        else s += `<text class="hand ${hasData ? '' : 'muted'}" x="${w / 2}" y="${h + 14}" text-anchor="middle" font-size="10">${hasData ? tspans(['Hi: ' + fmt(num(p.hi)), 'Lo: ' + fmt(num(p.lo)), 'Avg: ' + fmt(num(p.avg))], w / 2, h + 14, 12) : `<tspan x="${w / 2}" y="${h + 14}">Hi / Lo / Avg ?</tspan>`}</text>`;
         if (p.cc !== '' && p.cc != null) s += `<text class="hand" x="${w / 2}" y="${h + 52}" text-anchor="middle" font-size="9">C&amp;C ${esc(p.cc)} %</text>`;
         break;
       }
@@ -196,7 +222,9 @@
         if (p.note) s += `<text class="hand delta-txt" x="${w / 2}" y="${h + 14}" text-anchor="middle" font-size="9">${tspans(noteLines, w / 2, h + 14, 10)}</text>`;
         const hasData = p.hi !== '' || p.lo !== '' || p.avg !== '';
         const dy = h + 14 + (p.note ? noteLines.length * 10 + 4 : 4);
-        s += `<text class="hand delta-txt" x="${w / 2}" y="${dy}" text-anchor="middle" font-size="10" ${hasData ? '' : 'opacity=".55"'}>${hasData ? tspans(['Hi: ' + fmt(num(p.hi)), 'Lo: ' + fmt(num(p.lo)), 'Avg: ' + fmt(num(p.avg))], w / 2, dy, 12) : `<tspan x="${w / 2}" y="${dy}">attesa ?</tspan>`}</text>`;
+        // stessa regola del box: in disegna niente «attesa ?», solo l'orologino (esito stazione 1)
+        if (!hasData && map.phase === 'disegna') s += clockHint(w / 2, dy);
+        else s += `<text class="hand delta-txt" x="${w / 2}" y="${dy}" text-anchor="middle" font-size="10" ${hasData ? '' : 'opacity=".55"'}>${hasData ? tspans(['Hi: ' + fmt(num(p.hi)), 'Lo: ' + fmt(num(p.lo)), 'Avg: ' + fmt(num(p.avg))], w / 2, dy, 12) : `<tspan x="${w / 2}" y="${dy}">attesa ?</tspan>`}</text>`;
         break;
       }
       case 'person': {
@@ -573,7 +601,11 @@
     return { x: el.x, y: el.y };
   };
   R.LOCK_PARENTS = ['box', 'person', 'lane', 'flow', 'request', 'inventory'];
-  R.LOCKABLE = ['storm', 'fluffy', 'burst', 'text', 'inbox', 'inventory', 'distance', 'delta', 'person', 'box', 'icon', 'face'];
+  // 'box' non è più legabile come FIGLIO (esito stazione 1, 25/8): la catena serve agli oggetti
+  // (problemi, note, icone…) per restare attaccati al loro passo — un passo legato a un altro passo
+  // trascinava mezzo flusso per sbaglio. I lockTo legacy box→box restano posizionati (elPos non
+  // guarda questa lista): si possono solo slegare, non crearne di nuovi.
+  R.LOCKABLE = ['storm', 'fluffy', 'burst', 'text', 'inbox', 'inventory', 'distance', 'delta', 'person', 'icon', 'face'];
   // ---------- testo dentro la nuvola ----------
   // La pancia non è un rettangolo: la nuvola si stringe verso l'alto e verso il basso. La larghezza
   // utile di ogni riga segue un profilo a ellisse (con margine per il tratto a matita), così le righe
@@ -631,6 +663,27 @@
   /** Dove va scritto il testo dentro la forma: il triangolo lo tiene più in basso, dove c'è posto. */
   R.shapeCenter = (forma) => (CENTRO[forma] != null ? CENTRO[forma] : 0.5);
   R.children = (id, map) => map.elements.filter(e => e.props && (e.props.lockTo === id || (e.type === 'delta' && e.props.attachedTo === id)));
+  /** Il blocco 🔒 vince sulla catena ⛓ (esito stazione 1, 25/8): un figlio legato E bloccato non
+   *  deve muoversi quando si sposta il suo genitore. La posizione di un legato è DERIVATA
+   *  (ancora del genitore + dx/dy), quindi qui si compensa: per ogni elemento bloccato-e-legato la
+   *  cui posizione vista non combacia più con la foto `pos0` (scattata a inizio drag), dx/dy si
+   *  correggono dell'esatto scarto. Nessuna analisi delle dipendenze: se elPos è cambiata, il
+   *  genitore (o un antenato, o la freccia a cui è agganciato) si è mosso — vale anche per le
+   *  catene profonde e per i delta sulle frecce. Ritorna i cambiamenti per l'undo del drag. */
+  R.freezePinned = (map, pos0) => {
+    const changed = [];
+    map.elements.forEach(el => {
+      if (!el.props || !el.props.pinned) return;
+      if (!(el.props.lockTo || (el.type === 'delta' && el.props.attachedTo))) return;
+      const p0 = pos0[el.id]; if (!p0) return;
+      const cur = R.elPos(el, map);
+      if (cur.x === p0.x && cur.y === p0.y) return;
+      el.props.dx = (el.props.dx || 0) + (p0.x - cur.x);
+      el.props.dy = (el.props.dy || 0) + (p0.y - cur.y);
+      changed.push({ id: el.id, dx: el.props.dx, dy: el.props.dy });
+    });
+    return changed;
+  };
 
   /** Area sensibile: molti elementi sono disegnati a sole linee (l'omino ha tratti da 1.6 px su un
    *  riquadro di 40x78) e col dito diventano quasi impossibili da prendere — collegarne uno richiedeva
@@ -660,7 +713,7 @@
    *  l'uno all'altro (un anello che un file importato o una patch possono introdurre) facevano
    *  richiamare il disegno all'infinito, e il trascinamento moriva con lo stack pieno. */
   R.updateEl = (id, map, isChild = false, seen, opts) => {
-    const el = V.byId(id, map); if (!el) return;
+    const el = V.index(map).byId.get(id); if (!el) return;
     seen = seen || new Set();
     if (seen.has(id)) return;
     seen.add(id);
@@ -686,30 +739,17 @@
   R.addStrokeEl = (s) => { const p = document.createElementNS(NS, 'path'); p.setAttribute('class', 'stroke'); p.dataset.sid = s.id; p.setAttribute('stroke', s.color); p.setAttribute('stroke-width', s.width); p.setAttribute('d', R.strokePath(s)); L.ink.appendChild(p); return p; };
 
   // ---------- overlay calcolato: timeline + riepilogo ----------
-  R.placeholders = (map) => {
-    const hasBox = map.elements.some(e => e.type === 'box'), hasPerson = map.elements.some(e => e.type === 'person' && e.props.requestor);
-    if (hasBox && hasPerson) return '';
-    let g = '';
-    const ph = (x, y, w, h, label, kind, sub) => `<g class="placeholder" data-place="${kind}" data-px="${x}" data-py="${y}" style="cursor:pointer"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6" fill="rgba(31,78,121,.04)" stroke="#1f4e79" stroke-dasharray="6 5" stroke-width="1.2"/><text class="hand" x="${x + w / 2}" y="${y + h / 2 - 4}" text-anchor="middle" font-size="12" fill="#1f4e79">${esc(label)}</text><text class="hand" x="${x + w / 2}" y="${y + h / 2 + 12}" text-anchor="middle" font-size="9.5" fill="#1f4e79" opacity=".8">${esc(sub)}</text></g>`;
-    // Il richiedente va nella fascia alta a destra: ma "a destra del foglio" su una carta larga 2376
-    // finiva fuori dall'inquadratura appena il disegno cominciava a sinistra, e l'invito ① non lo
-    // vedeva piu' nessuno. Si sta a destra di quello che c'e' gia' disegnato, non del foglio.
-    const P = V.paperOf(map);
-    if (!hasPerson) {
-      const visibili = map.elements.filter(e => !V.isConnector(e) && e.type !== 'lane');
-      const destra = visibili.length ? Math.max(...visibili.map(e => { const p = R.elPos(e, map); return p.x + e.w; })) : null;
-      const alto = visibili.length ? Math.min(...visibili.map(e => R.elPos(e, map).y)) : null;
-      const px = destra != null ? Math.min(P.w - 188, destra + 90) : P.w - 188;
-      const py = alto != null ? Math.max(20, Math.min(alto - 150, P.h - 140)) : 96;
-      g += ph(px, py, 150, 100, '① Chi chiede?', 'person', 'tocca: mette il richiedente');
-    }
-    if (!hasBox) g += ph(110, 300, 150, 170, '② Primo passo', 'box', 'tocca: crea un process box');
-    if (!hasBox) g += `<text class="hand" x="300" y="360" font-size="11" fill="#1f4e79" opacity=".8">poi: Freccia di flusso ➜ passo successivo, Delta per le attese, Matita per scrivere a mano</text>`;
-    return g;
-  };
-  R.overlay = (map, show) => {
-    if (!show) { L.overlay.innerHTML = R.placeholders(map); return; }
-    const M = V.metrics(map); const { w, h } = V.paperOf(map); let g = R.placeholders(map);
+  /** Il riepilogo di sempre (timeline + card dei percorsi, R6): oggi e' il primo livello (spec B/C),
+   *  sempre acceso. Estratto dal vecchio R.overlay SENZA cambiare un byte dell'HTML prodotto (la
+   *  fixture test/fixtures/riepilogo-baseline.txt lo prova), con una sola eccezione dichiarata: i
+   *  due punti che leggevano V.metrics(map) e V.flowPaths(map) in diretta ora leggono
+   *  V.analysis.pathTotals(map, ix), che restituisce ESATTAMENTE quei due oggetti — stessi byte in
+   *  uscita, ma con la memo per rev che lavora (spec E). Ritorna { svg, extent }: extent e' il
+   *  rettangolo della card, per R.contentBox (il taglio del riepilogo, rapporto dom R1). */
+  R.riepilogoSVG = (map) => {
+    const ix = V.index(map);
+    const { metrics: M, paths: P } = V.analysis.pathTotals(map, ix);
+    const { w, h } = V.paperOf(map); let g = '';
     // anche la timeline usa le posizioni VISTE: un box bloccato che segue il genitore porta con se' il suo gradino
     const fo = V.flowOrder(map); const order = fo.order.map(b => Object.assign({}, b, R.elPos(b, map)));
     let loY = null, contentRight = null;
@@ -767,7 +807,6 @@
     // I PERCORSI: dove il flusso si divide, il totale unico non e' il tempo di nessuno. Si elencano
     // i percorsi con i loro minuti, e in una riga sola la lettura «se i rami vanno insieme» — dove
     // il piu' lento detta il passo e l'altro RESTA FERMO ad aspettarlo (R6, deciso il 2026-08-22).
-    const P = V.flowPaths(map);
     const multi = P.paths.length > 1 && M.hasData;
     const righeP = multi ? P.paths.slice(0, 4) : [];
     const nomeP = (x) => { const t = String(x.label || '').trim(); return t.length > 16 ? t.slice(0, 15) + '…' : t; };
@@ -780,11 +819,11 @@
     }
     sx = Math.max(20, Math.min(sx, w - sw - 20)); sy = Math.max(20, Math.min(sy, h - sh - 20));
     g += `<g><rect class="box" x="${sx}" y="${sy}" width="${sw}" height="${sh}" rx="2"/>
-      <text class="hand" x="${sx + 12}" y="${sy + 20}" font-size="12" font-weight="700">Riepilogo (${esc(map.unit)})${map.samples ? ` · ${esc(map.samples)} misure` : ''}</text>
+      <text class="hand" x="${sx + 12}" y="${sy + 20}" font-size="12" font-weight="700">Riepilogo (${esc(map.unit)})${(V.numMisure(map) || +map.samples) ? ` · ${esc(String(V.numMisure(map) || +map.samples))} misure` : ''}</text>
       <text class="hand" x="${sx + 12}" y="${sy + 40}" font-size="11">Totale VA: <tspan font-weight="700">${fmt(M.va)}</tspan>   Totale NVA: <tspan font-weight="700" fill="#c8321e">${fmt(M.nva)}</tspan></text>
       <text class="hand" x="${sx + 12}" y="${sy + 58}" font-size="11">VA %: <tspan font-weight="700">${fmt(M.vaPct)} %</tspan>   NVA %: <tspan font-weight="700" fill="#c8321e">${fmt(M.nvaPct)} %</tspan></text>
       ${M.ftq != null ? `<text class="hand" x="${sx + 12}" y="${sy + 76}" font-size="11">First Time Quality: <tspan font-weight="700">${fmt(M.ftq)} %</tspan>${M.ftqPartial ? '<tspan class="muted" font-size="10"> · parziale</tspan>' : ''}</text>` : ''}
-      <text class="hand muted" x="${sx + 12}" y="${sy + (M.ftq != null ? 94 : 78)}" font-size="10">${fuori || (multi ? 'i totali qui sopra sommano tutti i rami' : (M.hasData ? 'value quotient = VA / (VA + NVA)' : 'aggiungi Hi/Lo/Avg ai box e ai delta'))}</text>
+      <text class="hand muted" x="${sx + 12}" y="${sy + (M.ftq != null ? 94 : 78)}" font-size="10">${fuori || (multi ? (P.truncated ? `oltre ${V.MAX_PERCORSI} percorsi: i totali sono parziali` : 'i totali qui sopra sommano tutti i rami') : (M.hasData ? 'value quotient = VA / (VA + NVA)' : 'aggiungi Hi/Lo/Avg ai box e ai delta'))}</text>
       ${multi ? (() => {
         let y = sy + (M.ftq != null ? 94 : 78) + 20;
         let t = `<line x1="${sx + 12}" y1="${y - 12}" x2="${sx + sw - 12}" y2="${y - 12}" stroke="#d9d4c8"/>`
@@ -803,15 +842,100 @@
         }
         return t;
       })() : ''}</g>`;
-    L.overlay.innerHTML = g;
+    return { svg: g, extent: { x: sx, y: sy, w: sw, h: sh } };
+  };
+
+  /** posizione del badge di un elemento: quella VISTA (R.elPos), non x/y grezzi — un elemento legato
+   *  (lockTo/attachedTo) si disegna altrove (rilievo della revisione). Funzione condivisa fra il
+   *  disegno del badge e R.contentBox: non possono divergere perche' sono la STESSA chiamata. */
+  R.badgeRect = (el, map) => { const p = R.elPos(el, map); return { x: p.x, y: p.y - 14, w: 0, h: 0 }; };
+  /** larghezza del fondino del badge dal suo testo: UN posto solo — la usano il disegno
+   *  (R.badgeSVG) e il ritaglio (R.badgeExtent → R.contentBox), che non possono divergere. */
+  const badgeWidth = (text) => Math.max(28, String(text || '').length * 5.4 + 14);
+  /** l'INGOMBRO vero del badge (obbligo F1 del ledger): badgeRect e' l'ancora (un punto, centro
+   *  del fondino), qui c'e' il rettangolo disegnato davvero — senza, R.contentBox cresceva solo
+   *  col punto e un badge con testo lungo usciva dal crop di anteprima/export (il margine di 48
+   *  copriva solo i fondini corti). */
+  R.badgeExtent = (el, map, b) => {
+    const r = R.badgeRect(el, map);
+    const bw = badgeWidth(b && b.text);
+    return { x: r.x - bw / 2, y: r.y - 9, w: bw, h: 18 };
+  };
+  const BADGE_TONE = { alert: '#c8321e', warn: '#b98900', ok: '#3f7d5a' };
+  /** disegno generico di un badge (spec C): <g class="badge" data-el data-layer>, pointer-events
+   *  auto in linea (L.overlay li ha spenti: solo chi deve toccarsi li riaccende) — il tocco lo
+   *  gestisce interact.js aprendo il pop-up del passo sulla sezione del livello. */
+  R.badgeSVG = (l, el, b, map) => {
+    const r = R.badgeRect(el, map);
+    const txt = String((b && b.text) || '');
+    const bw = badgeWidth(txt);
+    const col = BADGE_TONE[b && b.tone] || '#1f4e79';
+    return `<g class="badge" data-el="${esc(el.id)}" data-layer="${esc(l.id)}" style="pointer-events:auto;cursor:pointer" transform="translate(${r.x} ${r.y})">`
+      + `<circle class="badge-hit" cx="0" cy="0" r="20" fill="transparent"/>`
+      + `<rect x="${(-bw / 2).toFixed(1)}" y="-9" width="${bw.toFixed(1)}" height="18" rx="9" fill="${col}"/>`
+      + `<text class="hand" x="0" y="3.5" text-anchor="middle" font-size="9" fill="#fffdf7">${esc(txt)}</text></g>`;
+  };
+  /** trova il gruppo gia' disegnato di un livello dentro L.layersG, senza tenerne un riferimento in
+   *  cache (che sopravviverebbe a un cambio di svg — vedi la nota su layerKeys): un attributo
+   *  letto ogni volta, su una manciata di nodi, costa nulla e non puo' mai puntare altrove. */
+  const attrData = (el, name) => (el.attrs ? el.attrs[name] : (el.getAttribute && el.getAttribute(name)));
+  const trovaGruppoLivello = (id) => Array.from(L.layersG.children).find(g => attrData(g, 'data-layer') === id);
+  /** Disegna i livelli accesi e ammessi dalla fase (V.layers.active, spec B): un <g data-layer> per
+   *  livello, ridisegnato SOLO se la sua chiave e' cambiata — niente innerHTML totale dell'overlay
+   *  (spec C). opts.drag/opts.dragN: durante un trascinamento, solo il riepilogo prende una chiave
+   *  nuova a ogni fotogramma (R.overlaySoon); gli altri livelli, la cui chiave dipende solo da
+   *  map.id + map.rev, restano fermi — 0 ridisegni per loro durante il drag. */
+  R.overlay = (map, opts = {}) => {
+    if (!map) return;
+    const ix = V.index(map);
+    const attivi = V.layers.active(map);
+    const attiviIds = new Set(attivi.map(l => l.id));
+    // livelli spenti (o non piu' ammessi dalla fase): il gruppo si svuota, non resta disegnato
+    Array.from(L.layersG.children).forEach(g => {
+      const id = attrData(g, 'data-layer');
+      if (id && !attiviIds.has(id)) { g.innerHTML = ''; layerKeys.delete(id); }
+    });
+    const chiaveDi = (l) => l.id + ':' + map.id + ':' + (map.rev | 0)
+      + (opts.drag && l.id === 'riepilogo' ? ':drag:' + (opts.dragN || 0) : '');
+    attivi.forEach(l => {
+      const key = chiaveDi(l);
+      if (layerKeys.get(l.id) === key) return;             // niente da ridisegnare
+      let g = trovaGruppoLivello(l.id);
+      if (!g) { g = document.createElementNS(NS, 'g'); g.setAttribute('data-layer', l.id); L.layersG.appendChild(g); }
+      R._draws[l.id] = (R._draws[l.id] || 0) + 1;
+      // Un livello e' registrato da un modulo terzo (F1-F10, dopo la fase 0): un badge o un overlay
+      // che lancia non deve spegnere TUTTO il disegno (rilievo confermato della revisione avversaria
+      // del Task 7, round 1, eseguendo — prima un badge rotto interrompeva R.overlay/R.contentBox/
+      // exportSVG dell'intero foglio). Il livello guasto salta il suo giro e lo dice in console; gli
+      // altri livelli, e il resto del disegno, restano in piedi.
+      let body = '', guasto = false;
+      try { body = l.overlay ? (l.overlay(map, ix) || '') : ''; }
+      catch (e) { console.warn('livello "' + l.id + '": overlay() ha lanciato', e); guasto = true; }
+      if (l.badge) map.elements.forEach(el => {
+        if (V.isConnector(el)) return;
+        let b; try { b = l.badge(el, map, ix); } catch (e) { console.warn('livello "' + l.id + '": badge() ha lanciato', e); guasto = true; return; }
+        if (b) body += R.badgeSVG(l, el, b, map);
+      });
+      g.innerHTML = body;
+      // La chiave si segna "fatta" SOLO se il livello non ha lanciato (round 2 della revisione
+      // avversariale, Task 7: il round 1 marcava la chiave PRIMA di provare a disegnare — un
+      // livello guasto veniva segnato "gia' fatto" anche dopo un fallimento, e restava vuoto in
+      // silenzio finche' map.rev non cambiava, esattamente il difetto che il try/catch doveva
+      // chiudere). Un livello guasto ora ci riprova a ogni chiamata, anche alla stessa rev: se
+      // guarisce (uno stato esterno cambia, non il documento), il gruppo si riempie subito.
+      if (!guasto) layerKeys.set(l.id, key);
+    });
   };
 
   /** ridisegno del riepilogo al prossimo fotogramma: durante un trascinamento arrivano decine di
-   *  movimenti al secondo, e rifare l'overlay a ognuno sarebbe lavoro buttato */
-  let overlayFrame = null;
+   *  movimenti al secondo, e rifare l'overlay a ognuno sarebbe lavoro buttato. Il riepilogo continua
+   *  a seguire il passo (scelta di progetto): la chiave del SOLO gruppo riepilogo cambia a ogni
+   *  fotogramma (rev + ':drag:' + dragN), gli altri livelli restano alla loro chiave. */
+  let overlayFrame = null, dragN = 0;
+  const raf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (fn) => { fn(); return 0; };
   R.overlaySoon = (map) => {
     if (overlayFrame) return;
-    overlayFrame = requestAnimationFrame(() => { overlayFrame = null; const m = map || V.map(); if (m) R.overlay(m, m.overlays !== false); });
+    overlayFrame = raf(() => { overlayFrame = null; const m = map || V.map(); if (m) R.overlay(m, { drag: true, dragN: ++dragN }); });
   };
 
   // ---------- selezione / ui temporanea ----------
@@ -883,59 +1007,91 @@
   R.ghost = (html) => { L.ui.innerHTML = html; };
   R.flash = (id) => { const g = svg.querySelector(`[data-id="${id}"]`); if (!g) return; g.classList.add('flash'); setTimeout(() => g.classList.remove('flash'), 2600); };
 
-  R.all = (map, opts = {}) => { R.paper(map); R.strokes(map); R.elements(map); R.overlay(map, map.overlays !== false); R.selection(opts.selection || [], map); };
+  R.all = (map, opts = {}) => { R.paper(map); R.strokes(map); R.elements(map); R.overlay(map); R.selection(opts.selection || [], map); };
 
   // ---------- export SVG (solo il foglio) ----------
   /** Il rettangolo che contiene cio' che e' disegnato: elementi (alla posizione e misura VISTE, con
-   *  i legati risolti) e i punti dei connettori, piu' un margine, mai oltre il bordo del foglio.
+   *  i legati risolti), i punti dei connettori, e per ogni livello ATTIVO i rettangoli dei suoi
+   *  badge (R.badgeRect, per ogni elemento con l.badge(el,map,ix) non nullo — cosi' un livello con
+   *  badge entra nel crop ANCHE senza un extent) piu' gli extent extra del livello (il riquadro del
+   *  riepilogo) — chiude il taglio del riepilogo, rapporto dom R1. Un margine, mai oltre il foglio.
    *  Serve all'anteprima dell'occhio: il foglio e' 2376×1680 e quasi sempre in gran parte vuoto —
    *  col viewBox intero tre passi in un angolo diventano un francobollo illeggibile. */
   R.contentBox = (map, margin = 48) => {
     const { w, h } = V.paperOf(map);
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     const grow = (x, y) => { if (x < x0) x0 = x; if (y < y0) y0 = y; if (x > x1) x1 = x; if (y > y1) y1 = y; };
+    const growRect = (r) => { if (!r) return; grow(r.x, r.y); grow(r.x + (r.w || 0), r.y + (r.h || 0)); };
     map.elements.forEach(el => {
       if (V.isConnector(el)) { (R.connPath(el, map).pts || []).forEach(q => grow(q.x, q.y)); return; }
       const p = R.elPos(el, map), z = R.elSize(el);
       grow(p.x, p.y); grow(p.x + z.w, p.y + z.h + (el.type === 'person' ? 30 : 0)); // l'omino ha nome e ruolo sotto la figura
     });
+    const ix = V.index(map);
+    // Stessa guardia di R.overlay (Task 7): un badge/extent che lancia non deve rompere il ritaglio
+    // (e quindi l'anteprima dell'occhio ed exportSVG, che lo usa per il crop) di TUTTO il foglio.
+    V.layers.active(map).forEach(l => {
+      if (l.badge) map.elements.forEach(el => {
+        if (V.isConnector(el)) return;
+        let b; try { b = l.badge(el, map, ix); } catch (e) { console.warn('livello "' + l.id + '": badge() ha lanciato', e); return; }
+        if (b) growRect(R.badgeExtent(el, map, b));   // l'ingombro vero, non il punto (obbligo F1)
+      });
+      if (l.extent) {
+        let ex; try { ex = l.extent(map, ix); } catch (e) { console.warn('livello "' + l.id + '": extent() ha lanciato', e); ex = null; }
+        (Array.isArray(ex) ? ex : ex ? [ex] : []).forEach(growRect);
+      }
+    });
     if (!isFinite(x0) || x1 <= x0 || y1 <= y0) return { x: 0, y: 0, w, h }; // foglio vuoto: si ripiega sul foglio intero
     const x = Math.max(0, x0 - margin), y = Math.max(0, y0 - margin);
     return { x, y, w: Math.min(w, x1 + margin) - x, h: Math.min(h, y1 + margin) - y };
   };
+  /** Disegna SEMPRE la mappa PASSATA (mai quella a schermo) su un svg staccato: scambia per un
+   *  attimo i riferimenti del modulo, disegna, compone la stringa, e li ripristina nel `finally` —
+   *  il foglio aperto non si accorge di niente. E' cosi' anche per l'export dal menu «File e
+   *  stampa» (non solo per l'occhio): prima leggeva lo stato a schermo, e un export lanciato su una
+   *  mappa diversa da quella aperta avrebbe mostrato il titolo sbagliato (rilievo della revisione).
+   *  L'azzeramento di layerKeys in R.init fa si' che il ripristino non lasci chiavi stantie: al
+   *  ritorno il primo R.overlay del foglio vero ridisegna, ed e' giusto cosi'. */
   R.exportSVG = (map, opts = {}) => {
-    const { w, h } = V.paperOf(map);
-    // crop: solo per l'anteprima dell'occhio. L'export del menu «File e stampa» resta il foglio
-    // intero, perche' e' quello che si stampa.
-    const vb = opts.crop ? R.contentBox(map) : { x: 0, y: 0, w, h };
-    const vw = Math.round(vb.w), vh = Math.round(vb.h);
-    // Le regole del foglio, RINCHIUSE dentro questo svg. Lo <style> di un svg NON e' isolato: quando
-    // l'anteprima finisce dentro la pagina (l'occhio, il pannellino «Sbircia»), il suo <style> diventa
-    // un foglio di stile del documento come gli altri. Finche' le regole perdevano il prefisso — «svg
-    // .ghost» che diventava «.ghost» — spegnevano ogni «.ghost» della pagina: i bottoni «.btn.ghost»,
-    // ✕ della scheda dell'occhio compreso, restavano disegnati ma non si potevano piu' toccare
-    // (pointer-events: none). Stessa storia per le variabili, dichiarate su «:root».
-    // Ora tutto e' agganciato alla classe della radice: dentro l'svg vale, fuori non tocca niente.
-    // Nel file esportato funziona uguale, perche' la classe sta proprio sull'svg che si esporta.
-    const AMBITO = 'vsm-foglio';
-    const css = Array.from(document.styleSheets).flatMap(ss => { try { return Array.from(ss.cssRules); } catch (e) { return []; } }).filter(r => r.selectorText && r.selectorText.startsWith('svg ')).map(r => r.cssText.replace(/^svg /, '.' + AMBITO + ' ')).join('\n');
-    const vars = `.${AMBITO}{--paper:#fbf8f0;--pencil:#2b2b2b;--pencil-2:#5a5a5a;--paper-line:#c9c2b0;--delta:#c8321e;--cloud:#5b6472;--sage:#3f7d5a;--sel:#1f4e79;--accent:#1f4e79;--hand:"Chalkboard SE","Marker Felt","Segoe Print","Bradley Hand","Comic Neue","Patrick Hand",cursive}`;
-    const defs = svg.querySelector('defs').outerHTML;
-    const layers = ['paper', 'lanes', 'ink', 'conn', 'el', 'hand', 'overlay'].map(k => L[k].outerHTML).join('');
-    return `<svg xmlns="http://www.w3.org/2000/svg" class="${AMBITO}" viewBox="${Math.round(vb.x)} ${Math.round(vb.y)} ${vw} ${vh}" width="${vw}" height="${vh}"><style>${vars}\n${css}</style>${defs}${layers}</svg>`;
-  };
-
-  /** L'immagine dell'occhio: lo stesso identico disegno del foglio, ma di UN'ALTRA mappa (exportSVG
-   *  legge i livelli correnti, quindi da sola esporterebbe sempre il foglio aperto). Si disegna su un
-   *  svg distaccato scambiando per un attimo i riferimenti del modulo, e li si ripristina subito:
-   *  il foglio aperto non si accorge di niente. E' un'immagine ferma, non un canvas vivo: niente gesti.
-   *  Ritagliata sul contenuto (crop): l'anteprima mostra i passi, non il vuoto che li circonda. */
-  R.peekSVG = (map) => {
     const keepSvg = svg, keepL = L;
     try {
       R.init(document.createElementNS(NS, 'svg'));
-      R.paper(map); R.strokes(map); R.elements(map); R.overlay(map, map.overlays !== false);
-      return R.exportSVG(map, { crop: true });
+      R.paper(map); R.strokes(map); R.elements(map); R.overlay(map);
+      const { w, h } = V.paperOf(map);
+      // crop: solo per l'anteprima dell'occhio. L'export del menu «File e stampa» resta il foglio
+      // intero, perche' e' quello che si stampa.
+      const vb = opts.crop ? R.contentBox(map) : { x: 0, y: 0, w, h };
+      const vw = Math.round(vb.w), vh = Math.round(vb.h);
+      // Le regole del foglio, RINCHIUSE dentro questo svg. Lo <style> di un svg NON e' isolato: quando
+      // l'anteprima finisce dentro la pagina (l'occhio, il pannellino «Sbircia»), il suo <style> diventa
+      // un foglio di stile del documento come gli altri. Finche' le regole perdevano il prefisso — «svg
+      // .ghost» che diventava «.ghost» — spegnevano ogni «.ghost» della pagina: i bottoni «.btn.ghost»,
+      // ✕ della scheda dell'occhio compreso, restavano disegnati ma non si potevano piu' toccare
+      // (pointer-events: none). Stessa storia per le variabili, dichiarate su «:root».
+      // Ora tutto e' agganciato alla classe della radice: dentro l'svg vale, fuori non tocca niente.
+      // Nel file esportato funziona uguale, perche' la classe sta proprio sull'svg che si esporta.
+      const AMBITO = 'vsm-foglio';
+      const css = Array.from(document.styleSheets).flatMap(ss => { try { return Array.from(ss.cssRules); } catch (e) { return []; } }).filter(r => r.selectorText && r.selectorText.startsWith('svg ')).map(r => r.cssText.replace(/^svg /, '.' + AMBITO + ' ')).join('\n');
+      const vars = `.${AMBITO}{--paper:#fbf8f0;--pencil:#2b2b2b;--pencil-2:#5a5a5a;--paper-line:#c9c2b0;--delta:#c8321e;--cloud:#5b6472;--sage:#3f7d5a;--sel:#1f4e79;--accent:#1f4e79;--hand:"Chalkboard SE","Marker Felt","Segoe Print","Bradley Hand","Comic Neue","Patrick Hand",cursive}`;
+      const defs = svg.querySelector('defs').outerHTML;
+      const layers = ['paper', 'lanes', 'ink', 'conn', 'el', 'hand', 'overlay'].map(k => L[k].outerHTML).join('');
+      return `<svg xmlns="http://www.w3.org/2000/svg" class="${AMBITO}" viewBox="${Math.round(vb.x)} ${Math.round(vb.y)} ${vw} ${vh}" width="${vw}" height="${vh}"><style>${vars}\n${css}</style>${defs}${layers}</svg>`;
     } finally { svg = keepSvg; L = keepL; }
   };
+
+  /** L'immagine dell'occhio: lo stesso disegno del foglio, ma di UN'ALTRA mappa, ritagliato sul
+   *  contenuto (crop): l'anteprima mostra i passi, non il vuoto che li circonda. E' un'immagine
+   *  ferma, non un canvas vivo: niente gesti. */
+  R.peekSVG = (map) => R.exportSVG(map, { crop: true });
+
+  // ---------- registrazione dei livelli integrati (spec B) ----------
+  // Il riepilogo di oggi diventa il primo livello: sempre acceso (phaseMin null), nessun badge/
+  // sezione propri (e' una card di foglio, non una nota per elemento — spec E dice che il primo
+  // livello VERO con badge/sezione arriva con F1). extent alimenta R.contentBox (il crop del
+  // riepilogo, rapporto dom R1): la stessa geometria che R.overlay ha gia' disegnato.
+  V.layers.register({
+    id: 'riepilogo', label: 'Riepilogo', phaseMin: null,
+    overlay: (map) => R.riepilogoSVG(map).svg,
+    extent: (map) => { const e = R.riepilogoSVG(map).extent; return e ? [e] : []; }
+  });
 })(window.VSM);
