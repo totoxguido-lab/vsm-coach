@@ -200,6 +200,8 @@ window.VSM = window.VSM || {};
     // la fase e' un elenco dichiarato, come map.kind: fuori elenco (o null, "presente e sbagliato"
     // come sopra) si torna a 'disegna', che e' anche la fase piu' permissiva
     if (m.phase !== undefined && !V.PHASE_ORDER.includes(m.phase)) m.phase = 'disegna';
+    // il calderone (V.unvalidate) e' un archivio per giro: array o niente
+    if (m.calderone !== undefined && !Array.isArray(m.calderone)) delete m.calderone;
     // I livelli accesi (spec fondamenta B) vivono in map.layers, un oggetto { <idLivello>: true|false }.
     // Un valore non-oggetto (es. "boh" da un file scombinato) sopravviveva intatto fino al primo
     // L.toggle: Object.assign({}, map.layers, {...}) tratta una stringa come un iterabile e ne copia
@@ -235,6 +237,13 @@ window.VSM = window.VSM || {};
         // da solo alle misure di oggi (la sola visibilita' del campo non e' una conferma). Quello
         // GIA' scritto sulle osservazioni e' un dato preso: resta.
         if (s.turno !== undefined) delete s.turno;
+        // pause dell'osservatore (stazione 3, indurite dal finding P1 di Codex): numeri veri E
+        // coerenti con t0 e con l'orologio, o via — un pausedAt prima dell'inizio (o nel futuro)
+        // e un pausedTot piu' lungo dell'intera durata avrebbero prodotto misure a ZERO in
+        // silenzio via Math.max: meglio perdere la pausa (il tempo torna pieno, visibile) che
+        // scrivere un dato falso.
+        if (s.pausedAt !== undefined && (typeof s.pausedAt !== 'number' || !isFinite(s.pausedAt) || (typeof s.t0 === 'number' && s.pausedAt < s.t0) || s.pausedAt > Date.now() + 60000)) delete s.pausedAt;
+        if (s.pausedTot !== undefined && (typeof s.pausedTot !== 'number' || !isFinite(s.pausedTot) || s.pausedTot < 0 || (typeof s.t0 === 'number' && s.pausedTot > Math.max(0, Date.now() - s.t0)))) delete s.pausedTot;
         if (s.phase !== null && s.phase !== undefined && !['box', 'attesa'].includes(s.phase)) delete m.measure;
       }
     }
@@ -617,16 +626,16 @@ window.VSM = window.VSM || {};
   };
 
   // ---------- fase del foglio (spec fondamenta A1): dove sta nel prima-e-poi del libro ----------
-  V.PHASE_ORDER = ['disegna', 'cammina', 'valida', 'misura', 'analizza'];
-  // «Cammina» era il nome del libro (gemba walk) ma alla prova iPad non si capiva: l'etichetta dice
-  // che cosa si FA («Disegna e controlla»: il disegno c'è, lo si verifica sul campo); la chiave
-  // 'cammina' nei documenti non cambia — è un nome, non una struttura.
-  V.PHASE_LABEL = { disegna: 'Disegna', cammina: 'Disegna e controlla', valida: 'Valida', misura: 'Misura', analizza: 'Analizza' };
+  // «Disegna» e «cammina» erano la stessa cosa alla prova (esito stazione 2, 25/8): fuse in una
+  // sola fase 'disegna' con l'etichetta «Disegna e controlla». I documenti vecchi con phase
+  // 'cammina' atterrano su 'disegna' da soli: sanitizeMap riporta a 'disegna' ogni fase fuori da
+  // PHASE_ORDER (riga piu' sotto), quindi la fusione e' anche la migrazione.
+  V.PHASE_ORDER = ['disegna', 'valida', 'misura', 'analizza'];
+  V.PHASE_LABEL = { disegna: 'Disegna e controlla', valida: 'Valida', misura: 'Misura', analizza: 'Analizza' };
   /** Che cosa vuol dire ciascuna fase e che cosa si può fare (Parte I §1 della spec): il selettore in
    *  testata e il cronometro chiuso fuori fase la usano per dire il perché con la frase del libro. */
   V.PHASE_HINT = {
-    disegna: 'stai costruendo il flusso, anche da memoria: tutto, tranne il cronometro',
-    cammina: 'il disegno c\'è: lo controlli sul campo, dal vero, col foglio in mano («camminare il processo»). Tutto, tranne il cronometro',
+    disegna: 'costruisci il flusso e lo controlli sul campo, dal vero, col foglio in mano: tutto, tranne il cronometro',
     valida: 'lo staff guarda il foglio: testi, note, colori e spostare i box per leggere meglio. Non si aggiungono né si tolgono passi, frecce o vie',
     misura: 'il flusso è validato, si cronometra: cronometro, note e spostamenti per leggere meglio. Niente altro',
     analizza: 'come Misura, più i livelli di analisi'
@@ -634,19 +643,18 @@ window.VSM = window.VSM || {};
   /** I due blocchi del lavoro (prova iPad 25/8): dentro un blocco ci si muove, fra i blocchi c'è
    *  una porta. Il selettore in testata li disegna così, e la Guida li racconta con queste frasi. */
   V.PHASE_GROUPS = [
-    { t: '1 · Pianificazione', s: 'il flusso si costruisce, si controlla sul campo e si fa validare: qui ti muovi avanti e indietro liberamente', fasi: ['disegna', 'cammina', 'valida'] },
+    { t: '1 · Pianificazione', s: 'il flusso si costruisce e si controlla sul campo, poi si fa validare: qui ti muovi avanti e indietro liberamente', fasi: ['disegna', 'valida'] },
     { t: '2 · Misura e analisi', s: 'il flusso è validato e fermo: si cronometra e si analizza. Per ridisegnare serve un nuovo giro', fasi: ['misura', 'analizza'] }
   ];
-  /** Transizioni ammesse (A1, rivista dalla prova iPad del 25/8): dentro la pianificazione
-   *  (disegna ⇄ cammina ⇄ valida) si va e si viene liberamente — un tocco sbagliato non deve
-   *  bloccare nessuno. Misura è la PORTA a senso unico: la si raggiunge solo da valida (la
-   *  conferma esplicita è compito della UI, non di questa tabella), e da misura/analizza non si
-   *  torna alle tre fasi di pianificazione: serve un nuovo giro (il foglio misurato non si
-   *  ridisegna — decisione di Gt del 22 agosto, che resta). Misura ⇄ Analizza vanno e vengono. */
+  /** Transizioni ammesse (A1, rivista due volte dalla prova iPad del 25/8): nella pianificazione
+   *  (disegna ⇄ valida) si va e si viene liberamente — un tocco sbagliato non deve bloccare
+   *  nessuno. Misura è la PORTA a senso unico: la si raggiunge solo da valida, e da
+   *  misura/analizza non si torna alla pianificazione: serve un nuovo giro (il foglio misurato
+   *  non si ridisegna — decisione di Gt del 22 agosto, che resta; la via d'emergenza è
+   *  V.unvalidate, il calderone). Misura ⇄ Analizza vanno e vengono. */
   const FASE_AVANTI = {
-    disegna: ['cammina', 'valida'],
-    cammina: ['disegna', 'valida'],
-    valida: ['disegna', 'cammina', 'misura'],
+    disegna: ['valida'],
+    valida: ['disegna', 'misura'],
     misura: ['analizza'],
     analizza: ['misura']
   };
@@ -665,7 +673,7 @@ window.VSM = window.VSM || {};
     if (!V.PHASE_ORDER.includes(fase)) return { ok: false, reason: 'fase' };
     const cur = map.phase || 'disegna';
     if (cur === fase) return { ok: false, reason: 'fase' };
-    if ((cur === 'misura' || cur === 'analizza') && ['disegna', 'cammina', 'valida'].includes(fase)) return { ok: false, reason: 'nuovo-giro' };
+    if ((cur === 'misura' || cur === 'analizza') && ['disegna', 'valida'].includes(fase)) return { ok: false, reason: 'nuovo-giro' };
     return (FASE_AVANTI[cur] || []).includes(fase) ? { ok: true } : { ok: false, reason: 'fase' };
   };
   V.setPhase = (map, fase) => {
@@ -674,6 +682,24 @@ window.VSM = window.VSM || {};
     map.phase = fase; map.updated = Date.now(); bump(map); V.save();
     emit({ label: 'fase', mapId: map.id, ops: [] });
     return { ok: true };
+  };
+  /** SVALIDARE un foglio — la via d'emergenza (esito stazione 2, 25/8; QUESTIONE APERTA: solo
+   *  modello, nessuna UI la offre ancora). La porta di Misura resta a senso unico per il metodo,
+   *  ma «in extremis» si può tornare in pianificazione: le osservazioni raccolte NON si buttano
+   *  e NON restano in uso — finiscono nel CALDERONE del foglio (map.calderone, un archivio per
+   *  giro di misura), rievocabili ma fuori da statistiche, badge e livelli. La sessione di
+   *  cronometro in corso muore. Torna { ok:false, reason:'fase' } fuori da misura/analizza. */
+  V.unvalidate = (map) => {
+    const cur = map.phase || 'disegna';
+    if (cur !== 'misura' && cur !== 'analizza') return { ok: false, reason: 'fase' };
+    const obs = {};
+    map.elements.forEach(el => { if (el.props && Array.isArray(el.props.obs) && el.props.obs.length) { obs[el.id] = el.props.obs; el.props.obs = []; } });
+    if (!Array.isArray(map.calderone)) map.calderone = [];
+    map.calderone.push({ at: Date.now(), da: cur, obs });
+    if (map.measure) delete map.measure;
+    map.phase = 'valida'; map.updated = Date.now(); bump(map); V.save();
+    emit({ label: 'svalida', mapId: map.id, ops: [] });
+    return { ok: true, archiviate: Object.keys(obs).length };
   };
 
   // ---------- V.allowed: la porta unica dei permessi (A2) ----------
@@ -716,7 +742,7 @@ window.VSM = window.VSM || {};
    *  struttura (disegna,cammina) ⊂ contenuto (disegna,cammina,valida) ⊂ annotazioni/posizione
    *  (sempre): è un'inclusione vera. osservazioni/livelli vivono su un asse loro (tardi, non presto)
    *  e nelle op vere dell'app non si mescolano mai con struttura/contenuto nella stessa op. */
-  const RANGO = { struttura: 0, contenuto: 1, osservazioni: 2, livelli: 2, annotazioni: 3, posizione: 3 };
+  const RANGO = { struttura: 0, contenuto: 1, osservazioni: 2, livelli: 2, inchiostro: 2, annotazioni: 3, posizione: 3 };
   const piuStretta = (a, b) => { if (a == null) return b; if (b == null) return a; return (RANGO[a] ?? 9) <= (RANGO[b] ?? 9) ? a : b; };
   /** La classe di un'operazione (per la porta unica e per i pannelli): null quando la chiave non è
    *  dichiarata in nessuna classe — la porta la rifiuta (reason 'fase'), e la prova di completezza la
@@ -746,17 +772,24 @@ window.VSM = window.VSM || {};
       return cls;
     }
     if (op.t === 'mapfield') return 'struttura';   // adozione/albero: parentId/parentStepId di un'altra mappa
-    if (op.t === 'stroke_add' || op.t === 'stroke_remove' || op.t === 'strokes_set') return 'annotazioni';
+    // la matita e la gomma sono DISEGNO, non annotazione (finding P1 di Codex): in Misura/Analizza
+    // il modello le ferma anche se la palette non le mostra — la garanzia sta qui, non nella UI
+    if (op.t === 'stroke_add' || op.t === 'stroke_remove' || op.t === 'strokes_set') return 'inchiostro';
     if (op.t === 'plan_set') return 'annotazioni';
     return null;
   };
   const AMMESSE = {
-    disegna: ['struttura', 'contenuto', 'annotazioni', 'posizione'],
-    cammina: ['struttura', 'contenuto', 'annotazioni', 'posizione'],
-    valida: ['contenuto', 'annotazioni', 'posizione'],
-    misura: ['annotazioni', 'posizione', 'osservazioni'],
-    analizza: ['annotazioni', 'posizione', 'osservazioni']
+    disegna: ['struttura', 'contenuto', 'annotazioni', 'posizione', 'inchiostro'],
+    valida: ['contenuto', 'annotazioni', 'posizione', 'inchiostro'],
+    // REVOCA del 22/8 (esito stazione 3, 25/8): in Misura/Analizza il flusso e' FERMO — niente
+    // 'posizione' generica ne' 'contenuto' generico. Il ramo MISURA_LIBERI in V.allowed apre
+    // entrambe le classi ai soli tipi-annotazione (nuvole, note, icone, facce): si aggiungono,
+    // si scrivono e si spostano anche misurando.
+    misura: ['annotazioni', 'osservazioni'],
+    analizza: ['annotazioni', 'osservazioni']
   };
+  const MISURA_LIBERI = ['storm', 'fluffy', 'burst', 'text', 'icon', 'face'];
+  V.MISURA_LIBERI = MISURA_LIBERI;   // la leggono interact (drag) e panels (palette di misura)
   /** Registro minimo dei livelli (spec B: arriva con js/layers.js al Task 5). Oggi c'è solo il
    *  riepilogo, sempre acceso (phaseMin null = nessun requisito di fase). La chiave è quella di
    *  map.layers; L.register scriverà qui — o sostituirà questo oggetto — la soglia vera di ogni
@@ -785,6 +818,13 @@ window.VSM = window.VSM || {};
         return min != null && idxFase < V.PHASE_ORDER.indexOf(min);
       });
       return bloccato ? { ok: false, reason: 'fase' } : { ok: true };
+    }
+    // In Misura/Analizza le annotazioni restano vive (esito stazione 3): posizione e contenuto
+    // passano SOLO se il tipo interessato e' un'annotazione — il flusso (box, frecce, attese,
+    // persone, corsie…) resta fermo. opts.classe (attesaDi/applyTimes) non passa di qui.
+    if ((fase === 'misura' || fase === 'analizza') && !opts.classe && (classe === 'posizione' || classe === 'contenuto')) {
+      const tipo = (op.t === 'add' || op.t === 'remove') ? (op.el && op.el.type) : ((V.byId(op.id, map) || {}).type);
+      return MISURA_LIBERI.includes(tipo) ? { ok: true } : { ok: false, reason: 'fase' };
     }
     return (AMMESSE[fase] || []).includes(classe) ? { ok: true } : { ok: false, reason: 'fase' };
   };
@@ -1824,8 +1864,33 @@ window.VSM = window.VSM || {};
     const ok = V.commit({ t: 'meta', after: { measure: s } }, 'cronometro', { map, silent: true });
     return ok ? s : null;
   };
+  /** Ogni fase nuova del giro riparte pulita: le pause appartengono alla misura chiusa. */
+  const senzaPause = (s) => { const d = Object.assign({}, s); delete d.pausedAt; delete d.pausedTot; return d; };
   V.measureState = (map) => (map && map.measure) || null;
-  V.measureElapsed = (map, now) => { const s = V.measureState(map); return (s && s.t0) ? Math.max(0, Math.round(((now || Date.now()) - s.t0) / 1000)) : 0; };
+  /** Secondi VERI della misura in corso: dall'orologio di parete (t0), al netto delle pause
+   *  dell'osservatore (esito stazione 3 + ricerca 25/8: la pausa di CHI misura — una telefonata —
+   *  non e' tempo del processo; l'attesa del processo invece corre da sola ed E' il dato). */
+  const misuraNetta = (s, now) => {
+    if (!s || !s.t0) return 0;
+    const pausa = (s.pausedTot || 0) + (s.pausedAt ? Math.max(0, now - s.pausedAt) : 0);
+    return Math.max(0, Math.round((now - s.t0 - pausa) / 1000));
+  };
+  V.measureElapsed = (map, now) => misuraNetta(V.measureState(map), now || Date.now());
+  V.measurePaused = (map) => { const s = V.measureState(map); return !!(s && s.pausedAt); };
+  /** Pausa dell'OSSERVATORE: ferma il conteggio (passo O attesa) senza chiudere niente.
+   *  Gia' in pausa, o niente in corso: null. */
+  V.measurePause = (map, now = Date.now()) => {
+    const s = V.measureState(map);
+    if (!s || !s.phase || !s.t0 || s.pausedAt) return null;
+    return setMeasure(map, Object.assign({}, s, { pausedAt: now }));
+  };
+  V.measureResume = (map, now = Date.now()) => {
+    const s = V.measureState(map);
+    if (!s || !s.pausedAt) return null;
+    const dopo = Object.assign({}, s, { pausedTot: (s.pausedTot || 0) + Math.max(0, now - s.pausedAt) });
+    delete dopo.pausedAt;
+    return setMeasure(map, dopo);
+  };
   /** Avvia la misura di un passo. mode 'giro' = la catena in sequenza (le attese nascono da sole);
    *  mode 'singolo' = quel passo e basta, ripetuto quante volte si vuole (niente attese). */
   V.measureStart = (map, stepId, mode = 'giro', now = Date.now()) => {
@@ -1863,7 +1928,7 @@ window.VSM = window.VSM || {};
    *  perdere il giro. */
   V.measureDiscard = (map, now = Date.now()) => {
     const s = V.measureState(map); if (!s || !s.phase) return null;
-    return setMeasure(map, Object.assign({}, s, { t0: now }));
+    return setMeasure(map, senzaPause(Object.assign({}, s, { t0: now })));
   };
   /** Scrive l'osservazione PIENA (spec A4): secondi, quando (Date.now, non null: non è una migrata
    *  dalla 0.9) e in che giro del foglio (map.id: il giro è il foglio su cui si sta misurando, non
@@ -1924,7 +1989,7 @@ window.VSM = window.VSM || {};
    *  Alla fine della catena il giro si chiude e il numero sale. */
   V.measureAdvance = (map, now = Date.now()) => {
     const s = V.measureState(map); if (!s || !s.phase || !s.t0) return null;
-    const sec = Math.max(0, Math.round((now - s.t0) / 1000));
+    const sec = misuraNetta(s, now);   // al netto delle pause dell'osservatore
     // Il giro si chiude: non punta più a niente, il numero del giro resta. Il pannello torna a
     // «comincia il giro», invece di tenere una misura appesa a un elemento che non c'è più.
     const chiudi = () => setMeasure(map, Object.assign({ mode: s.mode, giro: s.giro || 1, stepId: null, phase: null, t0: null, fromId: null, connId: null },
@@ -1939,7 +2004,7 @@ window.VSM = window.VSM || {};
       if (!from || !to || !conn) { chiudi(); return { ko: 'sparito', cosa: !to ? 'passo' : (!conn ? 'freccia' : 'partenza') }; }
       const d = attesaDi(map, conn, from, to);
       if (d && !addTime(map, d.id, sec)) return { ko: 'validato' };
-      setMeasure(map, Object.assign({}, s, { phase: 'box', t0: now, fromId: null, connId: null }));
+      setMeasure(map, senzaPause(Object.assign({}, s, { phase: 'box', t0: now, fromId: null, connId: null })));
       return { elId: d ? d.id : null, seconds: sec, phase: 'box' };
     }
     // Il passo CANCELLATO e il passo VALIDATO sono due «non si può» diversi, e vanno detti diversi:
@@ -1958,15 +2023,15 @@ window.VSM = window.VSM || {};
     if (map.validated) return { ko: 'foglio' };
     // il giro resta aperto: scartare la misura o riaprire il lucchetto del passo lo decide chi misura
     if (!addTime(map, s.stepId, sec)) return { ko: 'validato' };
-    if (s.mode === 'singolo') { setMeasure(map, Object.assign({}, s, { phase: null, t0: null })); return { elId: s.stepId, seconds: sec, phase: null }; }
+    if (s.mode === 'singolo') { setMeasure(map, senzaPause(Object.assign({}, s, { phase: null, t0: null }))); return { elId: s.stepId, seconds: sec, phase: null }; }
     const dopo = V.measureNext(map, s.stepId);
     // il turno resta anche qui: questo e' il ramo di chiusura NATURALE del giro — il flusso normale,
     // quello per cui il turno esiste — e perderlo proprio qui contraddiceva chiudi() e la promessa
     // del dialogo («va su ogni misura di questa sessione»). Rilievo Kimi #1 di F1, GRAVE: sfuggito
     // anche al round Codex perche' le prove coprivano solo mode 'singolo' e measureStop.
     if (!dopo) { setMeasure(map, Object.assign({ mode: s.mode, giro: (s.giro || 1) + 1, stepId: null, phase: null, t0: null, fromId: null, connId: null }, (typeof s.turno === 'string' && s.turno) ? { turno: s.turno } : {})); return { elId: s.stepId, seconds: sec, phase: null, chiuso: true }; }
-    if (!dopo.conn) { setMeasure(map, Object.assign({}, s, { stepId: dopo.next.id, phase: 'box', t0: now, fromId: null, connId: null })); return { elId: s.stepId, seconds: sec, phase: 'box' }; }
-    setMeasure(map, Object.assign({}, s, { phase: 'attesa', t0: now, fromId: s.stepId, connId: dopo.conn.id, stepId: dopo.next.id }));
+    if (!dopo.conn) { setMeasure(map, senzaPause(Object.assign({}, s, { stepId: dopo.next.id, phase: 'box', t0: now, fromId: null, connId: null }))); return { elId: s.stepId, seconds: sec, phase: 'box' }; }
+    setMeasure(map, senzaPause(Object.assign({}, s, { phase: 'attesa', t0: now, fromId: s.stepId, connId: dopo.conn.id, stepId: dopo.next.id })));
     return { elId: s.stepId, seconds: sec, phase: 'attesa' };
   };
   /** Indirizzo del foglio: quello del passo che lo contiene, PER INTERO. Vuoto per la radice del

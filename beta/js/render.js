@@ -172,7 +172,18 @@
   /** Orologino tenue (stesso tratto del glifo «sala d'attesa»): sta al posto delle targhette
    *  «Hi / Lo / Avg ?» e «attesa ?» in fase disegna — ricorda che i tempi arriveranno dal
    *  cronometro senza chiedere numeri in una fase in cui non esistono. */
-  const clockHint = (cx, cy) => `<g class="clock-hint pencil-thin" opacity=".5"><circle cx="${cx}" cy="${cy - 4}" r="6.5" fill="none"/><path d="M${cx} ${cy - 4} V${cy - 8.5} M${cx} ${cy - 4} H${cx + 3.5}"/></g>`;
+  const clockHint = (cx, cy) => `<g class="clock-hint" opacity=".4" fill="none" stroke="#2b2b2b" stroke-width="1.5" stroke-linecap="round"><circle cx="${cx}" cy="${cy - 3}" r="6"/><path d="M${cx - 2.4} ${cy - 11.6} h4.8 M${cx} ${cy - 11.2} v2 M${cx} ${cy - 3} v-3.2 M${cx} ${cy - 3} l2.4 1.6"/></g>`;
+  // i controlli UI (il cronometro grande dei passi) vivono SOLO a schermo: l'export e la stampa
+  // restituiscono il documento VSM, non lo stato transitorio dell'interfaccia (finding P2 Codex)
+  let uiVivo = true;
+  // numeri della catena (esito Gt 25/8 sera): calcolati una volta per giro di render, chiave id+rev
+  let numsCache = { key: null, nums: null };
+  const numeriPassi = (map) => {
+    const k = map.id + ':' + (map.rev || 0);
+    if (numsCache.key !== k) numsCache = { key: k, nums: V.stepNumbers(map) };
+    return numsCache.nums;
+  };
+  R.elMarkup = (el, map) => drawEl(el, map);   // la via «a schermo» per le prove
   function drawEl(el, map) {
     // la mappa serve al badge del collegamento (figlia o riferimento); la legenda disegna elementi
     // che non stanno in nessuna mappa, e per quelli vale il ripiego sulla mappa attiva
@@ -201,12 +212,41 @@
         const blk = R.activityBlock(p.activities, w, h, roomForOwner);
         s += `<text class="hand" x="8" y="${blk.y0}" font-size="${blk.size}">${tspans(fitLines(blk.lines, blk.max), 8, blk.y0, blk.lineH)}</text>`;
         if (p.owner) s += `<text class="hand muted" x="${w - 6}" y="${h - 6}" text-anchor="end" font-size="9">${esc(p.owner)}</text>`;
+        // il NUMERO del passo lungo la catena (esito Gt 25/8 sera): tondo blu in alto a sinistra,
+        // cosi' anche solo guardando il foglio si capisce quali passi sono sequenziali (1, 2, 2.1…)
+        const numPasso = numeriPassi(map).get(el.id);
+        if (numPasso) s += `<g class="step-num"><circle cx="0" cy="0" r="13" fill="#1f4e79" stroke="#fffdf7" stroke-width="1.6"/><text x="0" y="4.6" text-anchor="middle" font-size="${String(numPasso).length > 2 ? 9.5 : 13}" font-weight="700" fill="#fff" font-family="var(--ui, sans-serif)">${esc(String(numPasso))}</text></g>`;
         const hasData = p.hi !== '' || p.lo !== '' || p.avg !== '';
         // in DISEGNA i numeri non ci sono per definizione: al posto della targhetta vuota un
         // orologino tenue ricorda che i tempi arriveranno dal cronometro (esito stazione 1, 25/8)
         if (!hasData && map.phase === 'disegna') s += clockHint(w / 2, h + 14);
         else s += `<text class="hand ${hasData ? '' : 'muted'}" x="${w / 2}" y="${h + 14}" text-anchor="middle" font-size="10">${hasData ? tspans(['Hi: ' + fmt(num(p.hi)), 'Lo: ' + fmt(num(p.lo)), 'Avg: ' + fmt(num(p.avg))], w / 2, h + 14, 12) : `<tspan x="${w / 2}" y="${h + 14}">Hi / Lo / Avg ?</tspan>`}</text>`;
         if (p.cc !== '' && p.cc != null) s += `<text class="hand" x="${w / 2}" y="${h + 52}" text-anchor="middle" font-size="9">C&amp;C ${esc(p.cc)} %</text>`;
+        // In Misura/Analizza ogni passo porta il suo CRONOMETRO grande e toccabile (esito
+        // stazione 3, 25/8): il tocco fa partire (o riprendere) la misura di quel passo — il
+        // cablaggio sta in interact (data-mis). Verde pieno = sta misurando QUI; il conteggio
+        // vivo (mm:ss) lo scrive il ticker (R.misuraOverlay), non questo render statico.
+        if (uiVivo && (map.phase === 'misura' || map.phase === 'analizza')) {
+          const ms = map.measure;
+          const attivo = !!(ms && ms.phase === 'box' && ms.stepId === el.id);
+          const nMis = V.timesOf(el).length;
+          // orologio «stile emoticon», PIENO (esito Gt 25/8 sera): corpo solido, lancette bianche,
+          // corona e nasi ai lati — grafite da fermo, verde mentre misura
+          const cx2 = w - 2, corpo = attivo ? '#2e7d32' : '#2b2b2b';
+          s += `<g class="mis-clock${attivo ? ' mis-attivo' : ''}" data-mis="${esc(el.id)}">`
+            + `<circle class="mis-hit" cx="${cx2}" cy="2" r="24" fill="transparent"/>`
+            + `<g fill="${corpo}">`
+            + `<rect x="${cx2 - 3.2}" y="-13.5" width="6.4" height="4" rx="1.4"/>`
+            + `<rect x="${cx2 + 6.5}" y="-9.8" width="5.4" height="3.2" rx="1.4" transform="rotate(45 ${cx2 + 9} -8)"/>`
+            + `<rect x="${cx2 - 11.9}" y="-9.8" width="5.4" height="3.2" rx="1.4" transform="rotate(-45 ${cx2 - 9} -8)"/>`
+            + `<circle cx="${cx2}" cy="2" r="12.5"/>`
+            + `</g>`
+            + `<circle cx="${cx2}" cy="2" r="10" fill="${corpo}" stroke="#fffdf7" stroke-width="1.4"/>`
+            + `<path d="M${cx2} 2 V-5 M${cx2} 2 l4.6 3" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>`
+            + `<circle cx="${cx2}" cy="2" r="1.6" fill="#fff"/>`
+            + (nMis ? `<text class="hand" x="${cx2}" y="28" text-anchor="middle" font-size="9">${nMis}×</text>` : '')
+            + `</g>`;
+        }
         break;
       }
       case 'delta': {
@@ -565,7 +605,11 @@
     if (c.type === 'flow') {
       s += `<path class="pencil" d="${P.d}" ${R.connAttrs(c)}/>`;
       if (p.or) s += `<text class="hand" x="${P.mid.x}" y="${P.mid.y - 8}" text-anchor="middle" font-size="10" font-style="italic">or</text>`;
-      if (p.label) s += `<text class="hand muted" x="${P.mid.x}" y="${P.mid.y + 14}" text-anchor="middle" font-size="9">${esc(p.label)}</text>`;
+      // l'etichetta sta SOPRA la linea (esito stazione 2, 25/8): il triangolo rosso dell'attesa
+      // pende dal punto di mezzo verso il basso e la copriva; sopra resta sempre leggibile, e
+      // l'alone di carta (conn-label, app.css) la difende dalle linee che incrociano. Con «or»
+      // presente sale di un altro gradino per non pestarlo.
+      if (p.label) s += `<text class="hand muted conn-label" x="${P.mid.x}" y="${P.mid.y - (p.or ? 20 : 10)}" text-anchor="middle" font-size="9">${esc(p.label)}</text>`;
     } else {
       s += `<path class="pencil" d="${P.d}" ${R.connAttrs(c)}/>`;
       // «si reca»: il pallino alla partenza (il piede di chi si muove) affianca la punta a V — due segni
@@ -1052,7 +1096,8 @@
    *  mappa diversa da quella aperta avrebbe mostrato il titolo sbagliato (rilievo della revisione).
    *  L'azzeramento di layerKeys in R.init fa si' che il ripristino non lasci chiavi stantie: al
    *  ritorno il primo R.overlay del foglio vero ridisegna, ed e' giusto cosi'. */
-  R.exportSVG = (map, opts = {}) => {
+  R.exportSVG = (map, opts = {}) => { uiVivo = false; try { return exportSVGvero(map, opts); } finally { uiVivo = true; } };
+  const exportSVGvero = (map, opts = {}) => {
     const keepSvg = svg, keepL = L;
     try {
       R.init(document.createElementNS(NS, 'svg'));
