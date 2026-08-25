@@ -90,7 +90,9 @@ main{position:relative;min-height:0;display:grid;grid-template-columns:1fr auto}
 #canvas.tool-connect{cursor:alias}
 #canvas.tool-whatis{cursor:help}
 #canvas.picking{cursor:cell}
-#canvas.picking .el-box,#canvas.picking .el-person,#canvas.picking .el-lane,#canvas.picking .el-inventory{filter:drop-shadow(0 0 4px rgba(31,78,121,.5))}
+#canvas.picking .el-box,#canvas.picking .el-person,#canvas.picking .el-lane,#canvas.picking .el-inventory{animation:legapulse 1.1s ease-in-out infinite}
+/* i legabili si riconoscono a colpo d'occhio: bordo ombreggiato che lampeggia piano (esito stazione 1) */
+@keyframes legapulse{0%,100%{filter:drop-shadow(0 0 3px rgba(31,78,121,.35))}50%{filter:drop-shadow(0 0 7px rgba(31,78,121,.75))}}
 
 /* svg map styles (also embedded in export) */
 svg .hand{font-family:var(--hand)}
@@ -122,9 +124,6 @@ svg .chan{fill:#fff;stroke:var(--pencil-2);stroke-width:1}
 svg .chan-handle{cursor:grab}
 svg .chan-handle:hover .chan{stroke:var(--sel);stroke-width:1.6}
 svg .handle.end{cursor:crosshair}
-svg .placeholder:hover rect{fill:rgba(31,78,121,.09)}
-/* lo strato del riepilogo è inerte (vedi R.init): i riquadri d'invito sono l'eccezione, si toccano */
-svg .placeholder{pointer-events:auto}
 /* bersagli evidenziati quando lo strumento li richiede */
 svg.t-delta .conn[data-type="flow"] .conn-hit{stroke:rgba(200,50,30,.16)}
 svg.t-delta .conn[data-type="flow"] .pencil{stroke:#c8321e}
@@ -148,6 +147,7 @@ svg .lock-count rect{fill:#fff;stroke:var(--sel);stroke-width:1}
 svg .lock-count text{fill:var(--sel);font-size:10px;font-weight:700;font-family:var(--ui)}
 #canvas.picking .el-box .box,#canvas.picking .el-person .pencil,#canvas.picking .el-lane .lane,#canvas.picking .el-inventory .inv{stroke:var(--sel);stroke-width:2.2}
 #canvas.picking .conn .pencil{stroke:var(--sel);stroke-width:2.4}
+#canvas.picking .conn{animation:legapulse 1.1s ease-in-out infinite}
 svg .handle{fill:#fff;stroke:var(--sel);stroke-width:1.5;cursor:nwse-resize}
 svg .lasso{fill:rgba(31,78,121,.08);stroke:var(--sel);stroke-dasharray:4 4;stroke-width:1}
 svg .ghost{stroke:var(--sel);stroke-dasharray:5 4;stroke-width:1.5;fill:none;pointer-events:none}

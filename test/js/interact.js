@@ -220,7 +220,8 @@
     }
     if (I.pickLock) { const kids = I.pickLock; if (hit && !kids.includes(hit.id)) { I.cancelPickLock(); if (!I.lockMany(kids, hit.id)) I.hint('Non si può legare a questo elemento.', 2500); } else if (!hit) I.cancelPickLock(); gesture = { type: 'noop' }; return; }
     if (e.target.closest && e.target.closest('[data-toggle-legend]')) { gesture = { type: 'legend', id: e.target.closest('[data-toggle-legend]').dataset.toggleLegend }; return; }
-    if (e.target.closest && e.target.closest('[data-place]')) { const g = e.target.closest('[data-place]'); gesture = { type: 'place', kind: g.dataset.place, x: +g.dataset.px, y: +g.dataset.py }; return; }
+    // i segnaposti «Chi chiede? / Primo passo» non esistono più (esito stazione 1, 25/8): il tocco
+    // sul vuoto apre il menu rotondo, la palette resta l'altra strada — niente gesto 'place'.
     if (t === 'whatis') { // modalita' «?»: il tocco spiega l'elemento invece di selezionarlo; sul vuoto si sposta il foglio.
       // La scheda si apre al RILASCIO: aperta al pointerdown finiva sotto il dito e si mangiava il
       // pointerup dell'svg — il puntatore restava appeso e il pan successivo diventava un pinch.
@@ -261,7 +262,12 @@
       if (!wasSelected) I.select([hit.id], { keepPop: true });
       // gli elementi col lucchetto chiuso (pinned) non si trascinano: proteggono dagli spostamenti per sbaglio
       const moving = frozen ? [] : I.selection.map(id => V.byId(id, map)).filter(x => x && !V.isConnector(x) && !x.props.pinned);
-      gesture = { type: 'drag', wasSelected, ids: moving.map(x => x.id), start: w, startClient: { x: e.clientX, y: e.clientY }, before: moving.map(x => (x.props.lockTo || (x.type === 'delta' && x.props.attachedTo)) && !moving.some(p => p.id === (x.props.lockTo || x.props.attachedTo)) ? { id: x.id, dx: x.props.dx || 0, dy: x.props.dy || 0, attached: true } : (x.props.lockTo || (x.type === 'delta' && x.props.attachedTo)) ? { id: x.id, skip: true } : { id: x.id, x: x.x, y: x.y }), moved: false, hitId: hit.id, isConn: V.isConnector(el), hitPinned: !!(el && el.props && el.props.pinned) };
+      // il blocco 🔒 vince sulla catena ⛓ (esito stazione 1, 25/8): foto della posizione VISTA di
+      // ogni elemento bloccato-e-legato fuori dal gruppo che si muove — a ogni frame R.freezePinned
+      // compensa dx/dy perche' resti dov'era, anche se il suo genitore (o la sua freccia) si sposta
+      const pinFrozen = frozen ? [] : map.elements.filter(x => x.props && x.props.pinned && (x.props.lockTo || (x.type === 'delta' && x.props.attachedTo)) && !moving.some(m => m.id === x.id)).map(x => ({ id: x.id, dx0: x.props.dx || 0, dy0: x.props.dy || 0, pos0: R.elPos(x, map) }));
+      const pinPos0 = {}; pinFrozen.forEach(f => { pinPos0[f.id] = f.pos0; });
+      gesture = { type: 'drag', wasSelected, ids: moving.map(x => x.id), start: w, startClient: { x: e.clientX, y: e.clientY }, before: moving.map(x => (x.props.lockTo || (x.type === 'delta' && x.props.attachedTo)) && !moving.some(p => p.id === (x.props.lockTo || x.props.attachedTo)) ? { id: x.id, dx: x.props.dx || 0, dy: x.props.dy || 0, attached: true } : (x.props.lockTo || (x.type === 'delta' && x.props.attachedTo)) ? { id: x.id, skip: true } : { id: x.id, x: x.x, y: x.y }), moved: false, hitId: hit.id, isConn: V.isConnector(el), hitPinned: !!(el && el.props && el.props.pinned), pinFrozen, pinPos0 };
       return;
     }
     gesture = { type: 'lasso', start: w, startClient: { x: e.clientX, y: e.clientY }, shift: e.shiftKey };
@@ -284,7 +290,7 @@
   }
   function rollback(g) {
     const map = V.map();
-    if (g.type === 'drag') { g.before.forEach(b => { if (b.skip) return; const el = V.byId(b.id, map); if (!el) return; if (b.attached) { el.props.dx = b.dx; el.props.dy = b.dy; } else { el.x = b.x; el.y = b.y; } R.updateEl(el.id, map); }); }
+    if (g.type === 'drag') { g.before.forEach(b => { if (b.skip) return; const el = V.byId(b.id, map); if (!el) return; if (b.attached) { el.props.dx = b.dx; el.props.dy = b.dy; } else { el.x = b.x; el.y = b.y; } R.updateEl(el.id, map); }); (g.pinFrozen || []).forEach(f => { const el = V.byId(f.id, map); if (!el) return; el.props.dx = f.dx0; el.props.dy = f.dy0; R.updateEl(el.id, map); }); }
     if (g.type === 'resize') { const el = V.byId(g.id, map); if (el) { el.w = g.w0; el.h = g.h0; R.updateEl(el.id, map); } }
     if (g.type === 'chan') { const c = V.byId(g.id, map); if (c) { c.props.t = g.t0; R.updateEl(c.id, map); } }
     if (g.type === 'via') { const c = V.byId(g.id, map); if (c) { c.props.via = g.before; R.updateEl(c.id, map); } }
@@ -366,6 +372,7 @@
         if (!gesture.moved && Math.hypot(e.clientX - gesture.startClient.x, e.clientY - gesture.startClient.y) < 5) return;
         gesture.moved = true; V.ui.hideQuick && V.ui.hideQuick(); V.pop.close();
         gesture.before.forEach(b => { if (b.skip) return; const el = V.byId(b.id, map); if (!el) return; if (b.attached) { el.props.dx = b.dx + dx; el.props.dy = b.dy + dy; } else { el.x = b.x + dx; el.y = b.y + dy; } R.updateEl(el.id, map, false, null, { soloPosizione: true }); });
+        if (gesture.pinFrozen && gesture.pinFrozen.length) R.freezePinned(map, gesture.pinPos0).forEach(c => R.updateEl(c.id, map, false, null, { soloPosizione: true }));
         R.selection(I.selection, map);
         // i gradini della timeline seguono il passo mentre lo si sposta, invece di restare indietro
         // fino al rilascio: e' il numero che si sta guardando proprio mentre si sistema il foglio
@@ -414,9 +421,6 @@
       case 'peek': if (V.ui.showPeek) V.ui.showPeek(g.boxId, e.clientX, e.clientY); break;
       case 'badge': if (V.byId(g.elId, map) && V.pop && V.pop.open) { I.select([g.elId], { keepPop: true }); V.pop.open(g.elId, { section: g.layer }); } break;
       case 'legend': { const el = V.byId(g.id, map); if (!el) break; const collapsed = !el.props.collapsed; V.commit([{ t: 'props', id: el.id, after: { collapsed } }, { t: 'update', id: el.id, after: { w: collapsed ? 74 : 170, h: collapsed ? 18 : 104 } }], 'legenda'); break; }
-      // stessa regola del rilascio dopo il trascinamento: il richiedente e' uno solo, e chi arriva dopo
-      // nasce senza la spunta (ma con l'etichetta vuota: chi e', lo scrive chi disegna)
-      case 'place': { const T = V.TYPES[g.kind]; const el = V.newElement(g.kind, g.kind === 'person' ? g.x + 55 : g.x, g.kind === 'person' ? g.y + 8 : g.y); if (g.kind === 'person' && map.elements.some(x => x.type === 'person' && x.props.requestor)) el.props.requestor = false; V.commit({ t: 'add', el }, 'aggiungi ' + T.name); I.select([el.id], { keepPop: true }); V.pop.open(el.id); break; }
       case 'chan': { const c = V.byId(g.id, map); if (!g.moved) { I.select([c.id], { keepPop: true }); V.pop.open(c.id); break; } V.commit({ t: 'props', id: c.id, after: { t: c.props.t }, before: { t: g.t0 } }, 'sposta icona'); break; }
       case 'reconnect': {
         R.ghost(''); const c = V.byId(g.id, map); if (!c) break;
@@ -460,6 +464,8 @@
           break;
         }
         const ops = g.before.filter(b => !b.skip).map(b => { const el = V.byId(b.id, map); return b.attached ? { t: 'props', id: b.id, after: { dx: el.props.dx, dy: el.props.dy }, before: { dx: b.dx, dy: b.dy } } : { t: 'update', id: b.id, after: { x: el.x, y: el.y }, before: { x: b.x, y: b.y } }; });
+        // i bloccati-e-legati compensati durante il drag (blocco > catena) entrano nello stesso undo
+        (g.pinFrozen || []).forEach(f => { const el = V.byId(f.id, map); if (!el) return; if ((el.props.dx || 0) !== f.dx0 || (el.props.dy || 0) !== f.dy0) ops.push({ t: 'props', id: f.id, after: { dx: el.props.dx, dy: el.props.dy }, before: { dx: f.dx0, dy: f.dy0 } }); });
         // legame smart: un solo elemento legabile e non legato lasciato sopra/vicino a un genitore
         if (g.before.length === 1 && !g.before[0].attached) { const el = V.byId(g.before[0].id, map); const lk = I.findLockTarget(el, map); if (lk) ops.push(...I.lockOps(el, lk, map)); }
         if (ops.length) V.commit(ops, 'sposta');

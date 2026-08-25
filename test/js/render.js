@@ -68,9 +68,9 @@
     // partire il trascinamento della vista. I riquadri tratteggiati d'invito restano toccabili
     // (svg .placeholder{pointer-events:auto}, app.css) e i badge dei livelli pure (in linea, sotto).
     L.overlay.setAttribute('pointer-events', 'none');
-    // dentro l'overlay: i placeholder (fuori dai livelli, sempre in cima, spec B) e il gruppo dei
-    // livelli — <g class="layers"> con un <g data-layer="id"> per livello (spec C).
-    const phG = document.createElementNS(NS, 'g'); phG.setAttribute('class', 'placeholders'); L.overlay.appendChild(phG); L.placeholders = phG;
+    // dentro l'overlay: il gruppo dei livelli — <g class="layers"> con un <g data-layer="id"> per
+    // livello (spec C). I segnaposti «① Chi chiede? / ② Primo passo» non esistono più: il foglio
+    // vuoto è vuoto, punto (esito stazione 1, 25/8) — si comincia dal menu del vuoto o dalla palette.
     const layersG = document.createElementNS(NS, 'g'); layersG.setAttribute('class', 'layers'); L.overlay.appendChild(layersG); L.layersG = layersG;
   };
   R.layers = () => L;
@@ -169,6 +169,10 @@
   };
 
   // ---------- elementi ----------
+  /** Orologino tenue (stesso tratto del glifo «sala d'attesa»): sta al posto delle targhette
+   *  «Hi / Lo / Avg ?» e «attesa ?» in fase disegna — ricorda che i tempi arriveranno dal
+   *  cronometro senza chiedere numeri in una fase in cui non esistono. */
+  const clockHint = (cx, cy) => `<g class="clock-hint pencil-thin" opacity=".5"><circle cx="${cx}" cy="${cy - 4}" r="6.5" fill="none"/><path d="M${cx} ${cy - 4} V${cy - 8.5} M${cx} ${cy - 4} H${cx + 3.5}"/></g>`;
   function drawEl(el, map) {
     // la mappa serve al badge del collegamento (figlia o riferimento); la legenda disegna elementi
     // che non stanno in nessuna mappa, e per quelli vale il ripiego sulla mappa attiva
@@ -198,7 +202,10 @@
         s += `<text class="hand" x="8" y="${blk.y0}" font-size="${blk.size}">${tspans(fitLines(blk.lines, blk.max), 8, blk.y0, blk.lineH)}</text>`;
         if (p.owner) s += `<text class="hand muted" x="${w - 6}" y="${h - 6}" text-anchor="end" font-size="9">${esc(p.owner)}</text>`;
         const hasData = p.hi !== '' || p.lo !== '' || p.avg !== '';
-        s += `<text class="hand ${hasData ? '' : 'muted'}" x="${w / 2}" y="${h + 14}" text-anchor="middle" font-size="10">${hasData ? tspans(['Hi: ' + fmt(num(p.hi)), 'Lo: ' + fmt(num(p.lo)), 'Avg: ' + fmt(num(p.avg))], w / 2, h + 14, 12) : `<tspan x="${w / 2}" y="${h + 14}">Hi / Lo / Avg ?</tspan>`}</text>`;
+        // in DISEGNA i numeri non ci sono per definizione: al posto della targhetta vuota un
+        // orologino tenue ricorda che i tempi arriveranno dal cronometro (esito stazione 1, 25/8)
+        if (!hasData && map.phase === 'disegna') s += clockHint(w / 2, h + 14);
+        else s += `<text class="hand ${hasData ? '' : 'muted'}" x="${w / 2}" y="${h + 14}" text-anchor="middle" font-size="10">${hasData ? tspans(['Hi: ' + fmt(num(p.hi)), 'Lo: ' + fmt(num(p.lo)), 'Avg: ' + fmt(num(p.avg))], w / 2, h + 14, 12) : `<tspan x="${w / 2}" y="${h + 14}">Hi / Lo / Avg ?</tspan>`}</text>`;
         if (p.cc !== '' && p.cc != null) s += `<text class="hand" x="${w / 2}" y="${h + 52}" text-anchor="middle" font-size="9">C&amp;C ${esc(p.cc)} %</text>`;
         break;
       }
@@ -215,7 +222,9 @@
         if (p.note) s += `<text class="hand delta-txt" x="${w / 2}" y="${h + 14}" text-anchor="middle" font-size="9">${tspans(noteLines, w / 2, h + 14, 10)}</text>`;
         const hasData = p.hi !== '' || p.lo !== '' || p.avg !== '';
         const dy = h + 14 + (p.note ? noteLines.length * 10 + 4 : 4);
-        s += `<text class="hand delta-txt" x="${w / 2}" y="${dy}" text-anchor="middle" font-size="10" ${hasData ? '' : 'opacity=".55"'}>${hasData ? tspans(['Hi: ' + fmt(num(p.hi)), 'Lo: ' + fmt(num(p.lo)), 'Avg: ' + fmt(num(p.avg))], w / 2, dy, 12) : `<tspan x="${w / 2}" y="${dy}">attesa ?</tspan>`}</text>`;
+        // stessa regola del box: in disegna niente «attesa ?», solo l'orologino (esito stazione 1)
+        if (!hasData && map.phase === 'disegna') s += clockHint(w / 2, dy);
+        else s += `<text class="hand delta-txt" x="${w / 2}" y="${dy}" text-anchor="middle" font-size="10" ${hasData ? '' : 'opacity=".55"'}>${hasData ? tspans(['Hi: ' + fmt(num(p.hi)), 'Lo: ' + fmt(num(p.lo)), 'Avg: ' + fmt(num(p.avg))], w / 2, dy, 12) : `<tspan x="${w / 2}" y="${dy}">attesa ?</tspan>`}</text>`;
         break;
       }
       case 'person': {
@@ -592,7 +601,11 @@
     return { x: el.x, y: el.y };
   };
   R.LOCK_PARENTS = ['box', 'person', 'lane', 'flow', 'request', 'inventory'];
-  R.LOCKABLE = ['storm', 'fluffy', 'burst', 'text', 'inbox', 'inventory', 'distance', 'delta', 'person', 'box', 'icon', 'face'];
+  // 'box' non è più legabile come FIGLIO (esito stazione 1, 25/8): la catena serve agli oggetti
+  // (problemi, note, icone…) per restare attaccati al loro passo — un passo legato a un altro passo
+  // trascinava mezzo flusso per sbaglio. I lockTo legacy box→box restano posizionati (elPos non
+  // guarda questa lista): si possono solo slegare, non crearne di nuovi.
+  R.LOCKABLE = ['storm', 'fluffy', 'burst', 'text', 'inbox', 'inventory', 'distance', 'delta', 'person', 'icon', 'face'];
   // ---------- testo dentro la nuvola ----------
   // La pancia non è un rettangolo: la nuvola si stringe verso l'alto e verso il basso. La larghezza
   // utile di ogni riga segue un profilo a ellisse (con margine per il tratto a matita), così le righe
@@ -650,6 +663,27 @@
   /** Dove va scritto il testo dentro la forma: il triangolo lo tiene più in basso, dove c'è posto. */
   R.shapeCenter = (forma) => (CENTRO[forma] != null ? CENTRO[forma] : 0.5);
   R.children = (id, map) => map.elements.filter(e => e.props && (e.props.lockTo === id || (e.type === 'delta' && e.props.attachedTo === id)));
+  /** Il blocco 🔒 vince sulla catena ⛓ (esito stazione 1, 25/8): un figlio legato E bloccato non
+   *  deve muoversi quando si sposta il suo genitore. La posizione di un legato è DERIVATA
+   *  (ancora del genitore + dx/dy), quindi qui si compensa: per ogni elemento bloccato-e-legato la
+   *  cui posizione vista non combacia più con la foto `pos0` (scattata a inizio drag), dx/dy si
+   *  correggono dell'esatto scarto. Nessuna analisi delle dipendenze: se elPos è cambiata, il
+   *  genitore (o un antenato, o la freccia a cui è agganciato) si è mosso — vale anche per le
+   *  catene profonde e per i delta sulle frecce. Ritorna i cambiamenti per l'undo del drag. */
+  R.freezePinned = (map, pos0) => {
+    const changed = [];
+    map.elements.forEach(el => {
+      if (!el.props || !el.props.pinned) return;
+      if (!(el.props.lockTo || (el.type === 'delta' && el.props.attachedTo))) return;
+      const p0 = pos0[el.id]; if (!p0) return;
+      const cur = R.elPos(el, map);
+      if (cur.x === p0.x && cur.y === p0.y) return;
+      el.props.dx = (el.props.dx || 0) + (p0.x - cur.x);
+      el.props.dy = (el.props.dy || 0) + (p0.y - cur.y);
+      changed.push({ id: el.id, dx: el.props.dx, dy: el.props.dy });
+    });
+    return changed;
+  };
 
   /** Area sensibile: molti elementi sono disegnati a sole linee (l'omino ha tratti da 1.6 px su un
    *  riquadro di 40x78) e col dito diventano quasi impossibili da prendere — collegarne uno richiedeva
@@ -705,27 +739,6 @@
   R.addStrokeEl = (s) => { const p = document.createElementNS(NS, 'path'); p.setAttribute('class', 'stroke'); p.dataset.sid = s.id; p.setAttribute('stroke', s.color); p.setAttribute('stroke-width', s.width); p.setAttribute('d', R.strokePath(s)); L.ink.appendChild(p); return p; };
 
   // ---------- overlay calcolato: timeline + riepilogo ----------
-  R.placeholders = (map) => {
-    const hasBox = map.elements.some(e => e.type === 'box'), hasPerson = map.elements.some(e => e.type === 'person' && e.props.requestor);
-    if (hasBox && hasPerson) return '';
-    let g = '';
-    const ph = (x, y, w, h, label, kind, sub) => `<g class="placeholder" data-place="${kind}" data-px="${x}" data-py="${y}" style="cursor:pointer"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6" fill="rgba(31,78,121,.04)" stroke="#1f4e79" stroke-dasharray="6 5" stroke-width="1.2"/><text class="hand" x="${x + w / 2}" y="${y + h / 2 - 4}" text-anchor="middle" font-size="12" fill="#1f4e79">${esc(label)}</text><text class="hand" x="${x + w / 2}" y="${y + h / 2 + 12}" text-anchor="middle" font-size="9.5" fill="#1f4e79" opacity=".8">${esc(sub)}</text></g>`;
-    // Il richiedente va nella fascia alta a destra: ma "a destra del foglio" su una carta larga 2376
-    // finiva fuori dall'inquadratura appena il disegno cominciava a sinistra, e l'invito ① non lo
-    // vedeva piu' nessuno. Si sta a destra di quello che c'e' gia' disegnato, non del foglio.
-    const P = V.paperOf(map);
-    if (!hasPerson) {
-      const visibili = map.elements.filter(e => !V.isConnector(e) && e.type !== 'lane');
-      const destra = visibili.length ? Math.max(...visibili.map(e => { const p = R.elPos(e, map); return p.x + e.w; })) : null;
-      const alto = visibili.length ? Math.min(...visibili.map(e => R.elPos(e, map).y)) : null;
-      const px = destra != null ? Math.min(P.w - 188, destra + 90) : P.w - 188;
-      const py = alto != null ? Math.max(20, Math.min(alto - 150, P.h - 140)) : 96;
-      g += ph(px, py, 150, 100, '① Chi chiede?', 'person', 'tocca: mette il richiedente');
-    }
-    if (!hasBox) g += ph(110, 300, 150, 170, '② Primo passo', 'box', 'tocca: crea un process box');
-    if (!hasBox) g += `<text class="hand" x="300" y="360" font-size="11" fill="#1f4e79" opacity=".8">poi: Freccia di flusso ➜ passo successivo, Delta per le attese, Matita per scrivere a mano</text>`;
-    return g;
-  };
   /** Il riepilogo di sempre (timeline + card dei percorsi, R6): oggi e' il primo livello (spec B/C),
    *  sempre acceso. Estratto dal vecchio R.overlay SENZA cambiare un byte dell'HTML prodotto (la
    *  fixture test/fixtures/riepilogo-baseline.txt lo prova), con una sola eccezione dichiarata: i
@@ -874,7 +887,6 @@
    *  map.id + map.rev, restano fermi — 0 ridisegni per loro durante il drag. */
   R.overlay = (map, opts = {}) => {
     if (!map) return;
-    L.placeholders.innerHTML = R.placeholders(map);
     const ix = V.index(map);
     const attivi = V.layers.active(map);
     const attiviIds = new Set(attivi.map(l => l.id));
