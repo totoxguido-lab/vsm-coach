@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<!-- Rete di sicurezza: i fogli si scambiano come file JSON, e un file preparato apposta potrebbe
+     provare a infilare un pezzo di pagina nel disegno. Gli id in arrivo vengono gia' riscritti
+     (V.sanitizeMap), ma qui il browser vieta comunque codice scritto dentro la pagina e attributi
+     tipo onerror: nessuno script che non venga dai file dell'app puo' partire. Il coach parla con
+     l'API scelta (connect-src), le immagini possono essere dati inline (icone, export).
+     L'hash sha256 in script-src apre UNA porta sola, cucita sul contenuto esatto del loader qui
+     sotto (js/manifest.js → document.write dei moduli): un payload iniettato da un JSON non può
+     avere questo hash, quindi la regola di sopra resta vera. Se il loader cambia anche di un
+     carattere, l'hash non torna più e la pagina resta bianca — test/build.test.js lo controlla. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-UM11sE/aSI91/puMNQK3QURTOmwqVkRIFalW3amJkuQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https:; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="VSM Coach">
+<meta name="theme-color" content="#dfe3e9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14171b" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+<title>VSM Coach</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app">
+  <header class="bar">
+    <div class="brand" title="VSM Coach"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 12h4M14 12h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M10.5 10.5 12 13.5 13.5 10.5z" fill="#c8321e"/></svg></div>
+    <button class="btn icon hidden" id="btn-up" title="Sali al foglio che contiene questo" aria-label="Sali di un livello">↑</button>
+    <div id="crumbs"></div>
+    <button id="map-head" title="Titolo, data, autori — tocca per vedere e modificare"><span class="ind" id="mh-ind"></span><span class="mh-txt"><b id="mh-title"></b><small id="mh-sub"></small></span><span class="mh-pen" aria-hidden="true">✎</span></button>
+    <button class="btn small" id="mh-phase" title="Fase del foglio: tocca per vederla o cambiarla">Disegna</button>
+    <span id="save-dot" class="hidden" title=""></span>
+    <div class="spacer"></div>
+    <button class="btn icon" id="btn-undo" title="Annulla (Cmd/Ctrl+Z)" aria-label="Annulla">↶</button>
+    <button class="btn icon" id="btn-redo" title="Ripeti (Cmd/Ctrl+Shift+Z)" aria-label="Ripeti">↷</button>
+    <div class="seg" role="group" aria-label="Attuale / ideale">
+      <button id="tab-current" aria-pressed="true" title="I giri dello stato attuale: tocca di nuovo per l'elenco e per un nuovo giro"><span>Attuale</span><small id="cur-ver">mappa iniziale</small></button>
+      <button id="tab-future" aria-pressed="false" title="Dove vogliamo arrivare: uno solo, col lucchetto di validazione"><span>Ideale</span><small id="ideal-state" class="hidden">🔒</small></button>
+      <button id="tab-lock" class="hidden" title="Lucchetto dell'Ideale: chiuso = validato, nessuna modifica" aria-label="Lucchetto dell'Ideale">🔓</button>
+    </div>
+    <div id="vers-list" class="hidden" role="menu" aria-label="Giri dello stato attuale"></div>
+    <button class="btn" id="btn-maps" title="Le tue mappe">Mappe</button>
+    <button class="btn icon" id="btn-menu" title="Menu" aria-label="Menu" aria-haspopup="menu">⋯</button>
+    <div id="subtabs" role="navigation" aria-label="Sotto-fogli di questa mappa"></div>
+  </header>
+
+  <main>
+    <div id="stage">
+      <svg id="canvas" xmlns="http://www.w3.org/2000/svg" role="application" aria-label="Foglio della mappa del flusso di valore"></svg>
+      <div id="hint" class="hidden" role="status" aria-live="polite"></div>
+      <button id="coach-fab" title="Chiedi al coach (legge il foglio)" aria-label="Chiedi al coach">✦</button>
+      <button id="ui-toggle" aria-pressed="false" title="Nascondi l'interfaccia (più foglio)" aria-label="Nascondi l'interfaccia">⇱</button>
+      <div id="palette" role="toolbar" aria-label="Strumenti"></div>
+      <button id="palette-toggle" aria-pressed="false" title="Nascondi gli strumenti" aria-label="Mostra o nascondi gli strumenti"><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 6l-6 6 6 6"/></svg></button>
+      <div id="more-tools" class="hidden"></div>
+      <div id="suggest" class="hidden" role="status" aria-live="polite"></div>
+      <div id="levelsctl">
+        <button class="btn" id="levels-btn" title="Cartina del progetto: dove sei e che cosa c'è sotto" aria-label="Cartina"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></svg></button>
+        <div id="cartina" class="hidden"></div>
+      </div>
+      <div id="zoomctl">
+        <button class="btn" id="zoom-in" title="Ingrandisci" aria-label="Ingrandisci">+</button>
+        <button class="btn" id="zoom-fit" title="Adatta il foglio" aria-label="Adatta il foglio">⤢</button>
+        <button class="btn" id="zoom-out" title="Riduci" aria-label="Riduci">−</button>
+      </div>
+      <div id="quick" class="hidden" role="toolbar" aria-label="Azioni rapide sull'elemento selezionato"></div>
+      <div id="pop" class="hidden"></div>
+    </div>
+
+    <aside id="drawer" class="closed">
+      <div class="tabs">
+        <button id="tab-coach" aria-selected="true">Coach ✦</button>
+        <button id="tab-plan" aria-selected="false">Piano</button>
+        <button class="close" id="drawer-close" title="Chiudi" aria-label="Chiudi il cassetto">✕</button>
+      </div>
+      <section class="pane" id="pane-coach">
+        <div id="chat"></div>
+        <div class="quick">
+          <button class="btn small" data-q="Cosa faccio adesso? Guarda il foglio e dimmi il prossimo passo e lo strumento da usare.">Cosa faccio adesso?</button>
+          <button class="btn small" data-q="Rivedi il foglio e dimmi le 1-3 correzioni più importanti (con patch applicabili se servono).">Rivedi il foglio</button>
+          <button class="btn small" data-q="Che cosa, del modo in cui il lavoro accade ora, non è ideale? Proponi le nuvole temporalesche da aggiungere, con muda e regola.">Che cosa non è ideale?</button>
+          <button class="btn small" data-q="Proponi lo stato futuro: meno vie di richiesta, meno passi, tempi standard derivati dai dati; crea la mappa futura con una patch e spiega ogni cambiamento con 'avvicina all'ideale?'.">Proponi lo stato futuro</button>
+        </div>
+        <div class="composer"><textarea id="chat-input" rows="1" placeholder="Scrivi al coach…" aria-label="Messaggio al coach" autocomplete="off"></textarea><button class="btn primary" id="chat-send">Invia</button></div>
+        <div class="status"><span class="dot" id="status-dot"></span><span id="status-text"></span><span class="spacer"></span><button class="btn small ghost" id="btn-clear-chat">Svuota</button><button class="btn small ghost" id="btn-settings" aria-label="Impostazioni coach" title="Impostazioni coach">⚙︎</button></div>
+      </section>
+      <section class="pane hidden" id="pane-plan"><div class="pane-body" id="plan-body"></div></section>
+    </aside>
+  </main>
+</div>
+
+<div id="guidepop" class="hidden" role="dialog" aria-label="Guida — promemoria del metodo"></div>
+
+<div id="menu" class="hidden">
+  <button data-m="new"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9z"/><path d="M13 3v6h6"/><path d="M12 12v6M9 15h6"/></svg>Nuova mappa</button>
+  <button data-m="detail"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="8" y="3" width="13" height="13" rx="1.5"/><path d="M16 16v3a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h3" stroke-linecap="round"/></svg>Sotto-foglio di dettaglio</button>
+  <button data-m="attach"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V8M7 13l5-5 5 5"/><rect x="4" y="2.5" width="16" height="2.2" rx="1"/></svg>Questo foglio diventa un passo di…</button>
+  <button data-m="projects"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 7h6l2 2h10v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/></svg>Progetti…</button>
+  <button data-m="misura"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2h6M19 6l1.5-1.5"/></svg>Misura i tempi ⏱</button>
+  <button data-m="guide"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.6 2.6 0 1 1 3.6 2.4c-.9.4-1.2 1-1.2 1.8"/><circle cx="12" cy="17" r=".4" fill="currentColor"/></svg>Guida pratica</button>
+  <button class="compact-only" data-m="af"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13M14 4l4 4-4 4M20 16H7M10 12l-4 4 4 4"/></svg>Attuale ⇄ Ideale</button>
+  <button class="compact-only" data-m="giri"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h10M4 12h13M4 18h8"/><circle cx="19" cy="6" r="2"/></svg>Giri dell'attuale…</button>
+  <button class="compact-only" data-m="lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="1.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Lucchetto dell'Ideale</button>
+  <button class="compact-only" data-m="maps"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>Le tue mappe</button>
+  <hr>
+  <button class="sub-head" data-sub="file" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 5a1 1 0 0 1 1-1h11l4 4v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M8 4v5h7V4M7 20v-7h10v7"/></svg>File e stampa<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
+  <div class="submenu hidden" id="sub-file">
+    <button data-m="open">Apri JSON…</button>
+    <button data-m="save">Salva JSON</button>
+    <button data-m="svg">Esporta SVG</button>
+    <button data-m="print">Stampa A3</button>
+  </div>
+  <button class="sub-head" data-sub="opt" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h8M16 7h4M4 17h4M12 17h8"/><circle cx="14" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Opzioni<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
+  <div class="submenu hidden" id="sub-opt">
+    <button id="btn-link-mode">Frecce: dritte</button>
+    <button id="btn-trace" aria-pressed="true">✓ Evidenzia il percorso</button>
+    <button id="btn-tools-left" aria-pressed="false">○ Strumenti a sinistra</button>
+    <button id="btn-overlays" aria-pressed="true">✓ Riepilogo sul foglio</button>
+    <button id="btn-layers-menu">Livelli di analisi…</button>
+    <button id="btn-pen-mode" aria-pressed="true">✓ Penna Apple = matita</button>
+    <button data-m="clear-ink">Cancella l'inchiostro</button>
+  </div>
+  <button class="sub-head" data-sub="coach" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M18.5 15.5l.9 2.6 2.6.9-2.6.9-.9 2.6-.9-2.6-2.6-.9 2.6-.9z"/></svg>Coach<span class="tag-alfa">alfa</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
+  <div class="submenu hidden" id="sub-coach">
+    <button data-m="coach">Apri il coach ✦</button>
+    <button data-m="settings">Impostazioni API…</button>
+  </div>
+  <hr>
+  <button data-m="delete" class="danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13h10l1-13M10 11v5M14 11v5"/></svg>Elimina questa mappa</button>
+  <button data-m="reset" class="danger prova-only"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/></svg>Azzera la copia di prova…</button>
+  <button data-m="exit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 8l-4 4 4 4M6 12h9"/></svg>Esci</button>
+  <hr>
+  <!-- quale build si ha davvero in mano: senza, provare l'app e correggerla potevano riguardare
+       due versioni diverse senza che nessuno se ne accorgesse -->
+  <button data-m="info" class="ver-row"><span id="ver-label">VSM Coach</span><span class="hint">tocca: copia i dati per la diagnosi</span></button>
+</div>
+<input type="file" id="file-open" accept="application/json" hidden>
+
+<!-- Misura: il cronometro del giro (spec 2026-08-21, Parte 2). Il delta non si cronometra: nasce
+     per differenza fra la fine di un passo e l'inizio del successivo, misurando in sequenza. -->
+<dialog id="dlg-misura" aria-labelledby="mis-head">
+  <div class="d-head" id="mis-head">Misura</div>
+  <div class="d-body"><div id="mis-body"></div></div>
+  <div class="d-foot"><button class="btn" id="mis-close">Chiudi</button></div>
+</dialog>
+
+<!-- Fase del foglio (spec fondamenta A1): il selettore che sostituisce «provvisoria». Le fasi che
+     non si possono raggiungere da qui (transizione non ammessa, o lucchetto dell'Ideale chiuso)
+     restano nell'elenco ma disabilitate, col perché sotto il nome. -->
+<dialog id="dlg-fase" aria-labelledby="fase-head">
+  <div class="d-head" id="fase-head">Fase del foglio</div>
+  <div class="d-body"><div id="fase-body"></div></div>
+  <div class="d-foot"><button class="btn" id="fase-close">Chiudi</button></div>
+</dialog>
+
+<dialog id="dlg-maps">
+  <div class="d-head">Le tue mappe</div>
+  <div class="d-body"><div id="maplist"></div></div>
+  <div class="d-foot"><button class="btn" id="maps-close">Chiudi</button></div>
+</dialog>
+
+<dialog id="dlg-settings">
+  <div class="d-head">Impostazioni coach (API)</div>
+  <div class="d-body">
+    <div class="presets" id="presets">
+      <button class="btn small" data-preset="kimi">Kimi (Moonshot)</button>
+      <button class="btn small" data-preset="glm">GLM (Z.ai)</button>
+      <button class="btn small" data-preset="openrouter">OpenRouter</button>
+      <button class="btn small" data-preset="custom">Personalizzato</button>
+    </div>
+    <div class="field"><label for="s-base">Endpoint base (OpenAI-compatibile)</label><input id="s-base" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://api.moonshot.ai/v1"></div>
+    <div class="row"><div class="field"><label for="s-model">Modello</label><input id="s-model" autocomplete="off" spellcheck="false"></div><div class="field"><label>&nbsp;</label><button class="btn" id="s-list">Elenca modelli</button></div></div>
+    <div class="field"><label for="s-key">Chiave API</label><input id="s-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…"></div>
+    <div class="row"><div class="field"><label for="s-temp">Temperatura</label><input id="s-temp" type="number" inputmode="decimal" step="0.1" min="0" max="1.5"></div><div class="field"><label for="s-max">Max token risposta</label><input id="s-max" type="number" inputmode="numeric" step="100" min="200"></div></div>
+    <label class="check"><input type="checkbox" id="s-proxy"> <span>Passa dal proxy locale (<code>serve.py</code>) — se il browser blocca la chiamata (CORS) o per tenere la chiave sul computer.</span></label>
+    <label class="check"><input type="checkbox" id="s-stream" checked> <span>Risposta in streaming</span></label>
+    <label class="check"><input type="checkbox" id="s-suggest" checked> <span>Suggerimenti di strumento (regole locali, badge discreto sulla palette)</span></label>
+    <div id="s-models" class="hint" style="margin-top:8px"></div>
+    <p class="notice warn" style="margin-top:10px">Le mappe descrivono processi: nessun dato identificativo di pazienti. La chiave resta in questo browser.</p>
+  </div>
+  <div class="d-foot"><button class="btn" id="s-cancel">Annulla</button><button class="btn primary" id="s-ok">Salva</button></div>
+</dialog>
+
+<!-- L'avviso dei lavori in corso: si apre a OGNI avvio, di proposito (non è un «leggi una volta»:
+     ogni pubblicazione è codice nuovo mai provato sul dispositivo). Sull'app stabile non compare. -->
+<dialog id="dlg-wip" aria-labelledby="wip-titolo">
+  <div class="d-head" id="wip-titolo"><span class="wip-ic" aria-hidden="true">🚧</span> Work in progress — copia di prova</div>
+  <div class="d-body">
+    <p class="wip-forte"><b>Work in progress</b>: questa copia è stata pubblicata <b>senza nessuna prova sul dispositivo</b>. È il codice appena scritto, messo online così com'è, e può rompersi subito — anche al primo tocco.</p>
+    <ul class="wip-lista">
+      <li>Se si blocca, <b>ricarica la pagina</b>: le mappe restano salvate in questo browser.</li>
+      <li>Non usarla per una mappatura vera che non puoi rifare: esporta il JSON (⋯ → «Salva JSON…») prima di lavorare sul serio.</li>
+      <li>La copia di prova tiene le mappe in uno spazio suo, separato dall'app stabile.</li>
+    </ul>
+    <p class="notice" id="wip-ver"></p>
+  </div>
+  <div class="d-foot"><button class="btn primary" id="wip-ok">Ho capito, entro</button></div>
+</dialog>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script src="js/manifest.js"></script>
+<script>/* i moduli si inseriscono dal manifest, nell'ordine: document.write è sincrono e
+  mantiene l'ordine di esecuzione, come i tag che c'erano scritti a mano */
+self.VSM_FILES.forEach(function (f) { document.write("<script src='" + f + "'><\/script>"); });</script>
+</body>
+</html>

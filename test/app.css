@@ -1,0 +1,626 @@
+:root{
+  --desk:#dfe3e9; --panel:#f7f8fa; --panel-2:#eef0f4; --line:#d3d8e0; --ink:#1f2a37; --ink-2:#4b5563; --muted:#6b7280;
+  --accent:#1f4e79; --accent-ink:#ffffff; --ok:#3f7d5a; --warn:#b7791f; --bad:#c8321e;
+  --paper:#fbf8f0; --pencil:#2b2b2b; --pencil-2:#5a5a5a; --paper-line:#c9c2b0; --delta:#c8321e; --cloud:#5b6472; --sage:#3f7d5a; --sel:#1f4e79;
+  --hand:"Chalkboard SE","Marker Felt","Segoe Print","Bradley Hand","Comic Neue","Patrick Hand",cursive;
+  --ui:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --radius:12px; --shadow:0 1px 2px rgba(0,0,0,.08),0 8px 28px rgba(20,30,50,.14);
+  --tap:44px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --desk:#14171b; --panel:#1c2026; --panel-2:#232830; --line:#323944; --ink:#e7eaef; --ink-2:#c3c9d3; --muted:#8b93a1;
+    --accent:#6ea6dc; --accent-ink:#0f1720; --sel:#6ea6dc; --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 28px rgba(0,0,0,.5);
+  }
+}
+:root[data-theme="dark"]{
+  --desk:#14171b; --panel:#1c2026; --panel-2:#232830; --line:#323944; --ink:#e7eaef; --ink-2:#c3c9d3; --muted:#8b93a1;
+  --accent:#6ea6dc; --accent-ink:#0f1720; --sel:#6ea6dc; --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 28px rgba(0,0,0,.5);
+}
+*{box-sizing:border-box}
+html{color-scheme:light dark}
+html,body{height:100%;margin:0;overflow:hidden;overscroll-behavior:none}
+:root[data-theme="light"]{color-scheme:light}
+:root[data-theme="dark"]{color-scheme:dark}
+body{font-family:var(--ui);color:var(--ink);background:var(--desk);font-size:14px;line-height:1.4;-webkit-text-size-adjust:100%;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+input,textarea,select{-webkit-user-select:text;user-select:text}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+button:active{filter:brightness(.92)} /* il riscontro al tocco lo diamo noi, non il rettangolo grigio del sistema */
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+.hidden{display:none!important}
+
+/* ---------- shell ---------- */
+#app{height:100%;display:grid;grid-template-rows:auto 1fr;padding-top:env(safe-area-inset-top)}
+header.bar{display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--panel);border-bottom:1px solid var(--line);min-height:48px;flex-wrap:wrap}
+header .brand{font-weight:700;display:flex;align-items:center;gap:6px;flex:none}
+header .brand svg{width:22px;height:22px}
+/* spia del salvataggio (spec fondamenta F): nascosta = 'ok', gialla = 'fallback' (solo
+   localStorage), rossa = 'failed' (non scritto da nessuna parte) — v. UI.saveState in panels.js */
+#save-dot{width:9px;height:9px;border-radius:50%;flex:none;background:var(--warn)}
+#save-dot.failed{background:var(--bad)}
+.spacer{flex:1}
+.btn{border:1px solid var(--line);background:var(--panel-2);border-radius:10px;padding:0 12px;min-height:36px;color:var(--ink);display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+.btn.small{min-height:30px;padding:0 9px;font-size:12.5px;border-radius:8px}
+.btn.ghost{background:transparent;border-color:transparent}
+.btn.danger{color:var(--bad)}
+.btn.icon{width:36px;padding:0;justify-content:center;font-size:16px}
+.btn[disabled]{opacity:.45;cursor:default}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--panel-2)}
+.seg button{border:0;background:transparent;padding:4px 12px;color:var(--ink-2);white-space:nowrap;min-height:34px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;line-height:1.15}
+.seg button small{font-size:9.5px;color:var(--muted);max-width:92px;overflow:hidden;text-overflow:ellipsis}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.seg button[aria-pressed="true"] small{color:color-mix(in srgb,var(--accent-ink) 75%,transparent)}
+#tab-lock{font-size:15px;padding:4px 10px}
+/* elenco dei giri dell'attuale: si apre sotto il seg in testata */
+#vers-list{position:fixed;top:54px;right:110px;z-index:40;min-width:220px;max-width:300px;max-height:50vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2);padding:6px;display:flex;flex-direction:column;gap:2px}
+#vers-list .vrow{display:flex;align-items:center;gap:2px}
+#vers-list .vrow>button:first-child{flex:1;text-align:left;border:0;background:transparent;color:var(--ink);padding:8px 10px;border-radius:8px;font-size:13px;min-height:var(--tap);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#vers-list .vrow>button:first-child:hover{background:rgba(31,78,121,.08)}
+#vers-list .vrow>button[aria-current="true"]{background:rgba(31,78,121,.12);font-weight:700}
+#vers-list .vrow .vrn{border:0;background:transparent;color:var(--muted);min-height:var(--tap);min-width:36px;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+#vers-list .vrow .vrn:hover{color:var(--accent);background:rgba(31,78,121,.08)}
+#vers-list .vrow .vdel:hover{color:#c8321e;background:rgba(200,50,30,.08)}
+#vers-list .vdel-q{flex:1;font-size:12.5px;color:var(--ink);padding:0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#vers-list .vrow .btn.danger{border-color:#c8321e;color:#c8321e}
+#vers-list .vnew{border:1px dashed var(--line);background:transparent;color:var(--accent);padding:8px 10px;border-radius:8px;font-size:13px;min-height:var(--tap);cursor:pointer;text-align:left}
+#vers-list input{border:1px solid var(--accent);border-radius:8px;padding:8px 10px;font-size:13px;width:100%}
+/* intestazione della mappa in barra: titolo piccolo + data/reparto, tocco = pop-up coi dati e la modifica.
+   (Il blocco titolo non sta più sul foglio: sul digitale occupava solo spazio.) */
+#map-head{display:flex;align-items:center;gap:8px;border:1px solid transparent;background:transparent;border-radius:8px;padding:3px 8px;min-width:0;max-width:38vw;text-align:left;cursor:pointer}
+#map-head:hover,#map-head:focus-visible{border-color:var(--line);background:var(--panel-2);outline:none}
+#map-head .mh-txt{display:flex;flex-direction:column;min-width:0}
+#map-head b{font-weight:600;font-size:14px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#map-head small{font-size:11px;color:var(--muted);line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#map-head .mh-pen{font-size:12px;color:var(--muted)}
+#map-head b:empty::before{content:'Titolo della mappa…';color:var(--muted);font-weight:500}
+#crumbs{display:flex;gap:4px;align-items:center;font-size:12px;color:var(--muted)}
+#crumbs button{border:0;background:transparent;color:var(--accent);padding:0 2px;min-height:30px}
+main{position:relative;min-height:0;display:grid;grid-template-columns:1fr auto}
+#stage{position:relative;min-width:0;min-height:0;overflow:hidden;background:var(--desk)}
+#canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;display:block;cursor:default}
+#canvas.tool-ink,#canvas.tool-eraser{cursor:crosshair}
+#canvas.tool-pan{cursor:grab}
+#canvas.tool-create{cursor:copy}
+#canvas.tool-connect{cursor:alias}
+#canvas.tool-whatis{cursor:help}
+#canvas.picking{cursor:cell}
+#canvas.picking .el-box,#canvas.picking .el-person,#canvas.picking .el-lane,#canvas.picking .el-inventory{filter:drop-shadow(0 0 4px rgba(31,78,121,.5))}
+
+/* svg map styles (also embedded in export) */
+svg .hand{font-family:var(--hand)}
+svg .paper{fill:var(--paper);stroke:#cfc8b6;stroke-width:1}
+svg .fold{stroke:var(--paper-line);stroke-dasharray:4 6;stroke-width:1;fill:none}
+svg .pencil{stroke:var(--pencil);fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+svg .pencil-thin{stroke:var(--pencil-2);fill:none;stroke-width:1;stroke-linecap:round}
+svg text{fill:var(--pencil);pointer-events:none;font-variant-numeric:tabular-nums}
+svg .muted{fill:var(--pencil-2)}
+svg .box{fill:#fffdf7;stroke:var(--pencil);stroke-width:1.8}
+svg .lane{fill:rgba(31,78,121,.05);stroke:rgba(31,78,121,.35);stroke-dasharray:6 5;stroke-width:1}
+svg .delta{fill:var(--delta);stroke:var(--delta)}
+svg .delta-txt{fill:var(--delta)}
+svg .cloud{fill:#fff;stroke:var(--cloud);stroke-width:1.4}
+/* area sensibile invisibile: da' un bersaglio pieno agli elementi disegnati a sole linee (l'omino) */
+svg .el-hit{fill:transparent;stroke:none}
+/* problema ridotto a segnale: triangolo di allerta, si riapre toccandolo */
+svg .alert{fill:#fff4e5;stroke:var(--cloud);stroke-width:1.6;stroke-linejoin:round}
+svg .alert-mark{stroke:var(--cloud);stroke-width:2;stroke-linecap:round;fill:none}
+svg .alert-dot{fill:var(--cloud)}
+svg .alert-i{fill:var(--cloud)}
+svg .cloud-txt{fill:var(--cloud)}
+svg .fluffy{fill:#f3f8f4;stroke:var(--sage);stroke-width:1.2}
+svg .fluffy-txt{fill:var(--sage)}
+svg .burst{fill:#fff3d6;stroke:#b7791f;stroke-width:1.4}
+svg .burst-txt{fill:#7a4f0e}
+svg .inv{fill:#fff;stroke:var(--pencil);stroke-width:1.5}
+svg .chan{fill:#fff;stroke:var(--pencil-2);stroke-width:1}
+svg .chan-handle{cursor:grab}
+svg .chan-handle:hover .chan{stroke:var(--sel);stroke-width:1.6}
+svg .handle.end{cursor:crosshair}
+svg .placeholder:hover rect{fill:rgba(31,78,121,.09)}
+/* lo strato del riepilogo è inerte (vedi R.init): i riquadri d'invito sono l'eccezione, si toccano */
+svg .placeholder{pointer-events:auto}
+/* bersagli evidenziati quando lo strumento li richiede */
+svg.t-delta .conn[data-type="flow"] .conn-hit{stroke:rgba(200,50,30,.16)}
+svg.t-delta .conn[data-type="flow"] .pencil{stroke:#c8321e}
+svg.t-flow .el-box .box{stroke:#1f4e79;stroke-width:2.4;filter:drop-shadow(0 0 4px rgba(31,78,121,.45))}
+svg.t-request .el-person .pencil{stroke:#1f4e79;stroke-width:2.2}
+svg.t-request .el-box .box{stroke:#1f4e79;stroke-width:2.2}
+svg .sel-ring.ok{stroke:#3f7d5a;stroke-width:2.5;stroke-dasharray:none}
+svg .chan-txt{font-size:9px;letter-spacing:.5px;fill:var(--pencil)}
+svg .stroke{fill:none;stroke-linecap:round;stroke-linejoin:round}
+svg .va{stroke:var(--sage);stroke-width:2.2;fill:none}
+svg .nva{stroke:var(--delta);stroke-width:2.2;fill:none}
+svg .sel-ring{fill:none;stroke:var(--sel);stroke-width:1.5;stroke-dasharray:5 4;pointer-events:none}
+svg .lock-link{stroke:var(--sel);stroke-width:1.2;stroke-dasharray:2 3;opacity:.85;pointer-events:none}
+svg .lock-parent{fill:none;stroke:var(--sel);stroke-width:1;stroke-dasharray:2 3;opacity:.7;pointer-events:none}
+svg .lock-child{fill:rgba(31,78,121,.06);stroke:var(--sel);stroke-width:1;stroke-dasharray:2 3;opacity:.8;pointer-events:none}
+/* percorso di ciò che si è selezionato: un alone dietro le frecce e un anello sui passi toccati.
+   Chiaro e senza tratteggio per non confondersi con la selezione (tratteggiata) né col segno a matita. */
+svg .trace-line{fill:none;stroke:var(--sel);stroke-opacity:.2;stroke-width:9;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+svg .trace-el{fill:rgba(31,78,121,.05);stroke:var(--sel);stroke-opacity:.35;stroke-width:2;pointer-events:none}
+svg .lock-count rect{fill:#fff;stroke:var(--sel);stroke-width:1}
+svg .lock-count text{fill:var(--sel);font-size:10px;font-weight:700;font-family:var(--ui)}
+#canvas.picking .el-box .box,#canvas.picking .el-person .pencil,#canvas.picking .el-lane .lane,#canvas.picking .el-inventory .inv{stroke:var(--sel);stroke-width:2.2}
+#canvas.picking .conn .pencil{stroke:var(--sel);stroke-width:2.4}
+svg .handle{fill:#fff;stroke:var(--sel);stroke-width:1.5;cursor:nwse-resize}
+svg .lasso{fill:rgba(31,78,121,.08);stroke:var(--sel);stroke-dasharray:4 4;stroke-width:1}
+svg .ghost{stroke:var(--sel);stroke-dasharray:5 4;stroke-width:1.5;fill:none;pointer-events:none}
+svg .el{cursor:move}
+svg .link-badge{fill:var(--accent)}
+svg .link-badge-txt{fill:#fff;font-size:10px;font-weight:700}
+/* i due bersagli (apri il foglio / sbircia) si colpiscono col dito: l'area sensibile e' il gruppo
+   intero, con il suo disco trasparente da r=20 — il disegno piccolo resta solo un disegno */
+svg .link-badge-g,svg .peek-badge-g{cursor:pointer}
+/* un passo che CONTIENE un sotto-foglio si vede: bordo una volta e mezzo il normale (3 contro 1,8
+   di svg .box — «poco piu' spesso, che si veda che ha un contorno diverso», deciso da Gt a schermo).
+   E' una classe, non uno stile in linea: il blu di «scegli il bersaglio» (svg.t-flow,
+   #canvas.picking) ha piu' specificita' e deve continuare a vincere mentre si traccia una freccia. */
+svg .box.deep{stroke-width:3}
+/* la tinta del passo: riempimento tenue e bordo appena piu' presente arrivano come variabili dal
+   disegno (stessa famiglia di colore, due intensita'); il sotto-foglio la ripete come sfondo (map.tint) */
+svg .box.tinted{fill:var(--tint-fill);stroke:var(--tint-ink)}
+/* l'occhio accanto al badge: apre l'anteprima del foglio dietro il link */
+svg .peek-badge{fill:#fffdf7;stroke:var(--accent);stroke-width:1.2;cursor:pointer}
+svg .peek-eye{fill:none;stroke:var(--accent);stroke-width:1.4;stroke-linejoin:round}
+svg .peek-pupil{fill:var(--accent);pointer-events:none}
+svg .peek-badge-g:hover .peek-badge{stroke-width:1.8}
+svg .conn-hit{stroke:transparent;stroke-width:16;fill:none;cursor:pointer}
+svg .highlight rect,svg .highlight path,svg .highlight circle{filter:drop-shadow(0 0 5px rgba(31,78,121,.9))}
+svg .flash{animation:flash 1.2s ease-out 2}
+@keyframes flash{0%{opacity:1}50%{opacity:.25}100%{opacity:1}}
+
+/* palette */
+#palette{position:absolute;left:50%;bottom:calc(12px + env(safe-area-inset-bottom));transform:translateX(-50%);display:flex;gap:4px;padding:6px;background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);max-width:calc(100% - 24px);overflow-x:auto;z-index:5}
+#palette .tool{position:relative;width:52px;height:52px;border-radius:12px;border:1px solid transparent;background:transparent;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;color:var(--ink);flex:none;padding:0}
+#palette .tool svg{width:22px;height:22px}
+#palette .tool .lbl{font-size:9.5px;line-height:1;color:inherit;opacity:.85;white-space:nowrap}
+@media (max-width:640px){#palette .tool{width:44px;height:44px}#palette .tool .lbl{display:none}}
+#palette .tool[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+#palette .tool:hover{border-color:var(--line)}
+#palette .sep{width:1px;background:var(--line);margin:6px 3px;flex:none}
+#palette .tool .lbl{pointer-events:none}
+#palette .tool.suggest::after,#more-tools .tool.suggest::after{content:"";position:absolute;inset:-3px;border-radius:14px;border:2px solid var(--warn);animation:pulse 1.6s ease-in-out infinite;pointer-events:none}
+@keyframes pulse{0%,100%{opacity:.25}50%{opacity:1}}
+#more-tools{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(80px + env(safe-area-inset-bottom));background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:8px;display:grid;grid-template-columns:repeat(4,1fr);gap:4px;z-index:6;max-width:calc(100% - 24px)}
+#more-tools .tool{position:relative;min-width:78px;padding:8px 6px;display:flex;flex-direction:column;gap:4px;font-size:11px;align-items:center;border-radius:10px;border:1px solid transparent;background:transparent;color:var(--ink);min-height:var(--tap)}
+#more-tools .tool svg{width:24px;height:24px}
+#more-tools .tool:hover{border-color:var(--line)}
+#more-tools .tool[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+/* azioni rapide: menu di icone rotonde ad arco attorno all'elemento selezionato (stile .pm-btn, come il
+   menu del rilascio nel vuoto). Il contenitore è un punto: i bottoni sono figli posizionati dal JS. */
+#quick{position:absolute;z-index:7;width:0;height:0}
+#quick .qinfo{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;font-size:11px;color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:3px 10px;box-shadow:var(--shadow)}
+.howto{padding-left:20px;margin:0}.howto li{margin-bottom:10px;font-size:13.5px}
+#suggest{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom));background:var(--ink);color:var(--desk);padding:8px 12px;border-radius:12px;font-size:13px;box-shadow:var(--shadow);display:flex;gap:10px;align-items:center;z-index:6;max-width:min(560px,90vw)}
+#suggest button{border:0;background:transparent;color:inherit;font-weight:600;text-decoration:underline;padding:0;min-height:30px}
+#suggest .x{opacity:.7;text-decoration:none;font-size:16px}
+#zoomctl{position:absolute;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:4px;z-index:5}
+#zoomctl .btn{width:40px;height:40px;padding:0;justify-content:center;background:var(--panel)}
+header .btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+#coach-fab{position:absolute;right:12px;top:12px;z-index:5;width:48px;height:48px;border-radius:50%;background:var(--accent);color:var(--accent-ink);border:0;box-shadow:var(--shadow);font-size:20px;display:grid;place-items:center}
+#coach-fab.busy{animation:pulse 1.2s infinite}
+#hint{position:absolute;left:50%;top:12px;transform:translateX(-50%);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:12.5px;color:var(--ink-2);z-index:4;max-width:60vw;text-align:center;box-shadow:var(--shadow)}
+
+/* popover */
+#pop{position:absolute;z-index:8;overscroll-behavior:contain;width:330px;max-width:calc(100vw - 20px);max-height:min(72vh,600px);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:10px 12px}
+#pop .pop-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+#pop .pop-title{flex:1;min-width:0}
+#pop .pop-title b{font-size:13.5px;display:block}
+#pop .pop-sub{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#pop .pop-preview{width:48px;height:48px;flex:none;background:var(--paper);border:1px solid #e2dccc;border-radius:8px;overflow:hidden}
+#pop details.adv{margin:2px 0 8px;border-top:1px dashed var(--line);padding-top:6px}
+#pop details.adv summary{cursor:pointer;font-size:12px;color:var(--accent);font-weight:600;padding:4px 0;list-style-position:inside}
+#pop details.adv[open] summary{margin-bottom:6px}
+/* le sezioni dei livelli di analisi (spec D, F1+): stesso idioma di details.adv — l'obbligo F1
+   del ledger: uscivano senza stile */
+#pop details.pop-section{margin:2px 0 8px;border-top:1px dashed var(--line);padding-top:6px}
+#pop details.pop-section summary{cursor:pointer;font-size:12px;color:var(--accent);font-weight:600;padding:4px 0;list-style-position:inside}
+#pop details.pop-section[open] summary{margin-bottom:6px}
+/* F1 — la sezione «Tempi e variabilità» */
+.tmp-stats{display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;margin-bottom:6px}
+.tmp-riga{display:flex;justify-content:space-between;gap:8px;font-size:12px}
+.tmp-riga span{color:var(--muted)}
+.tmp-classe{font-weight:700}
+.tmp-classe.stabile{color:#3f7d5a}
+.tmp-classe.moderata{color:#b98900}
+.tmp-classe.alta{color:#c8321e}
+.tmp-histo,.tmp-spark{display:block;width:100%;height:auto;margin:4px 0;background:var(--paper,#fffdf7);border:1px solid var(--line);border-radius:6px}
+.tmp-obs-list{margin:6px 0 2px}
+.tmp-obs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:3px 0;border-bottom:1px dashed var(--line);font-size:12px}
+.tmp-obs:last-child{border-bottom:0}
+.tmp-obs .k{color:var(--muted);flex:1;overflow-wrap:anywhere}
+.tmp-obs .tmp-nota{flex-basis:100%;font-size:11px;color:var(--muted);padding-left:2px;overflow-wrap:anywhere}
+.tmp-soglie{margin-top:6px}
+.mis-turno{margin:8px 0}
+#pop .lockrow{margin:-2px 0 8px}
+#pop .pop-actions{border-top:1px solid var(--line);padding-top:8px;margin-top:4px}
+#pop.sheet{left:8px!important;right:8px;top:auto!important;bottom:calc(84px + env(safe-area-inset-bottom));width:auto;max-width:none;max-height:min(55vh,520px);border-radius:14px}
+#pop .why{border-left:3px solid var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent);padding:6px 8px;border-radius:0 8px 8px 0;font-size:12.5px;margin:6px 0 8px;color:var(--ink-2)}
+/* pannello del passo (variante B, spec 2026-08-21): fila di tondi in cima — gli stessi .pm-btn del
+   menu rotondo, ma in flusso invece che posizionati ad arco */
+/* Il pannello del passo e' piu' largo degli altri (380 invece di 330): con sette tondi da 44 px
+   la fila ne chiede 327, e a 330 il pannello ne offriva 289 (il rullo di scorrimento ne mangia 15).
+   Cosi' i tondi andavano a capo e il solo «Chiudi» finiva su una seconda riga, mangiandosi i 48 px
+   guadagnati dal pannello compatto: misurato 499 px con due attivita', contro i 405 del disegno.
+   Largo 380: una riga sola, la fila delle azioni scende da 111 a 75 px, il pannello da 499 a 415. */
+#pop.step:not(.sheet){width:380px}
+#pop .pop-rounds{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-bottom:8px}
+#pop .pop-rounds .pm-btn{position:static;margin:0;width:44px;height:44px;flex:none;animation:none}
+#pop .pop-rounds .pm-btn svg{width:18px;height:18px}
+#pop .pop-rounds .pm-btn span{font-size:8px;max-width:42px}
+#pop .pop-rounds .pm-btn.a-destra{margin-left:auto}
+#pop .pop-rounds .pm-btn.aperto{border-color:var(--accent);color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+#pop .pop-rounds .pm-btn.validata{border-color:#3f7d5a;color:#3f7d5a;background:color-mix(in srgb,#3f7d5a 12%,var(--panel))}
+/* in vista: titolo, attività numerate, tempi a riquadri */
+#pop .pop-ptitle{border:1px solid var(--line);background:var(--panel-2);color:var(--ink);border-radius:8px;padding:8px 10px;width:100%;min-height:40px;font-size:15px;font-weight:600;margin-bottom:6px}
+#pop .pop-sec{font-size:10.5px;color:var(--muted);font-weight:700;letter-spacing:.4px;text-transform:uppercase;margin:8px 0 4px}
+/* la sezione «Tempi» porta in coda il tasto ⏱ del cronometro: la scritta a sinistra, il tasto a destra */
+#pop .pop-sec{display:flex;align-items:center;gap:8px}
+#pop .pop-sec .btn{margin-left:auto;text-transform:none;letter-spacing:0;font-weight:600}
+/* la lista cresce con le attività, ma non oltre ~5 righe: tempi e azioni restano in vista senza
+   scorrere tutto il pannello (il Prelievo di prova ne ha 7: dentro la lista si scorre) */
+#pop .acts{border:1px solid var(--line);border-radius:10px;background:var(--panel-2);padding:2px 6px;margin-bottom:6px;max-height:208px;overflow-y:auto}
+#pop .act-row{display:flex;align-items:center;gap:6px}
+#pop .act-row .act-n{flex:none;width:16px;text-align:right;font-size:11px;color:var(--muted)}
+#pop .act-row input{flex:1;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;color:var(--ink);padding:6px 2px;min-height:32px;font-size:13px}
+#pop .act-add{margin:4px 0 4px 20px}
+#pop .times{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:4px}
+#pop .tbox{display:flex;flex-direction:column;align-items:center;gap:1px;border:1px solid var(--line);border-radius:10px;background:var(--panel-2);padding:4px 6px 6px}
+#pop .tbox span{font-size:10px;color:var(--muted);font-weight:600}
+#pop .tbox input{border:0;background:transparent;color:var(--ink);width:100%;text-align:center;font-size:19px;font-weight:700;min-height:30px;padding:1px}
+/* sola lettura (✓ validato), non «spento»: il contenuto si legge come prima */
+#pop .pop-ptitle:disabled,#pop .tbox input:disabled,#pop .act-row input:disabled{opacity:1;color:var(--ink);-webkit-text-fill-color:var(--ink)}
+/* i pannellini si aprono dentro il pannello, sotto i tondi e sopra il contenuto: il box resta
+   visibile sotto in trasparenza — nessuna finestra sopra un'altra finestra. La `top` la mette il JS. */
+#pop .pop-mini{position:absolute;left:8px;right:8px;bottom:8px;z-index:3;overflow:auto;background:color-mix(in srgb,var(--panel) 88%,transparent);border:1px solid var(--line);border-radius:12px;padding:10px;box-shadow:var(--shadow)}
+#pop .pop-mini h4{margin:0 0 6px;font-size:12.5px}
+#pop .pop-mini h4 .ind{color:var(--accent)}
+.field{display:flex;flex-direction:column;gap:3px;margin-bottom:8px}
+.field label{font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.2px}
+.field input,.field select,.field textarea{border:1px solid var(--line);background:var(--panel-2);color:var(--ink);border-radius:8px;padding:7px 9px;width:100%;min-height:36px}
+.field input:hover,.field select:hover,.field textarea:hover{border-color:var(--muted)}
+.field textarea{min-height:60px;resize:vertical}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+.check{display:flex;gap:8px;align-items:flex-start;margin:5px 0;font-size:13px}
+.check input{margin-top:3px;width:18px;height:18px}
+.hint{font-size:12px;color:var(--muted)}
+.actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+
+/* drawer */
+#drawer{width:360px;max-width:100vw;border-left:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0;overscroll-behavior:contain}
+#drawer.closed{display:none}
+#drawer .tabs{display:flex;border-bottom:1px solid var(--line)}
+#drawer .tabs button{flex:1;border:0;background:transparent;padding:10px 6px;font-weight:600;color:var(--muted);border-bottom:2px solid transparent;min-height:44px}
+#drawer .tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+#drawer .tabs .close{flex:none;width:44px}
+.pane{flex:1;min-height:0;display:flex;flex-direction:column}
+.pane-body{overflow:auto;padding:12px;flex:1;min-height:0}
+/* pannello Guida: promemoria del metodo, una sezione alla volta */
+#guidepop{position:absolute;right:10px;top:52px;z-index:19;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);width:min(380px,calc(100vw - 20px));max-height:calc(100vh - 70px);overflow-y:auto;padding:6px;display:flex;flex-direction:column}
+#guidepop .gp-head{display:flex;align-items:center;gap:8px;padding:6px 6px 8px 10px}
+#guidepop .gp-head .hint{font-size:12px}
+.gp-sechead{padding:12px 10px 4px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--accent);border-bottom:1px solid var(--line);margin-bottom:2px}
+.gp-item{display:flex;align-items:center;gap:10px;border:0;background:transparent;text-align:left;padding:8px 10px;border-radius:8px;min-height:38px;color:var(--ink);font-weight:600;font-size:13px}
+.gp-item:hover{background:var(--panel-2)}
+.gp-n{width:21px;height:21px;flex:none;border-radius:50%;border:1.5px solid var(--line);display:grid;place-items:center;font-size:11px;font-weight:600;color:var(--muted)}
+.gp-dot{width:6px;height:6px;flex:none;border-radius:50%;background:var(--muted);margin:0 7.5px}
+.gp-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px 6px}
+.gp-chip{display:flex;align-items:center;gap:8px;border:0;background:transparent;text-align:left;padding:5px 6px;border-radius:8px;min-height:44px;color:var(--ink);font-size:12px;font-weight:600}
+.gp-chip:hover{background:var(--panel-2)}
+.gp-glyph{width:44px;height:36px;flex:none;background:var(--paper);border:1px solid #e2dccc;border-radius:7px;display:grid;place-items:center;padding:2px;overflow:hidden}
+.gp-glyph .lg-g{width:100%;height:100%;overflow:visible}
+.gp-q{font-style:italic;color:var(--accent);margin-top:6px}
+/* scheda flottante di una voce della Guida pratica */
+#gpcard{position:fixed;z-index:21;width:min(330px,calc(100vw - 20px));background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:10px 12px;max-height:calc(100vh - 80px);overflow-y:auto}
+#gpcard.sheet{left:50%;top:70px;transform:translateX(-50%)}
+#gpcard .gpc-head{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+#gpcard .gpc-head b{font-size:14px}
+#gpcard .gpc-body{font-size:12.8px;color:var(--ink-2);line-height:1.5}
+/* il pop-up dell'occhio: piu' largo della scheda, perche' ospita l'anteprima del foglio */
+#gpcard.peek{width:min(420px,calc(100vw - 20px))}
+/* l'anteprima e' l'SVG del foglio ritagliato sul contenuto (R.peekSVG usa exportSVG con crop):
+   si rimpicciolisce da solo entro i due limiti (larghezza della scheda, 220px di altezza)
+   conservando le proporzioni */
+.peek-view{border:1px solid var(--line);border-radius:8px;background:var(--paper);overflow:hidden;margin-bottom:8px}
+.peek-view svg{display:block;width:100%;height:auto;max-height:220px}
+/* foglio ancora vuoto: niente francobollo del nulla, una riga che lo dice */
+.peek-view.peek-empty{padding:16px 14px;font-size:12.5px;color:var(--muted);text-align:center}
+/* la striscia del flusso nell'occhio: la catena del sotto-foglio in una riga sola, che scorre di
+   lato se e' lunga. Il numero del passo e' quello che ha sul foglio; ▼ rossa = attesa col tempo;
+   ⑂ = il flusso si divide li' (non e' una catena semplice) */
+.peek-strip{display:flex;align-items:center;gap:6px;overflow-x:auto;padding:2px 2px 8px;margin-bottom:8px;border-bottom:1px dashed var(--line);font-size:12.5px;white-space:nowrap}
+.peek-strip .ps-box b{color:var(--accent);margin-right:1px}
+.peek-strip .ps-delta{color:var(--delta);font-weight:700}
+.peek-strip .ps-fork{color:var(--accent);font-weight:700}
+.peek-strip .ps-sep{color:var(--muted)}
+.gp-lint{display:flex;flex-direction:column;gap:6px;padding:8px 10px 4px;border-top:1px solid var(--line);margin-top:6px}
+/* le spunte «un passo per ogni attivita'» nel pop-up del sotto-foglio: oltre le ~6 righe l'elenco
+   scorre da se', invece di spingere i bottoni fuori dallo schermo (un passo puo' averne dieci) */
+.dn-acts{max-height:186px;overflow-y:auto}
+.gp-foot{margin:6px 10px 8px;font-size:12px;color:var(--ink-2)}
+.chev{width:15px;height:15px;flex:none;margin-left:auto;transition:transform .15s;color:var(--muted)}
+.gp-sec[aria-expanded="true"] .chev,.sub-head[aria-expanded="true"] .chev,.lg-sec[aria-expanded="true"] .chev{transform:rotate(90deg)}
+.coachnote{border-left:3px solid var(--accent);padding:6px 10px;background:color-mix(in srgb,var(--accent) 8%,transparent);border-radius:0 8px 8px 0;margin:8px 0 10px;font-size:13px}
+.coachnote b{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--accent);margin-bottom:2px}
+.card{border:1px solid var(--line);border-radius:var(--radius);padding:10px;margin-bottom:10px;background:var(--panel-2)}
+.card h4{margin:0 0 6px;font-size:13px}
+.lint{display:flex;flex-direction:column;gap:6px}
+.lint .chip,.gp-lint .chip{font-size:12.5px;border-radius:10px;padding:6px 10px;border:1px solid var(--line);background:var(--panel-2);text-align:left;color:var(--ink);min-height:32px}
+.lint .chip.warn,.gp-lint .chip.warn{border-color:color-mix(in srgb,var(--warn) 50%,transparent)}
+.lint .chip.bad,.gp-lint .chip.bad{border-color:color-mix(in srgb,var(--bad) 50%,transparent)}
+.lint .chip.ok,.gp-lint .chip.ok{color:var(--ok)}
+table.plan{font-variant-numeric:tabular-nums;width:100%;border-collapse:collapse;font-size:12.5px}
+table.plan th,table.plan td{border-bottom:1px solid var(--line);padding:3px;text-align:left;vertical-align:top}
+table.plan input{width:100%;border:1px solid transparent;background:transparent;padding:5px;border-radius:6px;min-height:32px}
+table.plan input:focus{border-color:var(--line);background:var(--panel-2)}
+.cmp{display:grid;grid-template-columns:1fr auto auto auto;gap:4px 10px;font-size:13px;align-items:center}
+.cmp .h{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+.cmp .good{color:var(--ok);font-weight:600}.cmp .badv{color:var(--bad);font-weight:600}
+/* selettori visivi (facce, icone) */
+.picker{display:flex;flex-wrap:wrap;gap:4px}
+.picker .pick{display:flex;flex-direction:column;align-items:center;gap:2px;width:66px;padding:4px 2px;border:1px solid var(--line);border-radius:8px;background:var(--panel-2);font-size:9.5px;color:var(--ink-2);min-height:44px;line-height:1.1}
+.picker .pick svg{width:30px;height:30px;overflow:visible;background:var(--paper);border-radius:50%}
+.picker.icons .pick svg{border-radius:6px}
+.picker .pick.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset;color:var(--accent);font-weight:600}
+.picker .pick span{max-width:62px;text-align:center;white-space:normal;line-height:1.05}
+/* la palette del passo: pastiglie tonde senza parole; «nessuna» e' la pastiglia vuota barrata */
+.picker.tints .pick{width:34px;min-height:34px;padding:3px}
+.picker.tints .sw{width:22px;height:22px;border-radius:50%;border:1.5px solid var(--line);display:block}
+.picker.tints .sw.none{background:linear-gradient(to top right,transparent 44%,var(--muted) 46%,var(--muted) 54%,transparent 56%)}
+/* le forme del problema: la sagoma vera, non il suo nome — si sceglie guardando */
+.picker.forme .pick{width:52px;min-height:44px}
+.picker.forme .pick svg{width:38px;height:30px;border-radius:6px;color:var(--cloud)}
+.pick-group{font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:6px 0 3px}
+svg .icon-bg{fill:#fffdf7;stroke:var(--pencil-2);stroke-width:1}
+/* legenda completa (cassetto) */
+.lg-var{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:10px}
+.lg-var span{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:var(--ink-2)}
+.lg-var span .lg-g{width:30px;height:24px;overflow:hidden;flex:none;background:var(--paper);border-radius:4px}
+.lg-var .lg-line{flex-basis:100%;align-items:flex-start}
+.lg-var .lg-line .lg-g{width:26px;height:26px;margin-top:-2px}
+.lg-var span b{font-weight:600;color:var(--ink)}
+/* coach chat */
+#chat{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:10px;min-height:0}
+.msg{max-width:100%;border-radius:12px;padding:8px 11px;font-size:13.5px;white-space:pre-wrap;word-wrap:break-word;-webkit-user-select:text;user-select:text}
+.msg.user{align-self:flex-end;background:var(--accent);color:var(--accent-ink);border-bottom-right-radius:4px;max-width:90%}
+.msg.assistant{align-self:stretch;background:var(--panel-2);border:1px solid var(--line);border-bottom-left-radius:4px}
+.msg.system{align-self:center;color:var(--muted);font-size:12px;text-align:center}
+.msg .patch{margin-top:8px;border:1px dashed var(--accent);border-radius:8px;padding:6px 8px;background:color-mix(in srgb,var(--accent) 6%,transparent);font-size:12.5px}
+.msg .patch ul{margin:4px 0 6px 16px;padding:0}
+.msg.assistant h3{font-size:14px;margin:6px 0 2px}
+.msg.assistant ul,.msg.assistant ol{margin:4px 0;padding-left:18px}
+.msg.assistant p{margin:4px 0}
+.msg.assistant code{font-family:var(--mono);font-size:12px;background:var(--panel);padding:0 3px;border-radius:4px}
+.msg.assistant pre{overflow:auto;background:var(--panel);padding:6px;border-radius:6px}
+.quick{display:flex;gap:6px;flex-wrap:wrap;padding:6px 12px;border-top:1px solid var(--line)}
+.composer{display:flex;gap:6px;padding:8px 12px 12px;border-top:1px solid var(--line);align-items:flex-end}
+.composer textarea{flex:1;border:1px solid var(--line);background:var(--panel-2);border-radius:10px;padding:8px 10px;resize:none;min-height:40px;max-height:140px}
+.status{font-size:11px;color:var(--muted);padding:0 12px 6px;display:flex;gap:6px;align-items:center}
+.status .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none}
+.status .dot.on{background:var(--ok)}
+.status .dot.err{background:var(--bad)}
+.typing::after{content:"…";animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.3}}
+
+/* dialogs & menus */
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--panel);color:var(--ink);padding:0;max-width:560px;width:min(560px,94vw);box-shadow:var(--shadow)}
+dialog::backdrop{background:rgba(10,14,20,.45)}
+/* avviso dei lavori in corso: il cantiere si vede prima delle parole, e lo sfondo è più fitto degli
+   altri dialoghi — questo non è un pannello fra i tanti, è un cartello all'ingresso */
+#dlg-wip{max-width:460px;width:min(460px,94vw)}
+#dlg-wip::backdrop{background:rgba(10,14,20,.62)}
+#dlg-wip .d-head{gap:8px;font-size:15px}
+#dlg-wip .wip-ic{font-size:22px;line-height:1}
+#dlg-wip .wip-forte{margin:0 0 10px;font-size:14px;line-height:1.45}
+#dlg-wip .wip-lista{margin:0 0 12px;padding-left:18px;font-size:13px;line-height:1.5;color:var(--ink-2)}
+#dlg-wip .wip-lista li{margin-bottom:5px}
+#dlg-wip #wip-ver{text-align:center}
+dialog .d-head{padding:12px 16px;border-bottom:1px solid var(--line);font-weight:600;display:flex;align-items:center}
+dialog .d-body{padding:14px 16px;max-height:70vh;overflow:auto}
+dialog .d-foot{padding:10px 16px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end}
+.presets{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.presets .btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+.notice{font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--panel-2)}
+.notice.warn{color:var(--warn)}
+#menu{position:absolute;right:10px;top:52px;z-index:20;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:6px;min-width:250px;max-height:calc(100vh - 70px);overflow-y:auto;display:flex;flex-direction:column}
+#menu button{border:0;background:transparent;text-align:left;padding:10px 12px;border-radius:8px;min-height:40px;color:var(--ink);display:flex;align-items:center;gap:11px}
+#menu button>svg:first-child{width:18px;height:18px;flex:none;color:var(--ink-2)}
+#menu button.danger>svg:first-child{color:inherit}
+#menu button:hover{background:var(--panel-2)}
+#menu hr{border:0;border-top:1px solid var(--line);margin:4px 0;width:100%}
+#menu .submenu{display:flex;flex-direction:column;margin:0 0 4px 20px;padding-left:6px;border-left:2px solid var(--line)}
+#menu .submenu.hidden{display:none}
+#menu .tag-alfa{font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn);border-radius:999px;padding:2px 7px;font-weight:700}
+#maplist{max-height:50vh;overflow:auto}
+.maprow{display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;border:1px solid var(--line);margin-bottom:6px}
+
+/* ---------- Misura: il cronometro del giro ----------
+   Si usa camminando, con una mano sola: il numero grande si legge di sfuggita e i due tasti si
+   azzeccano senza guardare (min-height 54, la taglia del pollice, non quella del mouse). */
+#dlg-misura .d-body{padding-top:10px}
+.mis-crono{text-align:center;border:1px solid var(--line);border-radius:12px;padding:12px 10px;background:var(--panel-2);margin-bottom:10px}
+.mis-time{font-size:46px;line-height:1.05;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:1px}
+.mis-what{font-size:13px;color:var(--muted);margin:4px 0 10px}
+.mis-acts{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:6px}
+.btn.big{min-height:54px;padding:0 20px;font-size:15px;border-radius:12px}
+.mis-list{margin:8px 0}
+.mis-row{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:8px;border:1px solid var(--line);margin-bottom:5px}
+.mis-row b{font-weight:600;font-size:13px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mis-row .k{font-size:12px;color:var(--muted);white-space:nowrap}
+.mis-row .btn{min-width:44px;min-height:44px;font-size:15px}
+.mis-row.now{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent)}
+.mis-row.fuori{border-style:dashed}
+.mis-mis{border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:6px}
+.mis-mis .mm-head{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
+.mis-mis .mm-head b{font-size:13px}
+.mis-mis .mm-head .k{font-size:12px;color:var(--muted)}
+.mm-chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.mm-chip{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:999px;padding:4px 9px;font-size:12px;min-height:30px;cursor:pointer}
+.mm-chip:hover{border-color:var(--bad);color:var(--bad)}
+.mm-chip.breve{border-color:var(--warn);color:var(--warn)}
+.mm-chip span{opacity:.5;margin-left:2px}
+.maprow b{flex:1;font-size:13px}
+.maprow .k{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+#toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--desk);padding:8px 14px;border-radius:999px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:50}
+#toast.show{opacity:1}
+/* UI.toastAction (proposte di fase, spec fondamenta D): il toast normale non riceve tocchi
+   (pointer-events:none, sopra) perché nessuno ha mai dovuto toccarlo — qui dentro c'è un bottone
+   vero, e SOLO lui deve tornare toccabile (il resto della pillola resta passante come sempre). */
+#toast.toast-action{border-radius:16px;display:inline-flex;align-items:center;gap:8px}
+#toast.toast-action button{pointer-events:auto}
+
+/* schermo stretto oppure basso (telefono in orizzontale: ~950x430): il cassetto si sovrappone invece di rubare spazio */
+@media (max-width:900px),(max-height:560px){
+  main{grid-template-columns:1fr}
+  #drawer{position:absolute;right:0;top:0;bottom:0;width:min(420px,100vw);z-index:9;box-shadow:var(--shadow)}
+  #map-head{max-width:40vw}
+  header .hide-m{display:none}
+}
+
+/* la riga della versione: si legge quando serve, non ruba attenzione al resto del menu */
+#menu .ver-row{display:flex;flex-direction:column;align-items:flex-start;gap:1px;font-size:11px;color:var(--muted);padding-top:6px;padding-bottom:6px}
+#menu .ver-row .hint{font-size:10px;opacity:.75;margin:0}
+
+/* ---------- telefono (stretto o basso): header su una riga sola ---------- */
+#menu .compact-only{display:none}
+@media (max-width:760px),(max-height:560px){
+  header.bar{flex-wrap:nowrap;gap:6px;padding:5px 8px;min-height:auto}
+  header .brand span{display:none}
+  header .seg,header #btn-maps{display:none}
+  #map-head{max-width:none;min-width:0;flex:1}
+  #crumbs{display:none}
+  /* anche le sottoschede si nascondono: su schermo stretto una seconda riga toglie troppo foglio,
+     e la discesa resta affidata alla cartina */
+  #subtabs{display:none}
+  #menu .compact-only{display:block}
+  #hint{max-width:80vw}
+}
+
+/* ---------- strumenti in colonna a sinistra (invece che in basso al centro) ---------- */
+#app.tools-left #palette{left:calc(8px + env(safe-area-inset-left));top:50%;bottom:auto;transform:translateY(-50%);flex-direction:column;max-width:none;max-height:calc(100% - 16px);overflow-x:hidden;overflow-y:auto;scrollbar-width:none}
+#app.tools-left #palette::-webkit-scrollbar{display:none}
+#app.tools-left #palette .sep{width:auto;height:1px;margin:3px 8px}
+#app.tools-left #more-tools{left:calc(76px + env(safe-area-inset-left));top:50%;bottom:auto;transform:translateY(-50%);max-height:calc(100% - 16px);overflow-y:auto}
+/* col foglio libero a sinistra, il pulsante dell'interfaccia si sposta per non finirci sopra */
+#app.tools-left #ui-toggle{left:auto;right:calc(12px + 56px)}
+/* linguetta a bordo schermo: ripiega ed evoca la barra degli strumenti */
+#palette-toggle{position:absolute;left:0;top:50%;transform:translateY(-50%);z-index:6;width:24px;height:64px;border:1px solid var(--line);border-left:0;border-radius:0 10px 10px 0;background:var(--panel);box-shadow:var(--shadow);color:var(--ink-2);display:grid;place-items:center;padding:0;touch-action:none}
+/* area di tocco allargata oltre il disegno: col dito 24px non bastano */
+#palette-toggle::before{content:'';position:absolute;top:-14px;bottom:-14px;left:0;right:-10px}
+#palette-toggle .chev{margin-left:0;transition:transform .15s}
+#app.palette-hidden #palette,#app.palette-hidden #more-tools{display:none}
+#app.palette-hidden #palette-toggle .chev{transform:rotate(180deg)}
+#app.clean #palette-toggle{display:none}
+/* con gli strumenti in colonna la linguetta si sposta al bordo destro della colonna, altrimenti la coprirebbe */
+#app.tools-left:not(.palette-hidden) #palette-toggle{left:calc(76px + env(safe-area-inset-left))}
+@media (max-height:560px){ /* telefono in orizzontale: la colonna non ci starebbe tutta (gli ultimi strumenti sparivano
+  sotto lo scorrimento), quindi niente etichette e avvolgimento su due colonne: tutti gli strumenti restano raggiungibili */
+  #app.tools-left #palette{flex-wrap:wrap;overflow-y:hidden}
+  #app.tools-left #palette .tool{width:44px;height:44px}
+  #app.tools-left #palette .tool .lbl{display:none}
+  #app.tools-left #palette .sep{display:none}
+}
+
+/* ---------- interfaccia nascosta: resta solo il foglio ---------- */
+#ui-toggle{position:absolute;left:12px;top:12px;z-index:8;width:40px;height:40px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--ink-2);opacity:.72;display:grid;place-items:center;font-size:17px;box-shadow:var(--shadow)}
+#ui-toggle:hover{opacity:1}
+#ui-toggle[aria-pressed="true"]{opacity:.55}
+/* senza header resta una sola riga: va dichiarata 1fr, altrimenti main finisce nella riga "auto" e collassa a zero */
+#app.clean{grid-template-rows:1fr}
+#app.clean header.bar{display:none}
+#app.clean #palette,#app.clean #more-tools,#app.clean #zoomctl,#app.clean #coach-fab,#app.clean #suggest{display:none}
+#app.clean #ui-toggle{opacity:.5}
+
+/* ---------- dispositivi a tocco: bersagli da 44 px (--tap) ---------- */
+@media (pointer:coarse){
+  .btn{min-height:var(--tap)}
+  .btn.icon{width:var(--tap)}
+  .btn.small{min-height:38px;padding:0 11px}
+  #zoomctl .btn{width:var(--tap);height:var(--tap)}
+  #ui-toggle{width:var(--tap);height:var(--tap)}
+  #menu button{min-height:var(--tap)}
+  #drawer .tabs button{min-height:var(--tap)}
+}
+@media print{
+  @page{size:A3 landscape;margin:6mm}
+  body{background:#fff}
+  header,#palette,#zoomctl,#coach-fab,#hint,#drawer,#pop,#toast,#suggest,#more-tools,#quick{display:none!important}
+  main{display:block}
+  #stage{position:static;overflow:visible}
+  #canvas{position:static;width:100%;height:auto}
+}
+
+
+/* ---------- menu a comparsa rotondo: che cosa mettere in fondo alla freccia ---------- */
+/* compare dove il dito ha lasciato il collegamento nel vuoto; un tocco fuori annulla tutto */
+.placemenu{position:absolute;z-index:60;width:0;height:0}
+.placemenu .pm-dot{position:absolute;left:-7px;top:-7px;width:14px;height:14px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px rgba(31,78,121,.18)}
+/* le faccine del menu del vuoto: un pannello a sé, centrato sul punto toccato — dieci facce in un
+   arco non ci starebbero, e qui non si sceglie un elemento ma come si vive quel punto */
+.placemenu.facce .pm-card{position:absolute;transform:translate(-50%,-50%);width:min(300px,86vw);background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:10px}
+.placemenu.facce .pm-card-h{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--ink-2);margin-bottom:8px}
+.placemenu.facce .pm-card-h .btn{margin-left:auto;min-width:32px;font-size:16px;line-height:1}
+/* .pm-btn è condiviso: lo usano il menu del vuoto (#placemenu) e le azioni rapide (#quick) */
+.pm-btn{position:absolute;width:54px;height:54px;margin:-27px 0 0 -27px;border-radius:50%;border:1px solid var(--line);
+  background:var(--panel);color:var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+  box-shadow:0 6px 18px rgba(0,0,0,.18);font-size:9px;line-height:1;cursor:pointer;animation:pm-in .12s ease-out}
+.pm-btn svg{width:20px;height:20px}
+.pm-btn span{max-width:48px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pm-btn:hover,.pm-btn:focus-visible{border-color:var(--accent);color:var(--accent);outline:none}
+.pm-btn.danger{color:#c8321e}
+.pm-btn.danger:hover,.pm-btn.danger:focus-visible{border-color:#c8321e;color:#c8321e}
+@keyframes pm-in{from{opacity:0;transform:scale(.7)}to{opacity:1;transform:scale(1)}}
+/* uscita dallo strumento attivo: prende il posto del vecchio tasto "Seleziona" */
+#palette .tool.done{color:var(--accent)}
+
+
+/* ---------- cartina del progetto, a destra sopra lo zoom ---------- */
+#levelsctl{position:absolute;right:12px;bottom:calc(160px + env(safe-area-inset-bottom));z-index:6}
+#levelsctl .btn{width:40px;height:40px;padding:0;justify-content:center;background:var(--panel)}
+#cartina{position:absolute;right:0;bottom:44px;min-width:250px;max-width:78vw;max-height:52vh;overflow:auto;background:var(--panel,#fff);border:1px solid var(--line,#d9d4c9);border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.18);padding:6px}
+#cartina .cart-head{font-weight:700;font-size:12px;padding:4px 8px 8px;opacity:.75}
+#cartina .cart-sep{font-size:11px;opacity:.6;padding:10px 8px 4px;border-top:1px solid var(--line,#d9d4c9);margin-top:6px}
+#cartina .cart-row{display:flex;align-items:baseline;gap:.3em;width:100%;text-align:left;background:none;border:0;padding:6px 8px;border-radius:7px;font:inherit;cursor:pointer}
+/* il segno dell'albero: ogni gruppo di figlie ha una linea verticale lungo il rientro che lo collega
+   al padre, e il rientro per livello (~22 px) è più deciso dei vecchi 14 — la gerarchia si legge
+   a colpo d'occhio, senza contare i pixel */
+#cartina .cart-kids{margin-left:13px;padding-left:7px;border-left:1.5px solid var(--line,#d9d4c9)}
+#cartina .cart-row:hover{background:rgba(0,0,0,.05)}
+#cartina .cart-row.qui{background:rgba(31,78,121,.12);font-weight:700}
+#cartina .cart-row .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#cartina .cart-here{margin-left:auto;font-size:10px;opacity:.7;font-weight:400}
+#cartina .cart-ref{opacity:.7;font-size:12px;margin-left:20px;width:calc(100% - 20px)}
+#cartina .cart-prj{opacity:.85}
+#app.clean #levelsctl{display:none}
+@media print{#levelsctl{display:none!important}}
+@media (pointer:coarse){#levelsctl .btn{width:var(--tap);height:var(--tap)}#levelsctl{bottom:calc(170px + env(safe-area-inset-bottom))}}
+/* pallino di via di un connettore selezionato */
+svg .handle.via{fill:var(--panel);stroke:var(--sel);stroke-width:2;pointer-events:none}
+
+/* l'indirizzo di un passo o di un foglio: si legge prima del titolo, quindi sta davanti e non grida */
+.ind{font-variant-numeric:tabular-nums;color:var(--muted,#6b7280);font-weight:600;margin-right:.35em}
+/* davanti al titolo in barra sta l'indirizzo del foglio aperto: vuoto, non deve lasciare uno scarto */
+#map-head .ind:empty{display:none}
+
+/* briciole: solo la strada percorsa (il foglio aperto sta nel titolo accanto); la catena scorre invece di spezzarsi */
+#crumbs{display:flex;align-items:center;gap:.15em;overflow-x:auto;max-width:46vw;scrollbar-width:none}
+#crumbs::-webkit-scrollbar{display:none}
+/* l'ellissi delle briciole tagliate: inerte, dice solo «in mezzo c'è altro» (V.visibleCrumbs) */
+#crumbs .crumb-gap{flex:none;color:var(--muted);padding:0 2px}
+
+/* sottoschede: i figli diretti del foglio aperto, per ridiscendere senza aprire la cartina. Riga
+   intera sotto la barra (flex-basis:100%); vuota è display:none e non ruba un pixel al canvas.
+   Scorre di lato senza barra visibile, come le briciole. */
+#subtabs{display:flex;align-items:center;gap:6px;flex:1 0 100%;min-width:0;overflow-x:auto;scrollbar-width:none;padding:1px 2px 3px;font-size:12px}
+#subtabs:empty{display:none}
+#subtabs::-webkit-scrollbar{display:none}
+#subtabs .st-lead{color:var(--muted);flex:none}
+#subtabs button{flex:none;display:flex;align-items:baseline;border:1px solid var(--line);background:var(--panel-2);border-radius:999px;padding:3px 10px;min-height:30px;font:inherit;font-size:12px;color:var(--ink);cursor:pointer;white-space:nowrap}
+#subtabs button:hover{border-color:var(--accent);color:var(--accent)}
