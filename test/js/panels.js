@@ -313,17 +313,25 @@
     { id: 'k:icon', label: 'Icona', icon: IC.icon, title: 'Un simbolo dalla libreria (telefono, referto, letto…)' },
     { id: 'g:primi', label: 'Indietro', icon: IC.select, title: 'Torna alle voci principali' }
   ];
+  // in Misura/Analizza il menu del vuoto offre solo cio' che serve osservando (esito Gt 25/8
+  // sera): problema, nuvola, testo e le faccine — il resto e' disegno, e il flusso e' fermo
+  const INS_MISURA = [
+    { id: 'k:storm', label: 'Problema', icon: IC.storm, title: 'Un problema visto misurando (nuvola temporalesca)' },
+    { id: 'k:fluffy', label: 'Idea', icon: IC.fluffy, title: 'Nuvoletta: un\'idea, o qualcosa che funziona' },
+    { id: 'k:text', label: 'Testo', icon: IC.text, title: 'Una nota libera sul foglio' },
+    { id: 'g:facce', label: 'Faccine', icon: IC.face, title: 'Come si vive questo punto, visto dal vero' }
+  ];
   UI.openInsertMenu = (clientX, clientY, w) => {
     const map = V.map(); if (!map) return;
     if (map.validated) return; // Ideale col lucchetto: non si aggiunge niente, e il menu direbbe il contrario
     const mostra = (voci, hint) => apriRadiale(clientX, clientY, voci, (id) => {
       if (id === 'g:altro') return mostra(INS_ALTRO);
-      if (id === 'g:primi') return mostra(INS_PRIMI);
+      if (id === 'g:primi') return mostra(['misura', 'analizza'].includes((V.map() || {}).phase) ? INS_MISURA : INS_PRIMI);
       if (id === 'g:facce') { UI.closePlaceMenu(); return UI.openFaceMenu(clientX, clientY, w); }
       UI.closePlaceMenu();
       I.placeKind(id.slice(2), w, { senzaLegame: true }); // dal menu del vuoto: niente legame automatico (bug iPad 25/8)
     }, hint);
-    mostra(INS_PRIMI, 'Che cosa metti qui? Tocca fuori per lasciare il foglio com’è.');
+    mostra(['misura', 'analizza'].includes((V.map() || {}).phase) ? INS_MISURA : INS_PRIMI, 'Che cosa metti qui? Tocca fuori per lasciare il foglio com’è.');
   };
   /** Le faccine in un pannello a sé: sono dieci e in un arco non ci starebbero, ma soprattutto qui non
    *  si sceglie un elemento — si sceglie *come si vive* quel punto del processo, ed è la faccia stessa
@@ -452,7 +460,7 @@
    *  è l'unico tocco che non si disfa (da lì si esce solo col nuovo giro). Il «?» in testa apre
    *  la spiegazione delle fasi. Da Misura/Analizza sotto la lista compare UN bottone solo —
    *  «Crea un nuovo giro» — perché l'azione è la stessa per tutte e tre le righe chiuse. */
-  UI.openFase = () => { UI._nuovoGiroConferma = false; UI._faseAiuto = false; UI.renderFase(); const d = $('#dlg-fase'); if (!d.open) d.showModal(); };
+  UI.openFase = () => { UI._nuovoGiroConferma = false; UI._svalidaConferma = false; UI._faseAiuto = false; UI.renderFase(); const d = $('#dlg-fase'); if (!d.open) d.showModal(); };
   UI.renderFase = () => {
     const map = V.map(); const body = $('#fase-body'); if (!map || !body) return;
     const ICONA = { disegna: '\u270F\uFE0F', valida: '\u2705', misura: '\u23F1\uFE0F', analizza: '\u{1F4CA}' };
@@ -480,6 +488,9 @@
       + (nuovoGiro ? (UI._nuovoGiroConferma
         ? `<div class="fase-conferma"><b>Creare un nuovo giro?</b><br><small>È una COPIA di questo foglio che riparte da Disegna: questo giro resta com'è, con le sue misure.</small><div class="actions"><button class="btn primary" id="fase-nuovo-giro-si">Sì, nuovo giro</button><button class="btn" id="fase-nuovo-giro-no">Annulla</button></div></div>`
         : `<div class="hint" style="margin:8px 2px 4px">${esc(V.DENIED_MSG['nuovo-giro'])}</div><div class="actions" style="margin:0 0 10px"><button class="btn" id="fase-nuovo-giro">Crea un nuovo giro\u2026</button></div>`) : '')
+      + (['misura', 'analizza'].includes(map.phase) ? (UI._svalidaConferma
+        ? `<div class="fase-conferma"><b>Svalidare il foglio?</b><br><small>\u00C8 la via d'emergenza: il foglio torna in pianificazione e le misure prese finiscono nel CALDERONE \u2014 recuperabili, ma fuori da conti e viste. Il giro in corso muore.</small><div class="actions"><button class="btn primary" id="fase-svalida-si">S\u00EC, svalida</button><button class="btn" id="fase-svalida-no">Annulla</button></div></div>`
+        : `<div class="actions" style="margin:2px 0 8px"><button class="btn" id="fase-svalida" style="opacity:.65;font-size:12px">Svalida il foglio\u2026 (avanzato)</button></div>`) : '')
       + (map.validated ? '<p class="notice">Ideale validato \u{1F512}: apri il lucchetto in alto per cambiare fase.</p>' : '');
     // la nuvoletta si chiude da sola: un tocco su di lei, o su una riga qualsiasi
     const nv = $('.fase-nuvola', body); if (nv) nv.onclick = () => { UI._faseAiuto = false; UI.renderFase(); };
@@ -506,6 +517,20 @@
     };
     const ngNo = $('#fase-nuovo-giro-no', body);
     if (ngNo) ngNo.onclick = () => { UI._nuovoGiroConferma = false; UI.renderFase(); };
+    // svalida (esito Gt 25/8 sera: bottone NASCOSTO in avanzate, due tempi): la porta resta a
+    // senso unico per il metodo, questa e' la maniglia d'emergenza dichiarata
+    const sv = $('#fase-svalida', body);
+    if (sv) sv.onclick = () => { UI._svalidaConferma = true; UI.renderFase(); };
+    const svSi = $('#fase-svalida-si', body);
+    if (svSi) svSi.onclick = () => {
+      UI._svalidaConferma = false;
+      const r = V.unvalidate(map);
+      if (!r.ok) { UI.toast('Qui non c\u2019\u00E8 niente da svalidare.'); UI.renderFase(); return; }
+      UI.buildPalette(); UI.renderMisCtl(); UI.renderHeader(); UI.renderFase();
+      UI.toast('Foglio svalidato: ' + (r.archiviate ? r.archiviate + ' element' + (r.archiviate === 1 ? 'o' : 'i') + ' con misure archiviat' + (r.archiviate === 1 ? 'o' : 'i') + ' nel calderone.' : 'nessuna misura da archiviare.') + ' Sei in Valida.');
+    };
+    const svNo = $('#fase-svalida-no', body);
+    if (svNo) svNo.onclick = () => { UI._svalidaConferma = false; UI.renderFase(); };
     // il bottone verde della Misura: chiude il selettore e apre il cronometro sul foglio
     const inizia = $('#fase-inizia', body);
     if (inizia) inizia.onclick = () => { $('#dlg-fase').close(); UI.renderMisCtl(); I.hint('Tocca il cronometro \u23F1 sul PRIMO passo del flusso: parte il giro. \u00AB\u270B Passo finito\u00BB chiude il passo e l\u2019attesa corre da sola fino al prossimo.', 7000); };
@@ -617,13 +642,19 @@
     const s = V.measureState(m);
     if (!s || !s.phase) {
       const r = V.measureStart(m, id);
-      if (r) I.hint('Cronometro avviato \u23F1 \u2014 \u00AB\u270B Passo finito\u00BB quando l\u2019attivit\u00E0 si chiude: l\u2019attesa poi corre da sola.', 5000);
+      if (r) I.hint('Cronometro avviato \u23F1 \u2014 \u23E9 quando il passo chiude: l\u2019attesa poi corre da sola, e il PROSSIMO passo lo scegli toccando il suo cronometro (\u25B6 segue il flusso).', 6000);
       else UI.toast('Qui il cronometro non parte: passo validato \u2713 o lucchetto chiuso.');
       UI.renderMisCtl(); return true;
     }
-    if (s.phase === 'attesa' && s.stepId === id) { UI.misAdvance(); return true; }
-    if (s.phase === 'box' && s.stepId === id) { UI.toast('Sta gi\u00E0 misurando questo passo: \u00AB\u270B Passo finito\u00BB quando chiude.'); return true; }
-    UI.toast('C\u2019\u00E8 una misura in corso su un altro punto: chiudila prima (\u270B o \u23F9).');
+    if (s.phase === 'attesa') {
+      // il PROSSIMO passo lo sceglie chi misura (bivi compresi): il tocco sul cronometro decide
+      const r = V.measureJump(m, id);
+      if (r && r.fuoriOrdine) { const dest = V.byId(id, m); UI.toast('\u26A0 Non hai rispettato l\u2019ordine di lavoro: nessuna freccia arriva a \u00AB' + ((dest.props.title || 'questo passo')) + '\u00BB dal passo precedente \u2014 ' + r.attesaPersa + 's di attesa non scritti.'); }
+      else if (r && r.ko === 'validato') UI.toast('Questo passo ha la \u2713: la misura non si scrive.');
+      UI.renderMisCtl(); return true;
+    }
+    if (s.phase === 'box' && s.stepId === id) { UI.toast('Sta gi\u00E0 misurando questo passo: \u23E9 quando chiude.'); return true; }
+    UI.toast('C\u2019\u00E8 un passo in corso: chiudilo (\u23E9) prima di sceglierne un altro.');
     return true;
   };
   UI.misAdvance = () => {
@@ -1296,6 +1327,15 @@
   /** azioni contestuali di un elemento: la stessa lista serve la barra rapida e il pop-up */
   UI.actionList = (el, map) => {
     const A = []; const btn = (id, label, title) => A.push({ id, label, title: title || label });
+    // in Misura/Analizza il menu di un elemento del FLUSSO (fermo) non offre l'armamentario del
+    // disegno (esito Gt 25/8 sera): sul passo restano «Misura da qui» e «+ Problema»; frecce,
+    // attese, persone e corsie non hanno menu — il secondo tocco apre i dettagli come sempre.
+    // Gli oggetti liberi (nuvole, note, icone, facce) tengono le loro azioni.
+    if (['misura', 'analizza'].includes(map.phase) && !V.isConnector(el) && !V.MISURA_LIBERI.includes(el.type) && el.type !== 'legend') {
+      if (el.type === 'box') { btn('mis', '\u23F1 Misura da qui', 'Parte (o continua) il giro su questo passo'); btn('cloud', '+ Problema', 'Un problema visto misurando, gia\' legato al passo'); }
+      return A;
+    }
+    if (['misura', 'analizza'].includes(map.phase) && V.isConnector(el)) return A;
     const requestor = map.elements.find(e => e.type === 'person' && e.props.requestor);
     const outFlows = map.elements.filter(c => c.type === 'flow' && c.from.el === el.id);
     switch (el.type) {
@@ -1375,6 +1415,7 @@
       // la misura di prima si tiene da parte (V.setStormMark): chi allarga un problema non vuole
       // ritrovarlo piccolo al ritorno, ne' piu' basso del suo testo
       case 'shrink': { V.setStormMark(V.map(), id, !el.props.collapsed); I.select([id]); break; }
+      case 'mis': UI.misTap(id); break;
       case 'lockto': I.startPickLock([id]); break;
       case 'unlock': I.unlock(id); break;
       case 'pin': V.commit({ t: 'props', id, after: { pinned: true } }, 'blocca sul foglio'); I.select([id]); I.hint('Bloccato sul foglio \u{1F512}: trascinarlo non lo sposta più. «Sblocca» nelle azioni rapide per liberarlo.', 3500); break;
