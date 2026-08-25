@@ -158,10 +158,13 @@
     const tint = map.tint == null ? null : ((+map.tint || 0) % 360 + 360) % 360;
     if (tint != null) g += `<rect x="0" y="0" width="${w}" height="${h}" rx="2" fill="hsl(${tint} 40% 62%)" opacity="0.08"/>`;
     g += `<line class="fold" x1="${w / 2}" y1="0" x2="${w / 2}" y2="${h}"/><line class="fold" x1="${w * 0.75}" y1="0" x2="${w * 0.75}" y2="${h}"/>`;
-    // niente blocco titolo sul foglio (titolo, data e autori vivono in barra); in basso, semitrasparente,
-    // il nome della mappa: il giro dell'attuale, «ideale» (con lo stato del lucchetto) o «dettaglio»
-    const lbl = V.kindLabel(map) + (map.kind === 'future' ? (map.validated ? ' · validato \u{1F512}' : ' · da validare') : '');
-    g += `<text class="hand" x="30" y="${h - 26}" font-size="58" font-weight="800" fill="hsl(${tint == null ? 210 : tint} 45% 35%)" opacity="0.14">${esc(lbl)}</text>`;
+    // in basso a sinistra, semitrasparente, l'identità del foglio (feedback iPad 25/8): titolo,
+    // data e iniziali degli autori, poi il nome della mappa — il giro dell'attuale, «ideale» (con
+    // lo stato del lucchetto) o «dettaglio»
+    const giro = V.kindLabel(map) + (map.kind === 'future' ? (map.validated ? ' · validato \u{1F512}' : ' · da validare') : '');
+    const dataIt = map.date ? String(map.date).split('-').reverse().join('/') : '';
+    const lbl = [map.title, dataIt, map.authors].filter(Boolean).join(' · ') + ((map.title || dataIt || map.authors) ? ' — ' : '') + giro;
+    g += `<text class="hand" x="30" y="${h - 26}" font-size="46" font-weight="800" fill="hsl(${tint == null ? 210 : tint} 45% 35%)" opacity="0.14">${esc(lbl)}</text>`;
     L.paper.innerHTML = g;
   };
 
@@ -803,7 +806,7 @@
     }
     sx = Math.max(20, Math.min(sx, w - sw - 20)); sy = Math.max(20, Math.min(sy, h - sh - 20));
     g += `<g><rect class="box" x="${sx}" y="${sy}" width="${sw}" height="${sh}" rx="2"/>
-      <text class="hand" x="${sx + 12}" y="${sy + 20}" font-size="12" font-weight="700">Riepilogo (${esc(map.unit)})${map.samples ? ` · ${esc(map.samples)} misure` : ''}</text>
+      <text class="hand" x="${sx + 12}" y="${sy + 20}" font-size="12" font-weight="700">Riepilogo (${esc(map.unit)})${(V.numMisure(map) || +map.samples) ? ` · ${esc(String(V.numMisure(map) || +map.samples))} misure` : ''}</text>
       <text class="hand" x="${sx + 12}" y="${sy + 40}" font-size="11">Totale VA: <tspan font-weight="700">${fmt(M.va)}</tspan>   Totale NVA: <tspan font-weight="700" fill="#c8321e">${fmt(M.nva)}</tspan></text>
       <text class="hand" x="${sx + 12}" y="${sy + 58}" font-size="11">VA %: <tspan font-weight="700">${fmt(M.vaPct)} %</tspan>   NVA %: <tspan font-weight="700" fill="#c8321e">${fmt(M.nvaPct)} %</tspan></text>
       ${M.ftq != null ? `<text class="hand" x="${sx + 12}" y="${sy + 76}" font-size="11">First Time Quality: <tspan font-weight="700">${fmt(M.ftq)} %</tspan>${M.ftqPartial ? '<tspan class="muted" font-size="10"> · parziale</tspan>' : ''}</text>` : ''}

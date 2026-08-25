@@ -126,7 +126,8 @@
     $('#btn-undo').onclick = () => V.undo(); $('#btn-redo').onclick = () => V.redo();
     $('#drawer-close').onclick = UI.closeDrawer;
     ['coach', 'plan'].forEach(t => $('#tab-' + t).onclick = () => UI.showTab(t));
-    $('#btn-maps').onclick = () => { UI.renderMaps(); $('#dlg-maps').showModal(); }; $('#maps-close').onclick = () => $('#dlg-maps').close();
+    // il bottone «Mappe» in barra non c'e' piu' (feedback iPad 25/8): la libreria vive in ⋯ → «Le tue mappe»
+    $('#maps-close').onclick = () => $('#dlg-maps').close();
     $('#mis-close').onclick = () => UI.closeMisura();
     // il cronometro non deve continuare a girare dietro un dialogo chiuso col tasto Esc
     $('#dlg-misura').addEventListener('close', () => UI.closeMisura());

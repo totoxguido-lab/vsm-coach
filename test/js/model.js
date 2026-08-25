@@ -976,6 +976,10 @@ window.VSM = window.VSM || {};
   };
   /** etichetta leggibile del tipo di mappa (per testata, elenchi e sfondo del foglio) */
   V.kindLabel = (m) => m.kind === 'future' ? 'ideale' : m.kind === 'detail' ? 'dettaglio' : (m.verName || 'attuale');
+  /** Quante volte si è misurato: il massimo delle osservazioni su un singolo elemento. Non si
+   *  dichiara a mano (feedback iPad 25/8): il campo dell'intestazione è sparito, il numero nasce
+   *  dal cronometro. map.samples resta solo come ripiego per le mappe vecchie che l'avevano scritto. */
+  V.numMisure = (map) => Math.max(0, ...(map.elements || []).map(e => (e.props && Array.isArray(e.props.obs)) ? e.props.obs.length : 0));
   /** Nuovo sotto-foglio. Non basta sapere da quale MAPPA nasce: serve da quale PASSO, perché è il passo
    *  a dargli l'indirizzo (il sotto-foglio del passo 2 è il 2.1, 2.2, …). Senza, la cartina saprebbe
    *  dire «sta sotto questa mappa» ma non «sta sotto questo passo», che è quello che chi mappa cerca. */
@@ -2202,7 +2206,7 @@ window.VSM = window.VSM || {};
     if (map.kind === 'current' && M.boxes >= 1 && !map.validation.validatedBy) add('warn', 4, 'La mappa non risulta validata da chi fa il lavoro ("ti sembra giusto? ho dimenticato qualcosa?").');
     if (M.boxes >= 1 && !M.hasData) add('warn', 5, 'Nessun dato Hi/Lo/Avg: senza tempi la mappa non mostra lo spreco (tocca un box o un delta per inserirli).');
     if (M.hasData) {
-      const s = num(map.samples); if (s == null) add('warn', 5, 'Dichiara quante misure hai raccolto (~30; 8-10 per una vista rapida).'); else if (s < 8) add('warn', 5, `${s} misure sono poche: 8-10 per una vista rapida, ~30 per significatività.`);
+      const s = V.numMisure(map) || num(map.samples); if (!s) add('warn', 5, 'Nessuna misura raccolta: il cronometro le conta da sé (~30; 8-10 per una vista rapida).'); else if (s < 8) add('warn', 5, `${s} misure sono poche: 8-10 per una vista rapida, ~30 per significatività.`);
       map.elements.filter(e => e.type === 'box' || e.type === 'delta').forEach(x => { const hi = num(x.props.hi), lo = num(x.props.lo), av = num(x.props.avg); if (hi != null && lo != null && av != null && !(lo <= av && av <= hi)) add('bad', 5, `Dati incoerenti (${x.props.title || x.props.note || 'delta'}): deve valere Lo ≤ Avg ≤ Hi.`, x.id); });
       if (M.incompleteBoxes + M.incompleteDeltas) add('warn', 5, `${M.incompleteBoxes + M.incompleteDeltas} elementi senza media: il riepilogo VA/NVA è parziale.`);
       if (M.looseDeltas) add('warn', 5, `${M.looseDeltas} ${M.looseDeltas === 1 ? 'delta non è agganciato' : 'delta non sono agganciati'} a una freccia della catena: ${M.looseDeltas === 1 ? 'resta fuori' : 'restano fuori'} dal riepilogo e dalla timeline. Trascina il triangolo sulla freccia fra i due passi.`);

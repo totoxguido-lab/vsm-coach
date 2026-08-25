@@ -35,7 +35,7 @@ a{color:var(--accent)}
 
 /* ---------- shell ---------- */
 #app{height:100%;display:grid;grid-template-rows:auto 1fr;padding-top:env(safe-area-inset-top)}
-header.bar{display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--panel);border-bottom:1px solid var(--line);min-height:48px;flex-wrap:wrap}
+header.bar{display:flex;align-items:center;gap:6px;padding:2px 8px;background:var(--panel);border-bottom:1px solid var(--line);min-height:40px;flex-wrap:wrap}
 header .brand{font-weight:700;display:flex;align-items:center;gap:6px;flex:none}
 header .brand svg{width:22px;height:22px}
 /* spia del salvataggio (spec fondamenta F): nascosta = 'ok', gialla = 'fallback' (solo
@@ -286,7 +286,8 @@ header .btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
 .field input,.field select,.field textarea{border:1px solid var(--line);background:var(--panel-2);color:var(--ink);border-radius:8px;padding:7px 9px;width:100%;min-height:36px}
 .field input:hover,.field select:hover,.field textarea:hover{border-color:var(--muted)}
 .field textarea{min-height:60px;resize:vertical}
-.row{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px}
+.row input,.row select{min-width:0;width:100%;box-sizing:border-box}
 .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
 .check{display:flex;gap:8px;align-items:flex-start;margin:5px 0;font-size:13px}
 .check input{margin-top:3px;width:18px;height:18px}
