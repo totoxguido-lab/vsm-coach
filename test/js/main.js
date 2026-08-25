@@ -116,6 +116,8 @@
     };
     $('#mh-phase').onclick = () => UI.openFase();
     $('#fase-close').onclick = () => $('#dlg-fase').close();
+    // il «?» del dialogo delle fasi: mostra/nasconde la spiegazione (prova iPad 25/8)
+    const fh = $('#fase-help'); if (fh) fh.onclick = () => { UI._faseAiuto = !UI._faseAiuto; UI.renderFase(); };
     $('#tab-lock').onclick = () => {
       const m = V.map(); if (m.kind !== 'future') return;
       V.setValidated(m, !m.validated);

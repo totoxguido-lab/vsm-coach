@@ -618,20 +618,38 @@ window.VSM = window.VSM || {};
 
   // ---------- fase del foglio (spec fondamenta A1): dove sta nel prima-e-poi del libro ----------
   V.PHASE_ORDER = ['disegna', 'cammina', 'valida', 'misura', 'analizza'];
-  V.PHASE_LABEL = { disegna: 'Disegna', cammina: 'Cammina', valida: 'Valida', misura: 'Misura', analizza: 'Analizza' };
+  // «Cammina» era il nome del libro (gemba walk) ma alla prova iPad non si capiva: l'etichetta dice
+  // che cosa si FA («Disegna e controlla»: il disegno c'è, lo si verifica sul campo); la chiave
+  // 'cammina' nei documenti non cambia — è un nome, non una struttura.
+  V.PHASE_LABEL = { disegna: 'Disegna', cammina: 'Disegna e controlla', valida: 'Valida', misura: 'Misura', analizza: 'Analizza' };
   /** Che cosa vuol dire ciascuna fase e che cosa si può fare (Parte I §1 della spec): il selettore in
    *  testata e il cronometro chiuso fuori fase la usano per dire il perché con la frase del libro. */
   V.PHASE_HINT = {
     disegna: 'stai costruendo il flusso, anche da memoria: tutto, tranne il cronometro',
-    cammina: 'stai osservando il processo dal vero con il foglio in mano: tutto, tranne il cronometro',
+    cammina: 'il disegno c\'è: lo controlli sul campo, dal vero, col foglio in mano («camminare il processo»). Tutto, tranne il cronometro',
     valida: 'lo staff guarda il foglio: testi, note, colori e spostare i box per leggere meglio. Non si aggiungono né si tolgono passi, frecce o vie',
     misura: 'il flusso è validato, si cronometra: cronometro, note e spostamenti per leggere meglio. Niente altro',
     analizza: 'come Misura, più i livelli di analisi'
   };
-  /** Transizioni ammesse (A1): il prima-e-poi del libro, un passo avanti alla volta; Misura ⇄ Analizza
-   *  vanno e vengono liberamente; da Valida si torna a Cammina (lo staff rimanda a osservare). Da
-   *  Misura o Analizza non si torna a nessuna delle tre fasi precedenti: serve un nuovo giro. */
-  const FASE_AVANTI = { disegna: ['cammina'], cammina: ['valida'], valida: ['misura', 'cammina'], misura: ['analizza'], analizza: ['misura'] };
+  /** I due blocchi del lavoro (prova iPad 25/8): dentro un blocco ci si muove, fra i blocchi c'è
+   *  una porta. Il selettore in testata li disegna così, e la Guida li racconta con queste frasi. */
+  V.PHASE_GROUPS = [
+    { t: '1 · Pianificazione', s: 'il flusso si costruisce, si controlla sul campo e si fa validare: qui ti muovi avanti e indietro liberamente', fasi: ['disegna', 'cammina', 'valida'] },
+    { t: '2 · Misura e analisi', s: 'il flusso è validato e fermo: si cronometra e si analizza. Per ridisegnare serve un nuovo giro', fasi: ['misura', 'analizza'] }
+  ];
+  /** Transizioni ammesse (A1, rivista dalla prova iPad del 25/8): dentro la pianificazione
+   *  (disegna ⇄ cammina ⇄ valida) si va e si viene liberamente — un tocco sbagliato non deve
+   *  bloccare nessuno. Misura è la PORTA a senso unico: la si raggiunge solo da valida (la
+   *  conferma esplicita è compito della UI, non di questa tabella), e da misura/analizza non si
+   *  torna alle tre fasi di pianificazione: serve un nuovo giro (il foglio misurato non si
+   *  ridisegna — decisione di Gt del 22 agosto, che resta). Misura ⇄ Analizza vanno e vengono. */
+  const FASE_AVANTI = {
+    disegna: ['cammina', 'valida'],
+    cammina: ['disegna', 'valida'],
+    valida: ['disegna', 'cammina', 'misura'],
+    misura: ['analizza'],
+    analizza: ['misura']
+  };
   /** Verifica pura (non scrive nulla): usata da V.setPhase e dal selettore in testata per sapere,
    *  senza tentare, se un tocco su una fase sarebbe accolto. */
   V.canSetPhase = (map, fase) => {
@@ -2180,7 +2198,7 @@ window.VSM = window.VSM || {};
     if (M.boxes >= 2 && !M.deltas) add('warn', 3, 'Nessun delta: tra un box e il successivo, quando nulla avanza? Dove sta ferma la cosa?');
     const blob = [map.scope, ...map.elements.flatMap(e => [e.props.title, e.props.text, e.props.note, ...(e.props.activities || [])])].filter(Boolean).join(' \n ');
     const bw = blob.match(V.BAD_WORDS); if (bw) add('warn', 6, `Parola cattiva trovata: "${bw[0]}" — qui il processo non è specificato (Regola 1). Che cosa succede davvero?`);
-    if (map.kind === 'current' && M.boxes >= 1 && !map.validation.walked) add('warn', 4, 'Il processo non risulta ancora camminato (osservazione diretta): la mappa è provvisoria.');
+    if (map.kind === 'current' && M.boxes >= 1 && !map.validation.walked) add('warn', 4, 'Il processo non risulta ancora controllato sul campo (camminato: osservazione diretta): la mappa è provvisoria.');
     if (map.kind === 'current' && M.boxes >= 1 && !map.validation.validatedBy) add('warn', 4, 'La mappa non risulta validata da chi fa il lavoro ("ti sembra giusto? ho dimenticato qualcosa?").');
     if (M.boxes >= 1 && !M.hasData) add('warn', 5, 'Nessun dato Hi/Lo/Avg: senza tempi la mappa non mostra lo spreco (tocca un box o un delta per inserirli).');
     if (M.hasData) {
@@ -2214,7 +2232,7 @@ window.VSM = window.VSM || {};
   // ---------- fasi della guida ----------
   V.PHASES = [
     { n: 0, t: 'Preparazione', s: 'scopo, team, ideale' }, { n: 1, t: 'Richiesta', s: 'fascia alta: tutte le vie' }, { n: 2, t: 'Process box', s: 'fascia centrale' },
-    { n: 3, t: 'Delta', s: 'attese tra i box' }, { n: 4, t: 'Camminare e validare', s: 'osservazione diretta — prima dei Dati, non insieme' }, { n: 5, t: 'Dati', s: 'Hi / Lo / Avg — solo dopo aver camminato e validato' },
+    { n: 3, t: 'Delta', s: 'attese tra i box' }, { n: 4, t: 'Controllare sul campo e validare', s: 'camminare il processo: osservazione diretta — prima dei Dati, non insieme' }, { n: 5, t: 'Dati', s: 'Hi / Lo / Avg — solo dopo aver camminato e validato' },
     { n: 6, t: 'Analisi', s: 'che cosa non è ideale?' }, { n: 7, t: 'Stato futuro', s: 'raggiungibile, più vicino all\'ideale' }, { n: 8, t: 'Piano', s: 'What / Who / When / Outcome' }, { n: 9, t: 'Chiusura del ciclo', s: 'nuova CSM' }
   ];
   V.phaseDone = (map, n) => {

@@ -33,7 +33,7 @@
     <button class="btn icon hidden" id="btn-up" title="Sali al foglio che contiene questo" aria-label="Sali di un livello">↑</button>
     <div id="crumbs"></div>
     <button id="map-head" title="Titolo, data, autori — tocca per vedere e modificare"><span class="ind" id="mh-ind"></span><span class="mh-txt"><b id="mh-title"></b><small id="mh-sub"></small></span><span class="mh-pen" aria-hidden="true">✎</span></button>
-    <button class="btn small" id="mh-phase" title="Fase del foglio: tocca per vederla o cambiarla">Disegna</button>
+    <button class="btn small" id="mh-phase" title="Fase del foglio: tocca per vederla o cambiarla"><small>Fase:</small> Disegna</button>
     <span id="save-dot" class="hidden" title=""></span>
     <div class="spacer"></div>
     <button class="btn icon" id="btn-undo" title="Annulla (Cmd/Ctrl+Z)" aria-label="Annulla">↶</button>
@@ -149,11 +149,12 @@
   <div class="d-foot"><button class="btn" id="mis-close">Chiudi</button></div>
 </dialog>
 
-<!-- Fase del foglio (spec fondamenta A1): il selettore che sostituisce «provvisoria». Le fasi che
-     non si possono raggiungere da qui (transizione non ammessa, o lucchetto dell'Ideale chiuso)
-     restano nell'elenco ma disabilitate, col perché sotto il nome. -->
+<!-- Fase del foglio (spec fondamenta A1, ridisegnato dalla prova iPad 25/8): due blocchi
+     (Pianificazione / Misura e analisi), la fase attuale evidenziata, la porta di Misura con
+     conferma. Le fasi non raggiungibili restano in lista, disabilitate col perché sotto il nome.
+     Il «?» apre la spiegazione delle fasi dentro il dialogo. -->
 <dialog id="dlg-fase" aria-labelledby="fase-head">
-  <div class="d-head" id="fase-head">Fase del foglio</div>
+  <div class="d-head" id="fase-head">Fasi di lavoro <button class="btn small" id="fase-help" title="Che cosa sono le fasi e che cosa comporta cambiarle" aria-label="Spiegazione delle fasi">?</button></div>
   <div class="d-body"><div id="fase-body"></div></div>
   <div class="d-foot"><button class="btn" id="fase-close">Chiudi</button></div>
 </dialog>

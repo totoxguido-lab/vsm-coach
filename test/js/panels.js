@@ -393,7 +393,9 @@
     // Il selettore di fase sostituisce «provvisoria» (spec D): il nome della fase sta sempre in
     // testata, non solo finché il foglio non è stato camminato.
     const faseBtn = $('#mh-phase');
-    if (faseBtn) { faseBtn.textContent = V.PHASE_LABEL[map.phase] || 'Disegna'; faseBtn.title = 'Fase del foglio: ' + (V.PHASE_HINT[map.phase] || '') + ' — tocca per vederla o cambiarla'; }
+    // «Fase:» davanti al nome (prova iPad 25/8): da solo, «Disegna» in testata sembrava un bottone
+    // per disegnare, non lo STATO del foglio — la parola dice che cos'è quello che si legge.
+    if (faseBtn) { faseBtn.innerHTML = '<small>Fase:</small> ' + esc(V.PHASE_LABEL[map.phase] || 'Disegna'); faseBtn.title = 'Fase del foglio: ' + (V.PHASE_HINT[map.phase] || '') + ' — tocca per vederla o cambiarla'; }
     $('#tab-current').setAttribute('aria-pressed', map.kind === 'current'); $('#tab-future').setAttribute('aria-pressed', map.kind === 'future');
     const curM = map.kind === 'current' ? map : V.currentOf(map);
     $('#cur-ver').textContent = curM ? (curM.verName || 'mappa iniziale') : '—';
@@ -429,37 +431,66 @@
     if (UI.linkModeLabel) UI.linkModeLabel();
   };
 
-  // ---------- fase del foglio (spec fondamenta A1, Task 4) ----------
-  /** Il selettore in testata: le cinque fasi in fila, con sotto ciascuna il perché del libro. Quella
-   *  attuale è segnata; le altre sono un tocco se V.canSetPhase le ammette, altrimenti disabilitate
-   *  — ma il perché resta leggibile (V.DENIED_MSG[reason]), non solo grigio senza spiegazione
-   *  (rilievo della revisione: chi era in Misura vedeva tre righe spente senza sapere perché né come
-   *  uscirne). Da Misura/Analizza il perché è sempre 'nuovo-giro' (A1): sotto la lista compare UN
-   *  bottone solo — «Crea un nuovo giro» — non uno per riga, perché l'azione è la stessa. */
-  UI.openFase = () => { UI.renderFase(); const d = $('#dlg-fase'); if (!d.open) d.showModal(); };
+  // ---------- fase del foglio (spec fondamenta A1, Task 4 — ridisegnato dalla prova iPad 25/8) ----------
+  /** Il selettore in testata, in DUE blocchi (V.PHASE_GROUPS): «1 · Pianificazione» dove ci si
+   *  muove liberamente, la porta, «2 · Misura e analisi» da cui indietro serve un nuovo giro. La
+   *  fase attuale è EVIDENZIATA (bordo verde, «✔ sei qui»), non un bottone spento uguale a quelli
+   *  vietati — era proprio quella somiglianza a confondere selezione, stato e passaggio. Le fasi
+   *  non raggiungibili restano in lista col perché sotto (V.DENIED_MSG), mai solo grigie. Toccare
+   *  «Misura» dalla pianificazione NON cambia fase subito: arma una conferma nel dialogo, perché
+   *  è l'unico tocco che non si disfa (da lì si esce solo col nuovo giro). Il «?» in testa apre
+   *  la spiegazione delle fasi. Da Misura/Analizza sotto la lista compare UN bottone solo —
+   *  «Crea un nuovo giro» — perché l'azione è la stessa per tutte e tre le righe chiuse. */
+  UI.openFase = () => { UI._faseConferma = false; UI._faseAiuto = false; UI.renderFase(); const d = $('#dlg-fase'); if (!d.open) d.showModal(); };
   UI.renderFase = () => {
     const map = V.map(); const body = $('#fase-body'); if (!map || !body) return;
+    const ICONA = { disegna: '\u270F\uFE0F', cammina: '\u{1F463}', valida: '\u2705', misura: '\u23F1\uFE0F', analizza: '\u{1F4CA}' };
     let nuovoGiro = false;
-    body.innerHTML = V.PHASE_ORDER.map(f => {
-      const cur = map.phase === f; const g = cur ? { ok: false, reason: null } : V.canSetPhase(map, f);
-      if (!cur && g.reason === 'nuovo-giro') nuovoGiro = true;
-      const perche = (!cur && !g.ok && g.reason && V.DENIED_MSG[g.reason]) ? `<div class="hint" style="margin:-4px 0 8px">${esc(V.DENIED_MSG[g.reason])}</div>` : '';
-      return `<button class="btn big fase-riga" data-fase="${f}" ${cur || !g.ok ? 'disabled' : ''} style="display:block;width:100%;text-align:left;margin-bottom:2px">`
-        + `<b>${esc(V.PHASE_LABEL[f])}</b>${cur ? ' — fase di adesso' : ''}<br><small>${esc(V.PHASE_HINT[f] || '')}</small></button>` + perche;
-    }).join('')
-      + (nuovoGiro ? `<div class="actions" style="margin:6px 0 10px"><button class="btn big primary" id="fase-nuovo-giro">Crea un nuovo giro</button></div>` : '')
+    const stato = (f) => { const cur = (map.phase || 'disegna') === f; const g = cur ? { ok: false, reason: null } : V.canSetPhase(map, f); if (!cur && g.reason === 'nuovo-giro') nuovoGiro = true; return { cur, g }; };
+    // Niente sottotitoli sotto le righe e sotto i titoli dei blocchi (feedback 25/8, secondo giro:
+    // «troppe frasi»): icona + nome e basta. Il perche' di ogni fase resta nel title= (pressione
+    // lunga / mouse) e nella nuvoletta del «?». Valida NON sta in un blocco: e' il pulsante blu FRA
+    // i due, perche' e' il passaggio che li separa (lo staff conferma il foglio).
+    const riga = (f, extra) => { const { cur, g } = stato(f);
+      return `<button class="btn big fase-riga${extra ? ' ' + extra : ''}${cur ? ' cur' : ''}" data-fase="${f}" ${cur || !g.ok ? 'disabled' : ''} title="${esc(V.PHASE_HINT[f] || '')}">`
+        + `<span class="fase-icona" aria-hidden="true">${ICONA[f]}</span><b>${esc(V.PHASE_LABEL[f])}</b>${cur ? '<span class="fase-qui">\u2714 sei qui</span>' : ''}</button>`; };
+    const gruppo = (t, fasi) => `<div class="fase-gruppo"><div class="fase-gruppo-t">${esc(t)}</div>${fasi.map(f => riga(f)).join('')}</div>`;
+    // la nuvoletta del «?»: quattro frasi, non un pannello
+    const nuvola = !UI._faseAiuto ? '' : `<div class="fase-nuvola" role="note"><p><b>1 · Pianificazione</b>: disegni il flusso e lo controlli sul campo — avanti e indietro liberamente.</p><p><b>\u2705 Valida</b>: lo staff che fa il lavoro conferma il foglio.</p><p><b>2 · Misura e analisi</b>: si cronometra e si analizza. \u23F1\uFE0F Misura è una porta: si entra da Valida (con conferma) e per ridisegnare serve un <b>nuovo giro</b>.</p><p>L'Ideale col lucchetto \u{1F512} chiuso non cambia fase: prima apri il lucchetto.</p></div>`;
+    // la porta chiede conferma: il solo passaggio che \u21A9 non disfa non parte da un tocco solo
+    const conferma = !UI._faseConferma ? '' : `<div class="fase-conferma"><b>Passare a Misura?</b><br><small>Da qui il flusso è fermo e si cronometra: non si torna alla pianificazione, per ridisegnare servirà un nuovo giro. È l'unico passaggio che non si disfa con \u21A9.</small><div class="actions"><button class="btn primary" id="fase-conferma-si">Sì, passa a Misura</button><button class="btn" id="fase-conferma-no">Annulla</button></div></div>`;
+    body.innerHTML = nuvola
+      + gruppo('1 \u00B7 Pianificazione', ['disegna', 'cammina'])
+      + `<div class="fase-valida-blocco"><span class="fase-freccia" aria-hidden="true">\u2193</span>${riga('valida', 'primary fase-valida')}<span class="fase-freccia" aria-hidden="true">validato \u2193</span></div>`
+      + gruppo('2 \u00B7 Misura e analisi', ['misura', 'analizza'])
+      + conferma
+      + (nuovoGiro ? `<div class="hint" style="margin:8px 2px 4px">${esc(V.DENIED_MSG['nuovo-giro'])}</div><div class="actions" style="margin:0 0 10px"><button class="btn big primary" id="fase-nuovo-giro">Crea un nuovo giro</button></div>` : '')
       + (map.validated ? '<p class="notice">Ideale validato \u{1F512}: apri il lucchetto in alto per cambiare fase.</p>' : '');
+    // la nuvoletta si chiude da sola: un tocco su di lei, o su una riga qualsiasi
+    const nv = $('.fase-nuvola', body); if (nv) nv.onclick = () => { UI._faseAiuto = false; UI.renderFase(); };
     $$('[data-fase]', body).forEach(b => b.onclick = () => {
-      const r = V.setPhase(map, b.dataset.fase);
+      UI._faseAiuto = false;
+      const f = b.dataset.fase;
+      // entrare in Misura dalla pianificazione e' il tocco irreversibile: si arma la conferma e basta
+      if (f === 'misura' && ['disegna', 'cammina', 'valida'].includes(map.phase || 'disegna')) { UI._faseConferma = true; UI.renderFase(); const c = $('.fase-conferma', body); if (c && c.scrollIntoView) c.scrollIntoView({ block: 'nearest' }); return; }
+      const r = V.setPhase(map, f);
       if (!r.ok) { UI.toast(V.DENIED_MSG[r.reason] || 'Non si può.'); return; }
+      UI._faseConferma = false;
       UI.renderHeader(); UI.renderFase(); UI.toast('Fase: ' + V.PHASE_LABEL[map.phase] + '.');
     });
+    const si = $('#fase-conferma-si', body); if (si) si.onclick = () => {
+      const r = V.setPhase(map, 'misura');
+      UI._faseConferma = false;
+      if (!r.ok) { UI.toast(V.DENIED_MSG[r.reason] || 'Non si può.'); UI.renderFase(); return; }
+      UI.renderHeader(); UI.renderFase(); UI.toast('Fase: Misura. Il cronometro è aperto (\u22EF \u2192 Misura i tempi \u23F1).');
+    };
+    const no = $('#fase-conferma-no', body); if (no) no.onclick = () => { UI._faseConferma = false; UI.renderFase(); };
     const ng = $('#fase-nuovo-giro', body);
     if (ng) ng.onclick = () => {
       const nv = V.createVersion(map);
       $('#dlg-fase').close();
       UI.openMap(nv.id);
-      UI.toast('Nuovo giro creato in Disegna: qui puoi cambiare il flusso, poi camminare e validare di nuovo.');
+      UI.toast('Nuovo giro creato in Disegna: qui puoi cambiare il flusso, poi controllarlo sul campo e farlo validare di nuovo.');
     };
   };
 
@@ -656,15 +687,15 @@
     { id: 'prima', t: 'La prima mappa', body: 'Sul foglio vuoto tocca i segnaposto ① Chi chiede? e ② Primo passo: è il modo più rapido per iniziare. Un altro modo: tocca il foglio dove vuoi l’elemento e scegli dal menu rotondo che compare (Passo, Attesa, Problema, Persona, «Altro…» e le faccine in un pannello a sé). Oppure scegli lo strumento nella barra in basso e tocca il punto del foglio. Per spostare il foglio: col dito basta trascinare il vuoto; col mouse c’è la <b>mano</b> in «Altro» (poi «✓ Fine» per tornare a selezionare). Le mappe si salvano da sole, non c’è un tasto salva. Errore tipico: progettare tutto prima di disegnare — parti dal richiedente e segui il processo.' },
     { id: 'modifica', t: 'Modificare e collegare', body: 'Un tocco su un elemento apre le azioni rapide (+ Passo dopo, Collega →…); un secondo tocco apre i dettagli. «Collega →» apre un secondo menu con che cosa collegare: un passo nuovo, una scorta, un in-box, o un elemento già sul foglio — e sull\'omino prima ancora il verbo («chiede a…» / «si reca a…»). Per una freccia di flusso o di richiesta tieni premuto e trascina fino all’altro elemento. Un’estremità staccata è segnata in rosso tratteggiato: riagganciala, altrimenti resta fuori dalla timeline.' },
     { id: 'matita', t: 'Matita, coach, annulla', body: 'Con la Matita scrivi e disegni a mano libera (l’Apple Pencil scrive da sé, le dita muovono gli elementi). ✦ legge il foglio e propone modifiche: è un secondo parere, non un correttore — valuta prima di accettare. ↶ annulla l’ultima azione, tutte le volte che serve.' },
-    { id: 'foglio', t: 'Leggere il foglio', body: 'Sotto i passi la timeline: verde in basso il tempo a valore, rosso in alto le attese; il riepilogo in basso a destra fa i conti (VA, NVA, VA %, First Time Quality). La catena ⛓ dice che un elemento è legato a un altro: spostando quello, si muove anche lui («Lega a…» / «Slega» nelle azioni rapide). Il lucchetto 🔒 invece inchioda un elemento al foglio: non si sposta finché non lo sblocchi («Blocca» / «Sblocca»). Il badge ↗ apre la mappa collegata (dettaglio, turno, futuro). La fase del foglio (accanto al titolo, in barra) dice dov’è nel prima-e-poi del libro: parte da «Disegna» e sale solo quando la tocchi tu (vedi Cammina e valida).' },
+    { id: 'foglio', t: 'Leggere il foglio', body: 'Sotto i passi la timeline: verde in basso il tempo a valore, rosso in alto le attese; il riepilogo in basso a destra fa i conti (VA, NVA, VA %, First Time Quality). La catena ⛓ dice che un elemento è legato a un altro: spostando quello, si muove anche lui («Lega a…» / «Slega» nelle azioni rapide). Il lucchetto 🔒 invece inchioda un elemento al foglio: non si sposta finché non lo sblocchi («Blocca» / «Sblocca»). Il badge ↗ apre la mappa collegata (dettaglio, turno, futuro). La fase del foglio (accanto al titolo, in barra) dice dov’è nel prima-e-poi del libro: parte da «Disegna» e sale solo quando la tocchi tu (vedi Controlla sul campo e valida).' },
     { id: 'livelli', t: 'Più fogli, senza perdersi', body: 'Un passo può contenere un foglio suo: aprilo col badge ↗. Da lì in poi ogni passo ha un <b>indirizzo</b> — il passo 2 contiene il 2.1, che contiene il 2.1.1 — e l\'indirizzo si vede sul badge, nelle briciole in barra e nella <b>cartina</b> (l\'icona a destra, sopra lo zoom): la cartina dice sempre dove sei. «↑ su» in barra risale, selezionando il passo da cui eri sceso; ⋯ → «Questo foglio diventa un passo di…» fa il contrario, e appende il foglio che stai guardando sotto un passo di un processo più grande. Il badge <b>⇉</b> è un\'altra cosa: quel passo <i>richiama</i> un foglio che sta altrove (stesso processo, già disegnato) e ti dice dove. I numeri si ricalcolano da soli quando cambi le frecce: sono una scaletta, non un\'etichetta. Tutte le mappe di un lavoro stanno in un <b>progetto</b> (⋯ → «Progetti…»): gli elenchi mostrano solo quello in cui sei, e due progetti si parlano solo se li colleghi.' },
   ];
   const METODO = [
     { id: 'testata', t: 'Intestazione e scopo', body: 'Titolo, data e iniziali vivono in barra, in alto a sinistra: tocca l’intestazione per vederli e cambiarli (sul foglio A3 del libro stavano in alto a destra). Lo scopo in una frase: dalla richiesta X alla consegna Y. Una mappa = un processo solo: se cambia turno o unità, fai un’altra mappa, non una variante.', q: 'Cosa soddisfa esattamente questa mappa?', acts: [['title', 'Apri l’intestazione']] },
     { id: 'richiesta', t: 'La richiesta', body: 'Disegna il richiedente e tutte le vie reali con cui la richiesta arriva: telefono, fax, e-mail, a voce, di persona. La giungla di frecce in alto non è disordine da nascondere: è il primo spreco da attaccare, perché ogni via in più è una richiesta che può perdersi o essere fraintesa.', q: 'Quante mani tocca la richiesta prima di arrivare a chi eroga?', tools: [['person', 'Persona'], ['request', 'Richiesta']] },
     { id: 'flusso', t: 'Flusso e attese', body: 'Disegna i passi nell’ordine in cui avvengono davvero, non come dovrebbero: nello stato attuale ciò che sta nei box è valore adesso, si giudica dopo. Tra due passi metti sempre un delta se la cosa sta ferma. Più di 4-5 passi? Forse lo scopo è troppo largo.', q: 'Quale attività apre la porta del passo e quale la chiude?', tools: [['box', 'Passo'], ['delta', 'Attesa']] },
-    { id: 'valida', t: 'Cammina e valida', body: 'Una mappa fatta alla scrivania è una bozza. Cammina il processo dall’inizio alla fine osservando, poi mostrala a chi fa il lavoro: accuratezza e adesione arrivano insieme. Le domande da fare sono due: «Ti sembra giusto? Ho lasciato fuori qualcosa?». Finché non l’hai fatto, la fase resta prima di Dati: il cronometro si apre solo dopo (cap. 5).', valida: true },
-    { id: 'dati', t: 'Dati', body: 'Vengono dopo Cammina e valida, non insieme: si cronometra solo un flusso già validato dallo staff, altrimenti il numero è falso senza che nessuno se ne accorga (cap. 5). Per ogni passo e ogni attesa raccogli Hi / Lo / Avg, un’unità sola per tutta la mappa. L’attesa non si cronometra: si calcola per differenza, fine del passo precedente → inizio del successivo. Servono ~30 misure per dati credibili, 8-10 per una prima vista; il massimo è dove si nascondono interruzioni e workaround. Per misurarli camminando il processo: ⋯ → «Misura i tempi ⏱» (o il ⏱ accanto ai tempi di un passo). Il cronometro segue la catena: tu chiudi il passo, l’attesa nasce da sé fino a quando cominci il successivo. Poi «Calcola i tempi» scrive Hi/Lo/Avg. Il livello «Tempi e variabilità» (⋯ → Livelli di analisi) mostra su ogni passo misurato la media e quanto ballano le misure: sotto il ' + (V.analysis.CV_SOGLIE.stabile * 100) + '% di variazione stabile, sotto il ' + (V.analysis.CV_SOGLIE.moderata * 100) + '% moderata, oltre alta — soglie provvisorie, da tarare sulle vostre misure.', acts: [['misura', 'Apri il cronometro ⏱']], q: 'Perché a volte 5 minuti e a volte 19?' },
+    { id: 'valida', t: 'Controlla sul campo e valida', body: 'Una mappa fatta alla scrivania è una bozza. Cammina il processo dall’inizio alla fine osservando, poi mostrala a chi fa il lavoro: accuratezza e adesione arrivano insieme. Le domande da fare sono due: «Ti sembra giusto? Ho lasciato fuori qualcosa?». Finché non l’hai fatto, la fase resta prima di Dati: il cronometro si apre solo dopo (cap. 5).', valida: true },
+    { id: 'dati', t: 'Dati', body: 'Vengono dopo «Disegna e controlla» e la validazione, non insieme: si cronometra solo un flusso già validato dallo staff, altrimenti il numero è falso senza che nessuno se ne accorga (cap. 5). Per ogni passo e ogni attesa raccogli Hi / Lo / Avg, un’unità sola per tutta la mappa. L’attesa non si cronometra: si calcola per differenza, fine del passo precedente → inizio del successivo. Servono ~30 misure per dati credibili, 8-10 per una prima vista; il massimo è dove si nascondono interruzioni e workaround. Per misurarli camminando il processo: ⋯ → «Misura i tempi ⏱» (o il ⏱ accanto ai tempi di un passo). Il cronometro segue la catena: tu chiudi il passo, l’attesa nasce da sé fino a quando cominci il successivo. Poi «Calcola i tempi» scrive Hi/Lo/Avg. Il livello «Tempi e variabilità» (⋯ → Livelli di analisi) mostra su ogni passo misurato la media e quanto ballano le misure: sotto il ' + (V.analysis.CV_SOGLIE.stabile * 100) + '% di variazione stabile, sotto il ' + (V.analysis.CV_SOGLIE.moderata * 100) + '% moderata, oltre alta — soglie provvisorie, da tarare sulle vostre misure.', acts: [['misura', 'Apri il cronometro ⏱']], q: 'Perché a volte 5 minuti e a volte 19?' },
     { id: 'analisi', t: 'Analisi', body: 'Una nuvola su ogni punto debole, con muda e regola violata: una riga, non un tema. Comincia dalle nuvole a monte: correggere la richiesta rende più di quanto sembri. Quando senti «a volte, dipende, forse» il processo non è specificato — è già una nuvola.', q: 'Così accade adesso: è abbastanza buono?', tools: [['storm', 'Nuvola']] },
     { id: 'futuro', t: 'Ideale (stato futuro)', body: 'L’Ideale è dove volete arrivare: uno solo per processo, col lucchetto — una volta validato non si modifica finché non lo riapri. Dev’essere raggiungibile (persone, sponsor, data). Prima mossa quasi sempre: ridurre le vie della richiesta; poi eliminare o combinare passi; tempi standard solo dai dati raccolti. Se il futuro non è visibilmente più semplice dell’attuale, torna a osservare. E niente monumenti: non automatizzare ciò che non funziona a mano.', acts: [['future', 'Apri / crea l’Ideale']], cmp: true },
     { id: 'piano', t: 'Piano e follow-up', body: 'Ogni riga del piano: cosa, chi, entro quando, esito atteso; senza chi e quando non accadrà. L’ostacolo grosso merita un A3, non una riga di piano. A piano eseguito si rimisura: nuova mappa dello stato attuale e confronto fianco a fianco.', q: 'Chi fa cosa, entro quando?', acts: [['plan', 'Apri il piano']] }
@@ -882,7 +913,7 @@
     let b = `<div class="gpc-body">${it.body}`;
     if (it.q) b += `<div class="gp-q">${esc(it.q)}</div>`;
     if (it.valida) {
-      b += `<label class="check" style="margin-top:8px"><input type="checkbox" id="gp-walked" ${map.validation.walked ? 'checked' : ''}> <span>Processo camminato (osservazione diretta)</span></label>`
+      b += `<label class="check" style="margin-top:8px"><input type="checkbox" id="gp-walked" ${map.validation.walked ? 'checked' : ''}> <span>Controllato sul campo (camminato: osservazione diretta)</span></label>`
         + `<div class="field" style="margin-top:4px"><label>Validata da (chi fa il lavoro)</label><input id="gp-validated" value="${esc(map.validation.validatedBy || '')}" autocomplete="off"></div>`;
     }
     if (it.cmp) {
@@ -915,7 +946,7 @@
       const after = Object.assign(clone(V.map().validation), { walked: wk.checked, walkedDate: wk.checked ? today() : '' });
       V.commit({ t: 'meta', after: { validation: after } }, 'validazione', { silent: true });
       const m = V.map();
-      if (wk.checked && V.canSetPhase(m, 'valida').ok) UI.toastAction('Camminato: passiamo a Valida?', 'Passa a Valida', () => { V.setPhase(m, 'valida'); UI.renderHeader(); });
+      if (wk.checked && V.canSetPhase(m, 'valida').ok) UI.toastAction('Controllato sul campo: passiamo a Valida?', 'Passa a Valida', () => { V.setPhase(m, 'valida'); UI.renderHeader(); });
     };
     // «Validata da» compilato propone Misura: lo staff ha guardato il foglio, si può cronometrare.
     const vd = $('#gp-validated', c); if (vd) {
