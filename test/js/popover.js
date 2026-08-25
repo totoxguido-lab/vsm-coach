@@ -292,14 +292,20 @@
       if (lpar) lockHint = `<div class="hint lockrow">⛓ Legato a <b>${esc(lpar.props.title || lpar.props.label || lpar.props.name || V.TYPES[lpar.type].name)}</b>: si muove con lui.</div>`;
       else if (R.LOCKABLE.includes(el.type) && el.type !== 'delta' && el.type !== 'box' && el.type !== 'person') lockHint = `<div class="hint lockrow">⛓ Libero: lascialo cadere su un passo o vicino a una freccia per legarlo.</div>`;
       const opts = mapOptions(map.id);
-      // Il menu dice PRIMA che cosa succederà: una mappa senza posto diventa il sotto-foglio di questo
-      // passo (↗); una che un posto ce l'ha già resta dov'è e viene solo richiamata (⇉). Il foglio che
-      // sta già sotto QUESTO passo è il suo sotto-foglio e basta: dirgli «richiamata ⇉» smentiva il
-      // badge ↗ che il passo porta sul foglio.
-      const suffisso = (o) => { const m2 = V.doc.maps[o.id]; if (m2 && m2.parentStepId === el.id) return ' — sotto-foglio ↗'; return o.libera ? ' — diventa sotto-foglio ↗' : ' — richiamata ⇉'; };
-      const linkSel = `<select data-k="link"><option value="">— nessuna —</option><option value="__new__">+ nuovo sotto-foglio di questo passo…</option>${opts.map(o => `<option value="${o.id}" title="${esc(o.ind || '')}" ${p.link === o.id ? 'selected' : ''}>${esc(o.label)}${suffisso(o)}</option>`).join('')}</select>`;
-      const linkHint = 'Una mappa che non sta ancora sotto nessun passo diventa il sotto-foglio di questo. Una che ha già il suo posto resta dov\'è: qui viene solo richiamata.';
+      // Il contenimento ↗ è dei SOLI passi (criterio di Gt, 25/8: un passo contiene sottoprocessi;
+      // e nel libro chi scende di livello sono i process box). Per ogni altro elemento la voce è
+      // sempre un richiamo ⇉ — V.linkMap applica la stessa regola alla fonte e non adotta. Le
+      // NUVOLE non si collegano affatto: nel libro il problema scala all'A3, non a un sotto-foglio
+      // (il menu resta solo, in sola uscita, su una nuvola che un link ce l'ha già dai tempi in cui
+      // si poteva: per aprirlo o toglierlo).
+      const suffisso = (o) => { if (!isBox) return ' — richiamata ⇉'; const m2 = V.doc.maps[o.id]; if (m2 && m2.parentStepId === el.id) return ' — sotto-foglio ↗'; return o.libera ? ' — diventa sotto-foglio ↗' : ' — richiamata ⇉'; };
+      const nuovaVoce = isBox ? `<option value="__new__">+ nuovo sotto-foglio di questo passo…</option>` : '';
+      const linkSel = `<select data-k="link"><option value="">— nessuna —</option>${nuovaVoce}${opts.map(o => `<option value="${o.id}" title="${esc(o.ind || '')}" ${p.link === o.id ? 'selected' : ''}>${esc(o.label)}${suffisso(o)}</option>`).join('')}</select>`;
+      const linkHint = isBox
+        ? 'Una mappa che non sta ancora sotto nessun passo diventa il sotto-foglio di questo. Una che ha già il suo posto resta dov\'è: qui viene solo richiamata.'
+        : 'Richiamo ⇉: la mappa si apre da qui ma resta dov\'è. Solo un passo può contenerla.';
       const openLink = (p.link && V.doc.maps[p.link]) ? `<div class="actions"><button class="btn small primary" id="pop-openlink">Apri la mappa collegata ↗</button></div>` : '';
+      const NUVOLE = ['storm', 'fluffy', 'burst'];
       if (isBox) {
         // Per il passo il collegamento sta dietro il tondo ↗ in cima al pannello (variante B della
         // spec 2026-08-21): NON sepolto in «Altre opzioni» — la richiesta di Gt («non deve stare in
@@ -308,8 +314,10 @@
         minis += `<div class="pop-mini hidden" data-mini="setup"><h4>Extra del passo</h4><div class="row">${field('Correct & Complete %', inp('cc', p.cc, 'inputmode="decimal" placeholder="es. 90"' + roStep))}${field('Chi / reparto', inp('owner', p.owner, roStep))}</div>${lockHint}</div>`;
       } else {
         main += lockHint;
-        main += field('Collega a un\'altra mappa', linkSel, linkHint);
-        main += openLink;
+        if (!NUVOLE.includes(el.type) || p.link) {
+          main += field('Collega a un\'altra mappa', linkSel, linkHint);
+          main += openLink;
+        }
       }
     }
     const CONVERT = { storm: ['fluffy', 'burst', 'text'], fluffy: ['storm', 'burst', 'text'], burst: ['storm', 'fluffy', 'text'], text: ['storm', 'fluffy', 'burst'], inbox: ['delta', 'inventory'], inventory: ['inbox'] };

@@ -887,6 +887,21 @@ window.VSM = window.VSM || {};
     const heirs = Object.values(V.doc.maps).filter(o => o.verOf === id);
     heirs.forEach(o => { o.verOf = (m.verOf && V.doc.maps[m.verOf]) ? m.verOf : null; });
     if (ideal && heir) { heir.pairId = ideal.id; ideal.pairId = heir.id; }
+    // Le figlie dirette NON si disperdono (rilievi R4/R5 del brute force, 25/8: prima repairDoc
+    // azzerava il loro parentId e l'albero costruito si dissolveva in silenzio). In ordine:
+    // 1) se un'altra mappa della catena (giro erede, altri giri, l'Ideale) ha ANCORA il passo che
+    //    le conteneva — gli id degli elementi sono clonati fra i giri — si riappendono lì;
+    // 2) altrimenti salgono al padre della mappa eliminata (senza passo: l'indirizzo resta suo,
+    //    per lettera — v. trattoDi);
+    // 3) senza un padre restano di primo livello, ma con un indirizzo che le distingue.
+    const figlie = Object.values(V.doc.maps).filter(o => o.parentId === id && o.id !== id);
+    const candidate = [heir].concat(rest, ideal ? [ideal] : []).filter(Boolean).filter(x => x.id !== id && !(opts.withPair && ideal && x.id === ideal.id));
+    figlie.forEach(f => {
+      let nuovoPar = null, nuovoStep = null;
+      if (f.parentStepId) { const cand = candidate.find(x => (x.elements || []).some(e => e.id === f.parentStepId && e.type === 'box')); if (cand) { nuovoPar = cand.id; nuovoStep = f.parentStepId; } }
+      if (!nuovoPar && m.parentId && V.doc.maps[m.parentId]) nuovoPar = m.parentId;
+      f.parentId = nuovoPar; f.parentStepId = nuovoStep; bump(f);
+    });
     delete V.doc.maps[id];
     if (opts.withPair && ideal) delete V.doc.maps[ideal.id];
     Object.values(V.doc.maps).forEach(o => { if (!V.doc.maps[o.pairId]) o.pairId = null; if (!V.doc.maps[o.parentId]) o.parentId = null; if (!V.doc.maps[o.verOf]) o.verOf = null; });
@@ -991,7 +1006,10 @@ window.VSM = window.VSM || {};
   // La porta unica anche qui (rilievo: la porta non si deve aggirare passando fuori da commit):
   // un sotto-foglio nuovo è struttura, come qualunque add di un passo — un'op sintetica basta a
   // chiederlo a V.allowed, senza bisogno di un elemento vero.
-  V.createDetail = (parent, title, stepId) => { if (!V.allowed({ t: 'add', el: { type: 'box' } }, parent).ok) return null; const passo = stepId ? V.byId(stepId, parent) : null; const H = passo && passo.props ? V.tintHue(passo.props.tint) : null; const d = V.newMap(Object.assign({ kind: 'detail', parentId: parent.id, parentStepId: stepId || null, projectId: parent.projectId, title: title || ('Dettaglio di ' + (parent.title || 'mappa')), unit: parent.unit, authors: parent.authors }, H == null ? {} : { tint: H })); V.addMap(d); V.save(); return d; };
+  // il passo del legame dev'essere un BOX: con l'id di un altro elemento (persona, nuvola…) il
+  // foglio nasce senza passo — repairDoc riconosce il contenimento solo sui box, e un parentStepId
+  // marcio sarebbe stato sciolto in silenzio alla prima riparazione (regola di Gt, 25/8)
+  V.createDetail = (parent, title, stepId) => { if (!V.allowed({ t: 'add', el: { type: 'box' } }, parent).ok) return null; const passo = stepId ? V.byId(stepId, parent) : null; const passoBox = passo && passo.type === 'box' ? passo : null; const H = passoBox && passoBox.props ? V.tintHue(passoBox.props.tint) : null; const d = V.newMap(Object.assign({ kind: 'detail', parentId: parent.id, parentStepId: passoBox ? passoBox.id : null, projectId: parent.projectId, title: title || ('Dettaglio di ' + (parent.title || 'mappa')), unit: parent.unit, authors: parent.authors }, H == null ? {} : { tint: H })); V.addMap(d); V.save(); return d; };
   /** Appende un foglio esistente a un passo di un altro foglio: è il «processo 0» — l'intera mappa di
    *  oggi diventa un passo di qualcosa di più grande. Ritorna l'esito invece di annunciare da sé: chi
    *  chiama non deve dire «fatto» prima di aver letto. Si rifiuta quando creerebbe un anello (una
@@ -1063,7 +1081,13 @@ window.VSM = window.VSM || {};
   V.linkMap = (boxId, targetId, map = V.map()) => {
     const t = V.doc.maps[targetId];
     const ops = [{ t: 'props', id: boxId, after: { link: targetId } }];
-    if (t && !t.parentId && map && t.projectId === map.projectId && t.id !== map.id) {
+    // L'adozione (l'albero scritto sulla mappa) e' dei SOLI passi: un box contiene sottoprocessi
+    // (criterio di Gt, prova iPad 25/8 — e il libro: chi scende di livello sono i process box).
+    // Ogni altro elemento al massimo RICHIAMA ⇉: senza questa guardia una persona «adottava» la
+    // mappa, e repairDoc — che il contenimento lo riconosce solo sui box — scioglieva il legame in
+    // silenzio alla prima riparazione: il sotto-foglio sembrava sparire a caso.
+    const chi = map && V.byId(boxId, map);
+    if (chi && chi.type === 'box' && t && !t.parentId && t.projectId === map.projectId && t.id !== map.id) {
       ops.push({ t: 'mapfield', mapId: t.id, key: 'parentId', after: map.id });
       ops.push({ t: 'mapfield', mapId: t.id, key: 'parentStepId', after: boxId });
     }
@@ -1432,6 +1456,9 @@ window.VSM = window.VSM || {};
     const { doc, note } = V.migrate(d);
     V.doc = doc;
     Object.values(V.doc.maps).forEach(m => { keepLook(m); Object.assign(m, Object.assign(V.newMap(), m)); });
+    // un backup con ZERO mappe (file editato a mano) lasciava activeMapId nullo e il render
+    // esplodeva su V.map() undefined (rilievo R3 del brute force, 25/8): si atterra su un foglio nuovo
+    if (!Object.keys(V.doc.maps).length) V.addMap(V.newMap({ title: '' }));
     V.repairDoc(); if (!V.doc.maps[V.doc.activeMapId]) V.doc.activeMapId = Object.keys(V.doc.maps)[0];
     undoStack.length = 0; redoStack.length = 0;
     V.save(); emit({ switched: true });
@@ -1950,6 +1977,26 @@ window.VSM = window.VSM || {};
    *  (`visti`: contro un documento arrivato da fuori e mai passato per repairDoc, che gli anelli li
    *  scioglie), poi si ridiscende componendo i tratti. Quando e' lungo si accorcia solo in mostra,
    *  con V.shortAddress: il valore qui resta quello vero. */
+  /** Il tratto di UN anello: il numero del passo che contiene la mappa — ma UNIVOCO fra i
+   *  fratelli (rilievi R1/R2 del brute force, 25/8: due figlie dello stesso passo avevano lo
+   *  stesso indirizzo, e una figlia senza passo EREDITAVA l'indirizzo della madre — un indirizzo
+   *  che non distingue non e' un indirizzo). Regola: i figli del foglio, in ordine di creazione,
+   *  reclamano il numero del proprio passo; chi lo trova gia' preso, o un passo non ce l'ha,
+   *  riceve una lettera (a, b, … aa) da una sequenza unica del foglio. Le lettere non collidono
+   *  mai coi numeri di passo (che cominciano sempre con una cifra). */
+  const lettTratto = (i) => { let s = ''; i += 1; while (i > 0) { i--; s = String.fromCharCode(97 + i % 26) + s; i = Math.floor(i / 26); } return s; };
+  const trattoDi = (m, par) => {
+    const nums = V.stepNumbers(par);
+    const figli = Object.values(V.doc.maps).filter(o => o.parentId === par.id)
+      .sort((a, b) => (a.created || 0) - (b.created || 0) || String(a.id).localeCompare(String(b.id)));
+    const presi = new Set(); let li = 0;
+    for (const o of figli) {
+      const n = o.parentStepId ? nums.get(o.parentStepId) : null;
+      const t = (n && !presi.has(n)) ? (presi.add(n), n) : lettTratto(li++);
+      if (o.id === m.id) return t;
+    }
+    return lettTratto(li); // mai raggiunto per un figlio vero: m sta in figli per costruzione
+  };
   V.mapAddress = (map) => {
     if (!map) return '';
     const anelli = [], visti = new Set();
@@ -1957,8 +2004,8 @@ window.VSM = window.VSM || {};
     let su = '';
     for (let i = anelli.length - 1; i >= 0; i--) {
       const m = anelli[i], par = V.doc.maps[m.parentId];
-      const n = m.parentStepId ? V.stepNumbers(par).get(m.parentStepId) : null;
-      if (n) su = su ? su + '.' + n : n;   // il passo non c'è più: si eredita l'indirizzo della madre
+      const t = trattoDi(m, par);
+      su = su ? su + '.' + t : t;
     }
     return su;
   };

@@ -245,7 +245,7 @@
         V.azzeraSpazio().then(() => location.reload()).catch(() => location.reload());
         break;
       }
-      case 'delete': if (confirm(`Eliminare la mappa "${map.title || 'senza titolo'}"? Non si può annullare.`)) { const r = deleteMapAsked(map); if (r.ok) { I.restoreView(); V.saveNow(); UI.toast(r.withPair ? 'Attuale e Ideale eliminati.' : 'Mappa eliminata.'); } } break;
+      case 'delete': { const nFigli = Object.values(V.doc.maps).filter(o => o.parentId === map.id).length; const codaFigli = nFigli ? (nFigli === 1 ? '\n\nIl suo sotto-foglio non si perde: si riappende più in alto.' : `\n\nI suoi ${nFigli} sotto-fogli non si perdono: si riappendono più in alto.`) : ''; if (confirm(`Eliminare la mappa "${map.title || 'senza titolo'}"? Non si può annullare.${codaFigli}`)) { const r = deleteMapAsked(map); if (r.ok) { I.restoreView(); V.saveNow(); UI.toast(r.withPair ? 'Attuale e Ideale eliminati.' : 'Mappa eliminata.'); } } break; }
       case 'exit': { // nell'app Android chiude davvero; nel browser/PWA la scheda non si puo' chiudere da codice
         const cap = window.Capacitor;
         if (cap && cap.Plugins && cap.Plugins.App && cap.Plugins.App.exitApp) { cap.Plugins.App.exitApp(); break; }

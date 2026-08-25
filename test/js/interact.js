@@ -741,6 +741,11 @@
     V.pop.close();
     if (!V.commit(ops, 'elimina')) return;
     I.selection = [];
+    // P.close() qui sopra ha appena RIFATTO comparire il menu rapido per l'elemento ancora
+    // selezionato (e' la sua regola: chiuso il pop-up, il menu torna) — ma l'elemento sta per
+    // sparire: senza questo, «Blocca» ed «Elimina» restavano orfani sul foglio (bug iPad 25/8,
+    // visto eliminando un reparto dal suo pannello).
+    V.ui.onSelection && V.ui.onSelection([]);
   };
   /** duplica uno o più elementi; se un figlio bloccato/agganciato e il suo genitore sono entrambi nel gruppo, il legame viene ricreato tra le copie */
   I.duplicateMany = (ids) => {
