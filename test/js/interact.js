@@ -236,7 +236,7 @@
     if ((t === 'select' || kind === 'create') && !frozen) {
       const ch = e.target.closest && e.target.closest('[data-chan-handle]'); if (ch) { const c = V.byId(ch.dataset.chanHandle, map); gesture = { type: 'chan', id: c.id, t0: c.props.t == null ? 0.5 : c.props.t, startClient: { x: e.clientX, y: e.clientY }, moved: false }; return; }
       const eh = e.target.closest && e.target.closest('[data-endhandle]'); if (eh) { gesture = { type: 'reconnect', id: eh.dataset.conn, end: eh.dataset.endhandle, moved: false }; V.ui.hideQuick && V.ui.hideQuick(); return; }
-      const rh = e.target.closest && e.target.closest('[data-handle]'); if (rh) { const el = V.byId(rh.dataset.handle, map); if (el) { if (el.props.pinned) { I.hint('Bloccato sul foglio \u{1F512}: si sblocca dalle azioni rapide.', 2500); gesture = { type: 'noop' }; return; } gesture = { type: 'resize', id: el.id, start: w, w0: el.w, h0: el.h }; return; } }
+      const rh = e.target.closest && e.target.closest('[data-handle]'); if (rh) { const el = V.byId(rh.dataset.handle, map); if (el) { if (el.props.pinned) { I.hint('Bloccato sul foglio \u{1F512}: si sblocca dalle azioni rapide.', 2500); gesture = { type: 'noop' }; return; } if (['misura', 'analizza'].includes(map.phase) && !V.isConnector(el) && !V.MISURA_LIBERI.includes(el.type)) { I.hint('In Misura il flusso \u00e8 fermo \u23F1: niente ridimensionamenti.', 2500); gesture = { type: 'noop' }; return; } gesture = { type: 'resize', id: el.id, start: w, w0: el.w, h0: el.h }; return; } }
     }
     if (t === 'pan' || (e.pointerType === 'touch' && I.fingerPans && (t === 'select' && !hit) )) { startPan(e); return; }
     if (t === 'area') { gesture = { type: 'lasso', start: w, startClient: { x: e.clientX, y: e.clientY }, shift: e.shiftKey, fromTool: true }; return; }
@@ -267,13 +267,16 @@
       if (!wasSelected) I.select([hit.id], { keepPop: true });
       // gli elementi col lucchetto chiuso (pinned) non si trascinano: proteggono dagli spostamenti per sbaglio
       const misuraFerma = ['misura', 'analizza'].includes(map.phase);
-      const moving = frozen ? [] : I.selection.map(id => V.byId(id, map)).filter(x => x && !V.isConnector(x) && !x.props.pinned && (!misuraFerma || V.MISURA_LIBERI.includes(x.type)));
+      const hitFermo = misuraFerma && el && !V.isConnector(el) && !V.MISURA_LIBERI.includes(el.type);
+      // il gesto nato SOPRA un elemento fermo e' tutto un no-op (Codex P2): senno' trascinando il
+      // passo si muoveva la nuvola selezionata insieme, senza nemmeno l'avviso
+      const moving = (frozen || hitFermo) ? [] : I.selection.map(id => V.byId(id, map)).filter(x => x && !V.isConnector(x) && !x.props.pinned && (!misuraFerma || V.MISURA_LIBERI.includes(x.type)));
       // il blocco 🔒 vince sulla catena ⛓ (esito stazione 1, 25/8): foto della posizione VISTA di
       // ogni elemento bloccato-e-legato fuori dal gruppo che si muove — a ogni frame R.freezePinned
       // compensa dx/dy perche' resti dov'era, anche se il suo genitore (o la sua freccia) si sposta
       const pinFrozen = frozen ? [] : map.elements.filter(x => x.props && x.props.pinned && (x.props.lockTo || (x.type === 'delta' && x.props.attachedTo)) && !moving.some(m => m.id === x.id)).map(x => ({ id: x.id, dx0: x.props.dx || 0, dy0: x.props.dy || 0, pos0: R.elPos(x, map) }));
       const pinPos0 = {}; pinFrozen.forEach(f => { pinPos0[f.id] = f.pos0; });
-      gesture = { type: 'drag', wasSelected, ids: moving.map(x => x.id), start: w, startClient: { x: e.clientX, y: e.clientY }, before: moving.map(x => (x.props.lockTo || (x.type === 'delta' && x.props.attachedTo)) && !moving.some(p => p.id === (x.props.lockTo || x.props.attachedTo)) ? { id: x.id, dx: x.props.dx || 0, dy: x.props.dy || 0, attached: true } : (x.props.lockTo || (x.type === 'delta' && x.props.attachedTo)) ? { id: x.id, skip: true } : { id: x.id, x: x.x, y: x.y }), moved: false, hitId: hit.id, isConn: V.isConnector(el), hitPinned: !!(el && el.props && el.props.pinned), hitMisFermo: !!(el && !V.isConnector(el) && ['misura', 'analizza'].includes(map.phase) && !V.MISURA_LIBERI.includes(el.type)), pinFrozen, pinPos0 };
+      gesture = { type: 'drag', wasSelected, ids: moving.map(x => x.id), start: w, startClient: { x: e.clientX, y: e.clientY }, before: moving.map(x => (x.props.lockTo || (x.type === 'delta' && x.props.attachedTo)) && !moving.some(p => p.id === (x.props.lockTo || x.props.attachedTo)) ? { id: x.id, dx: x.props.dx || 0, dy: x.props.dy || 0, attached: true } : (x.props.lockTo || (x.type === 'delta' && x.props.attachedTo)) ? { id: x.id, skip: true } : { id: x.id, x: x.x, y: x.y }), moved: false, hitId: hit.id, isConn: V.isConnector(el), hitPinned: !!(el && el.props && el.props.pinned), hitMisFermo: hitFermo, pinFrozen, pinPos0 };
       return;
     }
     gesture = { type: 'lasso', start: w, startClient: { x: e.clientX, y: e.clientY }, shift: e.shiftKey };

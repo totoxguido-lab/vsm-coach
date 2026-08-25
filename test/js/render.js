@@ -172,7 +172,11 @@
   /** Orologino tenue (stesso tratto del glifo «sala d'attesa»): sta al posto delle targhette
    *  «Hi / Lo / Avg ?» e «attesa ?» in fase disegna — ricorda che i tempi arriveranno dal
    *  cronometro senza chiedere numeri in una fase in cui non esistono. */
-  const clockHint = (cx, cy) => `<g class="clock-hint pencil-thin" opacity=".5"><circle cx="${cx}" cy="${cy - 4}" r="6.5" fill="none"/><path d="M${cx} ${cy - 4} V${cy - 8.5} M${cx} ${cy - 4} H${cx + 3.5}"/></g>`;
+  const clockHint = (cx, cy) => `<g class="clock-hint" opacity=".4" fill="none" stroke="#2b2b2b" stroke-width="1.5" stroke-linecap="round"><circle cx="${cx}" cy="${cy - 3}" r="6"/><path d="M${cx - 2.4} ${cy - 11.6} h4.8 M${cx} ${cy - 11.2} v2 M${cx} ${cy - 3} v-3.2 M${cx} ${cy - 3} l2.4 1.6"/></g>`;
+  // i controlli UI (il cronometro grande dei passi) vivono SOLO a schermo: l'export e la stampa
+  // restituiscono il documento VSM, non lo stato transitorio dell'interfaccia (finding P2 Codex)
+  let uiVivo = true;
+  R.elMarkup = (el, map) => drawEl(el, map);   // la via «a schermo» per le prove
   function drawEl(el, map) {
     // la mappa serve al badge del collegamento (figlia o riferimento); la legenda disegna elementi
     // che non stanno in nessuna mappa, e per quelli vale il ripiego sulla mappa attiva
@@ -211,17 +215,19 @@
         // stazione 3, 25/8): il tocco fa partire (o riprendere) la misura di quel passo — il
         // cablaggio sta in interact (data-mis). Verde pieno = sta misurando QUI; il conteggio
         // vivo (mm:ss) lo scrive il ticker (R.misuraOverlay), non questo render statico.
-        if (map.phase === 'misura' || map.phase === 'analizza') {
+        if (uiVivo && (map.phase === 'misura' || map.phase === 'analizza')) {
           const ms = map.measure;
           const attivo = !!(ms && ms.phase === 'box' && ms.stepId === el.id);
           const nMis = V.timesOf(el).length;
+          const cx2 = w - 2, ink2 = attivo ? '#fff' : '#2b2b2b';
           s += `<g class="mis-clock${attivo ? ' mis-attivo' : ''}" data-mis="${esc(el.id)}">`
-            + `<circle class="mis-hit" cx="${w - 2}" cy="2" r="24" fill="transparent"/>`
-            + `<circle class="pencil" cx="${w - 2}" cy="2" r="15" fill="${attivo ? '#2e7d32' : '#fffdf7'}"/>`
-            + (attivo
-              ? `<g stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M${w - 2} 2 V-6 M${w - 2} 2 H${w + 5}" /></g>`
-              : `<g class="pencil-thin"><circle cx="${w - 2}" cy="2" r="8.5" fill="none"/><path d="M${w - 2} 2 V-5 M${w - 2} 2 H${w + 4}"/></g>`)
-            + (nMis ? `<text class="hand" x="${w - 2}" y="28" text-anchor="middle" font-size="9">${nMis}×</text>` : '')
+            + `<circle class="mis-hit" cx="${cx2}" cy="2" r="24" fill="transparent"/>`
+            + `<circle cx="${cx2}" cy="2" r="15" fill="${attivo ? '#2e7d32' : '#fffdf7'}" stroke="${attivo ? '#2e7d32' : '#2b2b2b'}" stroke-width="1.6"/>`
+            + `<g fill="none" stroke="${ink2}" stroke-width="1.8" stroke-linecap="round">`
+            + `<circle cx="${cx2}" cy="3.4" r="7"/>`
+            + `<path d="M${cx2 - 2.6} -6.4 h5.2 M${cx2} -6 v2.2 M${cx2} 3.4 v-4 M${cx2} 3.4 l2.8 1.9"/>`
+            + `</g>`
+            + (nMis ? `<text class="hand" x="${cx2}" y="28" text-anchor="middle" font-size="9">${nMis}×</text>` : '')
             + `</g>`;
         }
         break;
@@ -1073,7 +1079,8 @@
    *  mappa diversa da quella aperta avrebbe mostrato il titolo sbagliato (rilievo della revisione).
    *  L'azzeramento di layerKeys in R.init fa si' che il ripristino non lasci chiavi stantie: al
    *  ritorno il primo R.overlay del foglio vero ridisegna, ed e' giusto cosi'. */
-  R.exportSVG = (map, opts = {}) => {
+  R.exportSVG = (map, opts = {}) => { uiVivo = false; try { return exportSVGvero(map, opts); } finally { uiVivo = true; } };
+  const exportSVGvero = (map, opts = {}) => {
     const keepSvg = svg, keepL = L;
     try {
       R.init(document.createElementNS(NS, 'svg'));

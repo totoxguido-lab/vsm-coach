@@ -99,6 +99,7 @@
     done.onclick = () => { $('#more-tools').classList.add('hidden'); I.setTool('select'); };
     pal.appendChild(done);
     TOOLS_ATTIVI.forEach(t => { if (!t) { const s = document.createElement('div'); s.className = 'sep'; pal.appendChild(s); return; } const b = document.createElement('button'); b.className = 'tool'; b.dataset.tool = t[0]; b.title = t[1]; b.setAttribute('aria-label', t[1]); b.innerHTML = IC[t[0]] + `<span class="lbl">${SHORT[t[0]]}</span>`; b.onclick = () => { if (t[0] === 'more') { $('#more-tools').classList.toggle('hidden'); return; } $('#more-tools').classList.add('hidden'); if (t[0] === 'ink' && I.tool === 'ink') { UI.inkOptions(); return; } if (I.tool === t[0]) { I.setTool('select'); return; } I.setTool(t[0]); }; pal.appendChild(b); });
+    if (inMisura && !TOOLS_ATTIVI.some(t => t && t[0] === I.tool) && I.tool !== 'select') I.setTool('select');   // niente matita fantasma (Codex P1)
     const more = $('#more-tools'); more.innerHTML = ''; more.classList.add('hidden');
     (inMisura ? [] : MORE_TOOLS).forEach(t => { const b = document.createElement('button'); b.className = 'tool'; b.dataset.tool = t[0]; b.innerHTML = IC[t[0]] + '<span>' + t[1] + '</span>'; b.onclick = () => { I.setTool(t[0]); more.classList.add('hidden'); }; more.appendChild(b); });
     UI.onTool(I.tool);
@@ -541,49 +542,78 @@
    * Ogni tocco passa dal modello (measure*), che salva subito nel documento: un lap non
    * si perde nemmeno se Safari muore un istante dopo. Il tempo corre dall'orologio di
    * parete (t0), mai da un timer JS; il Wake Lock tiene lo schermo acceso mentre si misura. */
-  let misTick = null, misWL = null, misStopArm = false;
+  let misTick = null, misWL = null, misStopArm = null;  // {mapId, giro}: la conferma armata non sopravvive al cambio di contesto (Codex P1)
   const misAttiva = () => { const m = V.map(); const s = m && V.measureState(m); return !!(m && ['misura', 'analizza'].includes(m.phase) && s && s.phase && s.t0); };
-  const misWake = async () => { try { if (!misWL && navigator.wakeLock && misAttiva()) { misWL = await navigator.wakeLock.request('screen'); misWL.addEventListener('release', () => { misWL = null; }); } } catch (e) { misWL = null; } };
+  let misWLPend = false;
+  const misWake = async () => {
+    if (misWL || misWLPend || !navigator.wakeLock || !misAttiva()) return;
+    misWLPend = true;
+    try {
+      const wl = await navigator.wakeLock.request('screen');
+      // la misura puo' essere finita mentre la richiesta era in volo (Codex P2): niente lock orfani
+      if (!misAttiva()) { try { wl.release(); } catch (e2) { /* niente */ } return; }
+      misWL = wl;
+      wl.addEventListener('release', () => { if (misWL === wl) misWL = null; });
+    } catch (e) { /* wake lock negato: si misura lo stesso */ }
+    finally { misWLPend = false; }
+  };
   const misWakeOff = () => { try { if (misWL) misWL.release(); } catch (e) { /* niente */ } misWL = null; };
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && misAttiva()) misWake(); });
   const misMMSS = (sec) => { const m2 = Math.floor(sec / 60), s2 = sec % 60; return (m2 < 10 ? '0' : '') + m2 + ':' + (s2 < 10 ? '0' : '') + s2; };
+  // icone della barra del giro: SVG puliti, stessi tratti delle icone della palette — niente
+  // scritte nei bottoni (esito di Gt del 25/8 sera); il nome vive in aria-label e title
+  const MIS_IC = {
+    pause: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M8.5 5v14M15.5 5v14"/></svg>',
+    play: '<svg viewBox="0 0 24 24"><path d="M7.5 4.8l11.5 7.2-11.5 7.2z" fill="currentColor"/></svg>',
+    lap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5l5 5L19.5 7"/></svg>',
+    next: '<svg viewBox="0 0 24 24"><path d="M5.5 5l9.5 7-9.5 7z" fill="currentColor"/><path d="M18.5 5v14" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>',
+    stop: '<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg>',
+    no: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>'
+  };
   UI.renderMisCtl = () => {
     let bar = $('#misctl');
     if (!bar) { bar = document.createElement('div'); bar.id = 'misctl'; const pal = $('#palette'); pal.parentNode.insertBefore(bar, pal); }
     const m = V.map();
     // il badge sul passo cambia stato (verde = sta misurando qui): l'op 'meta' del cronometro e'
     // silenziosa e non ridisegna gli elementi — qui si aggiornano il passo di prima e quello attivo
-    const attId = (m && misAttiva()) ? V.measureState(m).stepId : null;
-    if (UI._misPrev !== attId) { [UI._misPrev, attId].filter(Boolean).forEach(ix => { if (m && V.byId(ix, m)) R.updateEl(ix, m); }); UI._misPrev = attId; }
+    const sNow = m && V.measureState(m);
+    const attKey = (m && misAttiva()) ? (sNow.phase + ':' + sNow.stepId) : null;   // fase+passo (Codex P2: attesa→box sullo stesso passo)
+    if (UI._misPrev !== attKey) {
+      [UI._misPrev, attKey].filter(Boolean).map(k => String(k).split(':')[1]).forEach(ix => { if (m && V.byId(ix, m)) R.updateEl(ix, m); });
+      UI._misPrev = attKey;
+    }
     if (!misAttiva()) {
-      bar.classList.add('hidden'); misStopArm = false; misWakeOff();
+      bar.classList.add('hidden'); misStopArm = null; misWakeOff();
       if (misTick) { clearInterval(misTick); misTick = null; }
       return;
     }
     bar.classList.remove('hidden');
     const s = V.measureState(m);
     const inPausa = V.measurePaused(m);
+    const armato = !!(misStopArm && misStopArm.mapId === m.id && misStopArm.giro === (s.giro || 1));
+    if (misStopArm && !armato) misStopArm = null;
     const passo = V.byId(s.stepId, m);
     const nome = passo ? (String(passo.props.title || '').trim() || 'passo senza nome') : '?';
     const che = s.phase === 'attesa' ? ('attesa \u2192 ' + nome) : nome;
     bar.innerHTML = ''
-      + `<button id="mis-pausa" class="mis-btn" title="${inPausa ? 'Riprendi il conteggio' : 'Pausa dell\u2019osservatore: il tempo NON finisce nel dato'}">${inPausa ? '\u25B6' : '\u23F8'}</button>`
+      + `<button id="mis-pausa" class="mis-btn" aria-label="${inPausa ? 'Riprendi il conteggio' : 'Pausa dell’osservatore'}" title="${inPausa ? 'Riprendi il conteggio' : 'Pausa dell\u2019osservatore: il tempo NON finisce nel dato'}">${inPausa ? MIS_IC.play : MIS_IC.pause}</button>`
       + `<div class="mis-info"><span class="mis-tempo${inPausa ? ' pausa' : ''}" id="mis-tempo">${misMMSS(V.measureElapsed(m))}</span><span class="mis-nome">${esc(che)}${s.turno ? ' \u00B7 ' + esc(s.turno) : ''}</span></div>`
-      + `<button id="mis-avanti" class="mis-btn mis-fine">${s.phase === 'attesa' ? '\u25B6 Comincia il prossimo' : '\u270B Passo finito'}</button>`
-      + (misStopArm
-        ? `<span class="mis-stoparm"><button id="mis-stop-si" class="mis-btn stop">S\u00EC, chiudi</button><button id="mis-stop-no" class="mis-btn">\u2715</button></span>`
-        : `<button id="mis-stop" class="mis-btn stop" title="Chiudi il giro (chiede conferma)">\u23F9</button>`);
+      + `<button id="mis-avanti" class="mis-btn mis-fine" aria-label="${s.phase === 'attesa' ? 'Comincia il prossimo passo' : 'Passo finito'}" title="${s.phase === 'attesa' ? 'Comincia il prossimo passo' : 'Passo finito: chiude il passo, l\u2019attesa corre da sola'}">${s.phase === 'attesa' ? MIS_IC.next : MIS_IC.lap}</button>`
+      + (armato
+        ? `<span class="mis-stoparm"><button id="mis-stop-si" class="mis-btn stop" aria-label="S\u00EC, chiudi il giro" title="S\u00EC, chiudi il giro">${MIS_IC.stop}</button><button id="mis-stop-no" class="mis-btn" aria-label="Annulla" title="Annulla">${MIS_IC.no}</button></span>`
+        : `<button id="mis-stop" class="mis-btn stop" aria-label="Chiudi il giro" title="Chiudi il giro (chiede conferma)">${MIS_IC.stop}</button>`);
     $('#mis-pausa', bar).onclick = () => { if (V.measurePaused(m)) V.measureResume(m); else V.measurePause(m); UI.renderMisCtl(); };
     $('#mis-avanti', bar).onclick = () => UI.misAdvance();
-    const st = $('#mis-stop', bar); if (st) st.onclick = () => { misStopArm = true; UI.renderMisCtl(); };
-    const stSi = $('#mis-stop-si', bar); if (stSi) stSi.onclick = () => { misStopArm = false; V.measureStop(m); I.hint('Giro chiuso. \u22EF \u2192 \u00ABMisura i tempi \u23F1\u00BB per le misure prese e \u00ABCalcola i tempi\u00BB.', 5000); UI.renderMisCtl(); };
-    const stNo = $('#mis-stop-no', bar); if (stNo) stNo.onclick = () => { misStopArm = false; UI.renderMisCtl(); };
+    const st = $('#mis-stop', bar); if (st) st.onclick = () => { misStopArm = { mapId: m.id, giro: s.giro || 1 }; UI.renderMisCtl(); };
+    const stSi = $('#mis-stop-si', bar); if (stSi) stSi.onclick = () => { misStopArm = null; V.measureStop(m); I.hint('Giro chiuso. \u22EF \u2192 \u00ABMisura i tempi \u23F1\u00BB per le misure prese e \u00ABCalcola i tempi\u00BB.', 5000); UI.renderMisCtl(); };
+    const stNo = $('#mis-stop-no', bar); if (stNo) stNo.onclick = () => { misStopArm = null; UI.renderMisCtl(); };
     if (!misTick) misTick = setInterval(() => { const t = $('#mis-tempo'); const mm = V.map(); if (t && mm && misAttiva()) t.textContent = misMMSS(V.measureElapsed(mm)); else UI.renderMisCtl(); }, 1000);
     misWake();
   };
   /** Il tocco sul cronometro grande di un passo (data-mis, interact). Ritorna true se gestito. */
   UI.misTap = (id) => {
     const m = V.map(); if (!m || !['misura', 'analizza'].includes(m.phase)) return false;
+    misStopArm = null;
     const s = V.measureState(m);
     if (!s || !s.phase) {
       const r = V.measureStart(m, id);
@@ -598,6 +628,7 @@
   };
   UI.misAdvance = () => {
     const m = V.map(); if (!m) return;
+    misStopArm = null;   // qualsiasi altra azione disarma la conferma di chiusura
     const r = V.measureAdvance(m);
     if (!r) return;
     if (r.ko === 'sparito') UI.toast('Il ' + (r.cosa || 'pezzo') + ' non c\u2019\u00E8 pi\u00F9: il giro si \u00E8 chiuso da solo.');

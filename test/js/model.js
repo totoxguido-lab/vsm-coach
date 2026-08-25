@@ -237,10 +237,13 @@ window.VSM = window.VSM || {};
         // da solo alle misure di oggi (la sola visibilita' del campo non e' una conferma). Quello
         // GIA' scritto sulle osservazioni e' un dato preso: resta.
         if (s.turno !== undefined) delete s.turno;
-        // pause dell'osservatore (stazione 3): numeri veri o via — un pausedAt marcio farebbe
-        // un elapsed NaN e un'osservazione falsa, come il t0 qui sopra
-        if (s.pausedAt !== undefined && (typeof s.pausedAt !== 'number' || !isFinite(s.pausedAt))) delete s.pausedAt;
-        if (s.pausedTot !== undefined && (typeof s.pausedTot !== 'number' || !isFinite(s.pausedTot) || s.pausedTot < 0)) delete s.pausedTot;
+        // pause dell'osservatore (stazione 3, indurite dal finding P1 di Codex): numeri veri E
+        // coerenti con t0 e con l'orologio, o via — un pausedAt prima dell'inizio (o nel futuro)
+        // e un pausedTot piu' lungo dell'intera durata avrebbero prodotto misure a ZERO in
+        // silenzio via Math.max: meglio perdere la pausa (il tempo torna pieno, visibile) che
+        // scrivere un dato falso.
+        if (s.pausedAt !== undefined && (typeof s.pausedAt !== 'number' || !isFinite(s.pausedAt) || (typeof s.t0 === 'number' && s.pausedAt < s.t0) || s.pausedAt > Date.now() + 60000)) delete s.pausedAt;
+        if (s.pausedTot !== undefined && (typeof s.pausedTot !== 'number' || !isFinite(s.pausedTot) || s.pausedTot < 0 || (typeof s.t0 === 'number' && s.pausedTot > Math.max(0, Date.now() - s.t0)))) delete s.pausedTot;
         if (s.phase !== null && s.phase !== undefined && !['box', 'attesa'].includes(s.phase)) delete m.measure;
       }
     }
@@ -739,7 +742,7 @@ window.VSM = window.VSM || {};
    *  struttura (disegna,cammina) ⊂ contenuto (disegna,cammina,valida) ⊂ annotazioni/posizione
    *  (sempre): è un'inclusione vera. osservazioni/livelli vivono su un asse loro (tardi, non presto)
    *  e nelle op vere dell'app non si mescolano mai con struttura/contenuto nella stessa op. */
-  const RANGO = { struttura: 0, contenuto: 1, osservazioni: 2, livelli: 2, annotazioni: 3, posizione: 3 };
+  const RANGO = { struttura: 0, contenuto: 1, osservazioni: 2, livelli: 2, inchiostro: 2, annotazioni: 3, posizione: 3 };
   const piuStretta = (a, b) => { if (a == null) return b; if (b == null) return a; return (RANGO[a] ?? 9) <= (RANGO[b] ?? 9) ? a : b; };
   /** La classe di un'operazione (per la porta unica e per i pannelli): null quando la chiave non è
    *  dichiarata in nessuna classe — la porta la rifiuta (reason 'fase'), e la prova di completezza la
@@ -769,13 +772,15 @@ window.VSM = window.VSM || {};
       return cls;
     }
     if (op.t === 'mapfield') return 'struttura';   // adozione/albero: parentId/parentStepId di un'altra mappa
-    if (op.t === 'stroke_add' || op.t === 'stroke_remove' || op.t === 'strokes_set') return 'annotazioni';
+    // la matita e la gomma sono DISEGNO, non annotazione (finding P1 di Codex): in Misura/Analizza
+    // il modello le ferma anche se la palette non le mostra — la garanzia sta qui, non nella UI
+    if (op.t === 'stroke_add' || op.t === 'stroke_remove' || op.t === 'strokes_set') return 'inchiostro';
     if (op.t === 'plan_set') return 'annotazioni';
     return null;
   };
   const AMMESSE = {
-    disegna: ['struttura', 'contenuto', 'annotazioni', 'posizione'],
-    valida: ['contenuto', 'annotazioni', 'posizione'],
+    disegna: ['struttura', 'contenuto', 'annotazioni', 'posizione', 'inchiostro'],
+    valida: ['contenuto', 'annotazioni', 'posizione', 'inchiostro'],
     // REVOCA del 22/8 (esito stazione 3, 25/8): in Misura/Analizza il flusso e' FERMO — niente
     // 'posizione' generica ne' 'contenuto' generico. Il ramo MISURA_LIBERI in V.allowed apre
     // entrambe le classi ai soli tipi-annotazione (nuvole, note, icone, facce): si aggiungono,
