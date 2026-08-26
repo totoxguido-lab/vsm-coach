@@ -4,7 +4,7 @@
   const I = V.interact, R = V.render, UI = V.ui, C = V.coach; const { clone, today } = V.util;
   const $ = (s, r = document) => r.querySelector(s); const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 
-  function fullRender() { const map = V.map(); R.all(map, { selection: I.selection.filter(id => V.byId(id, map)) }); UI.renderHeader(); UI.renderCartina && UI.renderCartina(); if (UI.guideVisible && UI.guideVisible()) UI.renderGuide(); if (!$('#drawer').classList.contains('closed') && !$('#pane-plan').classList.contains('hidden')) UI.renderPlan(); }
+  function fullRender() { const map = V.map(); R.all(map, { selection: I.selection.filter(id => V.byId(id, map)) }); UI.renderHeader(); UI.renderCartina && UI.renderCartina(); if (UI.guideVisible && UI.guideVisible()) UI.renderGuide(); if (!$('#drawer').classList.contains('closed') && !$('#pane-plan').classList.contains('hidden')) UI.renderPlan(); UI.renderMisCtl && UI.renderMisCtl(); }
   let sugTimer = null;
   V.onChange((info) => {
     if (info.switched) { I.selection = []; V.pop.close(); UI.hideQuick(); fullRender(); return; }
@@ -153,6 +153,15 @@
       menuCheck('#btn-trace', R.traceOn); R.selection(I.selection, V.map());
       UI.toast(R.traceOn ? 'Selezionando un elemento si illumina dove va a finire.' : 'Evidenziazione del percorso spenta.');
     };
+    // formato delle misurazioni (esito 12, E12-b): convenzione cronometro (50″, 1′20″) di casa,
+    // oppure l'unita' del foglio — la scelta vive in localStorage e ridisegna subito badge e viste
+    $('#btn-timefmt').onclick = () => {
+      const nuovo = V.timeFmt() === 'crono' ? 'unita' : 'crono';
+      try { localStorage.setItem('vsm.timefmt', nuovo); } catch (e) { /* storage bloccato */ }
+      menuCheck('#btn-timefmt', nuovo === 'crono');
+      fullRender();
+      UI.toast(nuovo === 'crono' ? 'Misurazioni in formato cronometro: 50″, 1′20″.' : 'Misurazioni nell\'unità del foglio (es. minuti).');
+    };
     UI.menuCheck = menuCheck;
     $('#zoom-in').onclick = () => { const r = $('#stage').getBoundingClientRect(); I.zoomAt(1.2, r.left + r.width / 2, r.top + r.height / 2); };
     $('#zoom-out').onclick = () => { const r = $('#stage').getBoundingClientRect(); I.zoomAt(1 / 1.2, r.left + r.width / 2, r.top + r.height / 2); };
@@ -280,11 +289,14 @@
     UI.guideOn = localStorage.getItem('vsm.guideOn') !== '0';
     try { R.traceOn = localStorage.getItem('vsm.trace') !== '0'; } catch (e) { /* storage bloccato */ }
     { const vl = $('#ver-label'); if (vl) vl.textContent = 'VSM Coach ' + V.VERSION + (location.pathname.includes('/beta/') ? ' beta' : '') + ' · ' + V.BUILD; }
-    UI.buildPalette(); bindHeader(); UI.bindCartina(); UI.renderCartina(); C.init(); UI.menuCheck('#btn-pen-mode', I.penDraws); UI.menuCheck('#btn-overlays', !!(V.map() && V.map().layers && V.map().layers.riepilogo)); UI.menuCheck('#btn-trace', R.traceOn);
+    UI.buildPalette(); bindHeader(); UI.bindCartina(); UI.renderCartina(); C.init(); UI.menuCheck('#btn-pen-mode', I.penDraws); UI.menuCheck('#btn-overlays', !!(V.map() && V.map().layers && V.map().layers.riepilogo)); UI.menuCheck('#btn-trace', R.traceOn); UI.menuCheck('#btn-timefmt', V.timeFmt() === 'crono');
     { let chrome = '1', tools = '0'; try { chrome = localStorage.getItem('vsm.chrome') ?? '1'; tools = localStorage.getItem('vsm.toolsLeft') ?? '0'; } catch (e) { /* storage bloccato */ }
       UI.setToolsLeft(tools === '1'); if (chrome === '0') UI.setChrome(false, { hint: false }); }
     try { if (localStorage.getItem('vsm.paletteHidden') === '1') UI.setPaletteHidden(true, { quiet: true }); } catch (e) { /* storage bloccato */ }
     fullRender(); I.restoreView();
+    // la barra del giro e la legenda della misura devono esserci gia' al primo avvio, se il
+    // documento riapre in Misura con un giro vivo (esito 12) — non solo dopo un cambio foglio
+    UI.renderMisCtl && UI.renderMisCtl();
     // «Azzera la copia di prova» esiste solo dove ha senso: sull'app stabile la voce non compare,
     // cosi' nessuno puo' cancellare per sbaglio le mappe vere cercando di ripulire una prova
     if ((V.storage().canale || 'sviluppo') === 'stabile') $$('.prova-only').forEach(n => n.classList.add('hidden'));

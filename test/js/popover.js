@@ -189,8 +189,55 @@
     $('#gpc-x', c).onclick = no; $('[data-rp-no]', c).onclick = no;
     $('[data-rp-ok]', c).onclick = () => { UI.closeGuideCard(); onOk(); };
   };
+  /** ESITO 12 della prova iPad (E12-d, 26/8): in Misura/Analizza il passo si apre in una finestra
+   *  SUA, di sola lettura — non il pannello dell'editing tutto disabilitato. Dentro: il nome (o
+   *  «Passo N» dalla sequenza), le attività in elenco, il resoconto delle misure (max·min·media +
+   *  totale) e il pulsante che apre l'analisi completa. Restano le azioni della fase (comincia il
+   *  giro da qui, + problema) e le sezioni dei livelli DIVERSI da 'tempo', che vive per intero
+   *  dietro «Analisi delle misure». */
+  const openPassoMisura = (el, map, opts = {}) => {
+    // il tocco sul badge dei tempi salta dritto all'analisi: la sezione 'tempo' non sta piu' qui
+    if (opts.section === 'tempo' && UI.openAnalisi) { UI.openAnalisi(el.id); return; }
+    const id = el.id; P.current = id; P._mini = null;
+    const p = el.props;
+    const atti = (p.activities || []).map(x => String(x || '').trim()).filter(Boolean);
+    let h = `<div class="pop-head mis-ro"><div class="pop-title"><b>${esc(V.nomePasso(el, map))}</b><div class="pop-sub">in Misura il passo si legge, non si scrive</div></div><button class="btn small ghost" id="pop-x" aria-label="Chiudi">✕</button></div>`;
+    h += atti.length
+      ? `<div class="pop-sec">Attività</div><ol class="mis-ro-atti">${atti.map(a => `<li>${esc(a)}</li>`).join('')}</ol>`
+      : `<div class="hint">Nessuna attività scritta su questo passo.</div>`;
+    const res = (V.tempo && V.tempo.resocontoHTML) ? V.tempo.resocontoHTML(el, map) : '';
+    h += `<div class="pop-sec">Tempi misurati</div>` + (res || `<div class="hint">Nessuna misura ancora: tocca il cronometro ⏱ sul passo per cominciare.</div>`);
+    const acts = UI.actionList(el, map);
+    if (acts.length) h += `<div class="actions pop-actions">${acts.map(a => `<button class="btn small" data-pa="${a.id}" title="${esc(a.title)}">${a.label}</button>`).join('')}</div>`;
+    const secDefs = P.sections(el, map).filter(s => s.id !== 'tempo').map(s => {
+      let salvato = null; try { salvato = localStorage.getItem('vsm.pop.sec.' + s.id); } catch (e) { /* storage bloccato */ }
+      const aperto = opts.section === s.id ? true : salvato !== '0';
+      return Object.assign({}, s, { aperto });
+    });
+    if (secDefs.length) h += secDefs.map(s => `<details class="pop-section" data-sec="${esc(s.id)}" ${s.aperto ? 'open' : ''}><summary>${esc(s.title || '')}</summary><div class="pop-sec-body" data-sec-body></div></details>`).join('');
+    UI.hideQuick();
+    const pop = $('#pop'); pop.innerHTML = h; pop.classList.remove('hidden'); pop.classList.add('step'); P.place(el);
+    if (secDefs.length) {
+      const secEls = $$('.pop-section', pop);
+      secDefs.forEach(s => {
+        const d = secEls.find(x => x.dataset.sec === s.id); if (!d) return;
+        const host = d.querySelector('[data-sec-body]');
+        if (host) { try { s.render(host); } catch (e) { console.warn('livello "' + s.id + '": render() della sezione ha lanciato', e); } }
+        d.addEventListener('toggle', () => { try { localStorage.setItem('vsm.pop.sec.' + s.id, d.open ? '1' : '0'); } catch (e) { /* storage bloccato */ } P.place(el); });
+      });
+      P.place(el);
+    }
+    ensurePopRO();
+    $('#pop-x').onclick = P.close;
+    $$('[data-pa]', pop).forEach(b => b.onclick = () => UI.quickAction(b.dataset.pa, id));
+    const an = $('[data-analisi]', pop); if (an) an.onclick = () => { if (UI.openAnalisi) { P.close(); UI.openAnalisi(id); } };
+  };
+
   P.open = (id, opts = {}) => {
     const map = V.map(); const el = V.byId(id, map); if (!el) return;
+    // il passo in Misura/Analizza ha la sua finestra di lettura (esito 12): niente pannello
+    // dell'editing spento — quella strada resta per le altre fasi e per gli altri tipi
+    if (el.type === 'box' && ['misura', 'analizza'].includes(map.phase)) { openPassoMisura(el, map, opts); return; }
     if (P.current !== id) P._mini = null; // elemento cambiato: i pannellini ripartono chiusi
     P.current = id;
     const T = V.TYPES[el.type]; const p = el.props;

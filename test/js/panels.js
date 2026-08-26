@@ -599,6 +599,7 @@
    * si perde nemmeno se Safari muore un istante dopo. Il tempo corre dall'orologio di
    * parete (t0), mai da un timer JS; il Wake Lock tiene lo schermo acceso mentre si misura. */
   let misTick = null, misWL = null, misStopArm = null;  // {mapId, giro}: la conferma armata non sopravvive al cambio di contesto (Codex P1)
+  let misTrashArm = null;  // {mapId, t0}: il cestino armato vale per QUESTO lap — cambia il lap, si disarma
   // «attiva» e' GLOBALE, non del foglio a schermo (C2, decisione Gt 26/8): il giro puo' vivere su
   // un altro foglio, e finche' vive la barra resta (e il Wake Lock tiene lo schermo acceso)
   const misAttiva = () => !!V.measureActiveMap();
@@ -629,11 +630,50 @@
     lap: '<svg viewBox="0 0 24 24"><path d="M3.5 5.5l8 6.5-8 6.5z M12 5.5l8 6.5-8 6.5z" fill="currentColor"/></svg>',
     next: '<svg viewBox="0 0 24 24"><path d="M5.5 5l9.5 7-9.5 7z" fill="currentColor"/><path d="M18.5 5v14" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>',
     stop: '<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg>',
-    no: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>'
+    no: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>',
+    trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7h15M9.5 7V4.8h5V7M7 7l1 12.5h8L17 7M10 10.5v6M14 10.5v6"/></svg>'
+  };
+  /** La schermata di ANALISI delle misurazioni di un passo (esito 12, E12-d): tutte le
+   *  statistiche del livello «Tempi e variabilità» (F1) — istogramma, sparkline, elenco delle
+   *  misure con riclassificazione, nota e correzione manuale (🔢) — in una finestra dedicata,
+   *  aperta dal pulsante «🕐＋ Analisi delle misure» della finestra del passo o dal badge. */
+  UI.openAnalisi = (elId) => {
+    const map = V.map(); const el = map && V.byId(elId, map); if (!el) return;
+    let d = $('#dlg-analisi');
+    if (!d) {
+      d = document.createElement('dialog'); d.id = 'dlg-analisi'; d.setAttribute('aria-labelledby', 'analisi-head');
+      d.innerHTML = '<div class="d-head" id="analisi-head"></div><div class="d-body"><div id="analisi-body"></div></div><div class="d-foot"><button class="btn" id="analisi-close">Chiudi</button></div>';
+      document.body.appendChild(d);
+      $('#analisi-close', d).onclick = () => d.close();
+    }
+    $('#analisi-head', d).textContent = '🕐 Analisi delle misure — ' + V.nomePasso(el, map);
+    const body = $('#analisi-body', d);
+    if (V.tempo && V.tempo.mount && V.obsOf(el).length) V.tempo.mount(body, el, map);
+    else body.innerHTML = '<p class="hint">Nessuna misura su questo passo.</p>';
+    if (!d.open) d.showModal();
+  };
+  /** La legenda FISSA della misura (esito 12, E12-f): in basso a sinistra, spiega in piccolo i
+   *  tasti del cronometro e quando/quali chiudono un giro — la ✕ NON cancella niente. */
+  const misLegenda = (mCur) => {
+    let leg = $('#mislegenda');
+    if (!leg) {
+      leg = document.createElement('div'); leg.id = 'mislegenda';
+      leg.innerHTML = '<b>Cronometro</b>'
+        + '<div>⏱ sul passo: parte (o riprende) il giro da lì</div>'
+        + '<div>⏸ pausa di chi osserva — il tempo fermo non entra nel dato</div>'
+        + '<div>⏩ passo finito · ▶ comincia il prossimo (l’attesa nasce da sola)</div>'
+        + '<div>🗑 elimina la misura in corso (due tocchi) — niente viene scritto, il giro resta</div>'
+        + '<div>⏹ chiude il giro: chiede conferma — ⏹ rosso = sì, ✕ = annulla (nulla si cancella)</div>'
+        + '<div>Al bivio i cronometri lampeggiano: tocca il passo dove va il lavoro.</div>'
+        + '<div>Dopo l’ultimo passo della catena il giro si chiude da solo.</div>';
+      document.body.appendChild(leg);
+    }
+    leg.classList.toggle('hidden', !(mCur && ['misura', 'analizza'].includes(mCur.phase)));
   };
   UI.renderMisCtl = () => {
     let bar = $('#misctl');
     if (!bar) { bar = document.createElement('div'); bar.id = 'misctl'; const pal = $('#palette'); pal.parentNode.insertBefore(bar, pal); }
+    misLegenda(V.map());
     // la barra segue il GIRO, non il foglio a schermo (C2, decisione Gt 26/8): se il cronometro
     // vive su un altro foglio la barra resta — ridotta a pausa · tempo · chiudi — e il nome
     // riporta al foglio che sta misurando. «Non dovrebbe accadere», ma la possibilita' resta.
@@ -644,10 +684,22 @@
     // silenziosa e non ridisegna gli elementi — qui si aggiornano il passo di prima e quello
     // attivo, ma SOLO sul foglio a schermo (R.updateEl disegna sul canvas corrente)
     const sNow = m && V.measureState(m);
-    const attKey = (m && !altrove) ? (sNow.phase + ':' + sNow.stepId) : null;   // fase+passo (Codex P2: attesa→box sullo stesso passo)
+    // fase+passo+freccia (Codex P2: attesa→box sullo stesso passo; esito 12: anche la freccia
+    // dell'attesa si accende/spegne in blu e va ridisegnata al cambio)
+    const attKey = (m && !altrove) ? (sNow.phase + ':' + sNow.stepId + ':' + (sNow.connId || '')) : null;
     if (UI._misPrev !== attKey) {
-      [UI._misPrev, attKey].filter(Boolean).map(k => String(k).split(':')[1]).forEach(ix => { if (mCur && V.byId(ix, mCur)) R.updateEl(ix, mCur); });
-      UI._misPrev = attKey;
+      // oltre a passo e freccia correnti si ridisegnano i CANDIDATI del bivio (esito 12-bis):
+      // durante l'attesa i cronometri raggiungibili dal passo chiuso lampeggiano (mis-scelta),
+      // e a scelta fatta devono spegnersi — l'elenco di prima si tiene per pulirlo
+      const nuovi = (m && !altrove && sNow && sNow.phase) ? (() => {
+        const out = [sNow.stepId, sNow.connId].filter(Boolean);
+        if (sNow.phase === 'attesa' && sNow.fromId) mCur.elements.forEach(cc => {
+          if (cc.type === 'flow' && cc.from && cc.from.el === sNow.fromId) { out.push(cc.id); if (cc.to && cc.to.el) out.push(cc.to.el); }
+        });
+        return out;
+      })() : [];
+      new Set((UI._misPrevIds || []).concat(nuovi)).forEach(ix => { if (mCur && V.byId(ix, mCur)) R.updateEl(ix, mCur); });
+      UI._misPrev = attKey; UI._misPrevIds = nuovi;
     }
     if (!m) {
       bar.classList.add('hidden'); misStopArm = null; misWakeOff();
@@ -659,6 +711,9 @@
     const inPausa = V.measurePaused(m);
     const armato = !!(misStopArm && misStopArm.mapId === m.id && misStopArm.giro === (s.giro || 1));
     if (misStopArm && !armato) misStopArm = null;
+    // il cestino armato vale per QUESTO lap: cambiato passo o t0, torna opaco (doppio check vero)
+    const trashArmato = !!(misTrashArm && misTrashArm.mapId === m.id && misTrashArm.t0 === s.t0);
+    if (misTrashArm && !trashArmato) misTrashArm = null;
     const passo = V.byId(s.stepId, m);
     const nome = passo ? (String(passo.props.title || '').trim() || 'passo senza nome') : '?';
     const che = altrove
@@ -673,15 +728,26 @@
       + `<button id="mis-pausa" class="mis-btn" aria-label="${inPausa ? 'Riprendi il conteggio' : 'Pausa dell’osservatore'}" title="${inPausa ? 'Riprendi il conteggio' : 'Pausa dell\u2019osservatore: il tempo NON finisce nel dato'}">${inPausa ? MIS_IC.play : MIS_IC.pause}</button>`
       + `<div class="mis-info${altrove ? ' altrove' : ''}"${altrove ? ' role="button" tabindex="0" title="Apri il foglio che sta misurando"' : ''}><span class="mis-tempo${inPausa ? ' pausa' : ''}" id="mis-tempo">${misMMSS(V.measureElapsed(m))}</span><span class="mis-nome">${esc(che)}${s.turno ? ' \u00B7 ' + esc(s.turno) : ''}</span></div>`
       + (altrove ? '' : `<button id="mis-avanti" class="mis-btn mis-fine" aria-label="${s.phase === 'attesa' ? 'Comincia il prossimo passo' : 'Passo finito'}" title="${s.phase === 'attesa' ? 'Comincia il prossimo passo' : 'Passo finito: chiude il passo, l\u2019attesa corre da sola'}">${s.phase === 'attesa' ? MIS_IC.next : MIS_IC.lap}</button>`)
+      + `<button id="mis-trash" class="mis-btn trash${trashArmato ? ' armato' : ''}" aria-label="${trashArmato ? 'Tocca di nuovo: elimina la misura in corso' : 'Elimina la misura in corso (due tocchi)'}" title="${trashArmato ? 'Tocca di nuovo: la misura in corso si elimina, niente viene scritto' : 'Elimina la misura in corso (chiede un secondo tocco): per quando il passo era quello sbagliato'}">${MIS_IC.trash}</button>`
       + (armato
         ? `<span class="mis-stoparm"><button id="mis-stop-si" class="mis-btn stop" aria-label="S\u00EC, chiudi il giro" title="S\u00EC, chiudi il giro">${MIS_IC.stop}</button><button id="mis-stop-no" class="mis-btn" aria-label="Annulla" title="Annulla">${MIS_IC.no}</button></span>`
         : `<button id="mis-stop" class="mis-btn stop" aria-label="Chiudi il giro" title="Chiudi il giro (chiede conferma)">${MIS_IC.stop}</button>`);
-    $('#mis-pausa', bar).onclick = () => { if (V.measurePaused(m)) V.measureResume(m); else V.measurePause(m); UI.renderMisCtl(); };
-    const av = $('#mis-avanti', bar); if (av) av.onclick = () => UI.misAdvance();
+    $('#mis-pausa', bar).onclick = () => { misTrashArm = null; if (V.measurePaused(m)) V.measureResume(m); else V.measurePause(m); UI.renderMisCtl(); };
+    const av = $('#mis-avanti', bar); if (av) av.onclick = () => { misTrashArm = null; UI.misAdvance(); };
+    // il CESTINO (esito 12-bis, caso 1): primo tocco arma (da opaco a colorato), secondo elimina
+    // la misura in corso SENZA scrivere niente — il giro resta pronto per il passo giusto
+    const tr = $('#mis-trash', bar);
+    if (tr) tr.onclick = () => {
+      misStopArm = null;
+      if (!trashArmato) { misTrashArm = { mapId: m.id, t0: s.t0 }; UI.renderMisCtl(); return; }
+      misTrashArm = null;
+      if (V.measureAbort(m)) UI.toast('Misura eliminata: niente è stato scritto. Il giro è pronto — tocca il cronometro del passo giusto.');
+      UI.renderMisCtl();
+    };
     // da un altro foglio il tocco sull'info RIPORTA al foglio che misura: chiudere il passo
     // senza vederlo non ha senso, fermare e mettere in pausa sì (decisione Gt 26/8)
     const info = $('.mis-info', bar); if (info && altrove) info.onclick = () => UI.openMap(m.id);
-    const st = $('#mis-stop', bar); if (st) st.onclick = () => { misStopArm = { mapId: m.id, giro: s.giro || 1 }; UI.renderMisCtl(); };
+    const st = $('#mis-stop', bar); if (st) st.onclick = () => { misTrashArm = null; misStopArm = { mapId: m.id, giro: s.giro || 1 }; UI.renderMisCtl(); };
     const stSi = $('#mis-stop-si', bar); if (stSi) stSi.onclick = () => { misStopArm = null; V.measureStop(m); I.hint('Giro chiuso. \u22EF \u2192 \u00ABMisura i tempi \u23F1\u00BB per le misure prese e \u00ABCalcola i tempi\u00BB.', 5000); UI.renderMisCtl(); };
     const stNo = $('#mis-stop-no', bar); if (stNo) stNo.onclick = () => { misStopArm = null; UI.renderMisCtl(); };
     if (!misTick) misTick = setInterval(() => {
@@ -696,7 +762,7 @@
   /** Il tocco sul cronometro grande di un passo (data-mis, interact). Ritorna true se gestito. */
   UI.misTap = (id) => {
     const m = V.map(); if (!m || !['misura', 'analizza'].includes(m.phase)) return false;
-    misStopArm = null;
+    misStopArm = null; misTrashArm = null;
     const s = V.measureState(m);
     if (!s || !s.phase) {
       const r = V.measureStart(m, id);
@@ -725,6 +791,13 @@
     else if (r.ko === 'validato') UI.toast('Questo passo ha la \u2713: la misura non si scrive. Scarta o riapri la \u2713.');
     else if (r.ko === 'foglio') UI.toast('Lucchetto del foglio chiuso: nessuna misura si scrive.');
     else if (r.chiuso) I.hint('Fine della catena: giro chiuso e salvato. \u00ABCalcola i tempi\u00BB scrive Hi/Lo/Avg.', 5000);
+    else if (r.phase === 'attesa') {
+      // al BIVIO lo si dice (esito 12-bis, caso 2): il modello sapeva gi\u00E0 saltare (S3-b), ma
+      // senza una parola e senza il lampeggio la strada sembrava decisa dall'app
+      const s2 = V.measureState(m);
+      const rami = (s2 && s2.fromId) ? m.elements.filter(cc => cc.type === 'flow' && cc.from && cc.from.el === s2.fromId).length : 0;
+      if (rami > 1) I.hint('Bivio: i cronometri che lampeggiano sono i passi possibili \u2014 tocca quello dove il lavoro va DAVVERO. L\'attesa si scrive sulla freccia del passo scelto.', 6000);
+    }
     UI.renderMisCtl();
   };
   UI.openMisura = (stepId) => {
@@ -1399,7 +1472,8 @@
     // attese, persone e corsie non hanno menu — il secondo tocco apre i dettagli come sempre.
     // Gli oggetti liberi (nuvole, note, icone, facce) tengono le loro azioni.
     if (['misura', 'analizza'].includes(map.phase) && !V.isConnector(el) && !V.MISURA_LIBERI.includes(el.type) && el.type !== 'legend') {
-      if (el.type === 'box') { btn('mis', '\u23F1 Misura da qui', 'Parte (o continua) il giro su questo passo'); btn('cloud', '+ Problema', 'Un problema visto misurando, gia\' legato al passo'); }
+      // \u00ABMisura da qui\u00BB non si capiva (esito 12, E12-e): il nome ora dice che cosa fa davvero
+      if (el.type === 'box') { btn('mis', '\u23F1 Comincia il giro da qui', 'Fa partire (o continuare) il giro del cronometro da questo passo'); btn('cloud', '+ Problema', 'Un problema visto misurando, gia\' legato al passo'); }
       return A;
     }
     if (['misura', 'analizza'].includes(map.phase) && V.isConnector(el)) return A;

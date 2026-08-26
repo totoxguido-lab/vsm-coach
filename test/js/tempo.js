@@ -15,6 +15,9 @@
   /** unità corta per il badge (il posto è poco): l'unità del foglio, abbreviata */
   const UNITA_CORTA = { secondi: 's', minuti: 'min', ore: 'h', giorni: 'g' };
   const inUnita = (sec, map) => fmt(V.toUnit(sec, map.unit)) + ' ' + (UNITA_CORTA[map.unit] || map.unit);
+  /** OGNI misurazione si scrive cosi' (esito 12, 26/8): convenzione dei cronometri (50″ · 1′20″)
+   *  di casa; l'impostazione vsm.timefmt='unita' riporta all'unita' del foglio. */
+  const tMis = (sec, map) => V.timeFmt() === 'crono' ? V.fmtMisura(sec) : inUnita(sec, map);
   const TONO = { stabile: 'ok', moderata: 'warn', alta: 'alert' };
   const CLS_COLORE = { normale: '#1f4e79', particolare: '#b98900', eccezionale: '#c8321e' };
   const CLS_CICLO = { normale: 'particolare', particolare: 'eccezionale', eccezionale: 'normale' };
@@ -26,10 +29,25 @@
     const st = A.obsStats(V.obsOf(el));
     if (!st.n) return null;
     const classe = A.variabilita(st.cv);
+    // niente «~» davanti (esito 12: illeggibile e non aggiunge nulla — la media resta una media)
     return {
-      text: '~' + inUnita(st.mean, map) + (classe ? ' · ' + classe : ' (' + st.n + ')'),
+      text: tMis(st.mean, map) + (classe ? ' · ' + classe : ' (' + st.n + ')'),
       tone: TONO[classe]
     };
+  };
+  /** Il RESOCONTO del passo per la finestra di sola lettura di Misura (esito 12, E12-d):
+   *  max · min · media in formato misurazione + il totale, e il pulsante che apre l'analisi. */
+  T.resocontoHTML = (el, map) => {
+    const st = A.obsStats(V.obsOf(el));
+    if (!st.n) return '';
+    const riga = (k, v) => `<div class="tmp-riga"><span>${k}</span><b>${v}</b></div>`;
+    return '<div class="tmp-stats tmp-resoconto">'
+      + riga('max', esc(tMis(st.max, map)))
+      + riga('min', esc(tMis(st.min, map)))
+      + riga('media', esc(tMis(st.mean, map)))
+      + riga('misurazioni', String(st.n))
+      + '</div>'
+      + `<div class="actions"><button class="btn primary" data-analisi="${esc(el.id)}" title="Tutte le statistiche delle misurazioni di questo passo">🕐＋ Analisi delle misure</button></div>`;
   };
 
   /** istogramma SVG disegnato a mano (zero dipendenze): bin alla Sturges (⌈log2 n⌉+1), barre
@@ -50,8 +68,8 @@
       bars += `<rect x="${(i * bw + 1).toFixed(1)}" y="${areaH - bh}" width="${Math.max(1, bw - 2).toFixed(1)}" height="${bh}" rx="1.5" fill="#1f4e79" opacity="0.85"><title>${n} misur${n === 1 ? 'a' : 'e'}</title></rect>`;
     });
     return `<svg class="tmp-histo" viewBox="0 0 ${w} ${h}" role="img" aria-label="istogramma delle misure">${bars}`
-      + `<text x="1" y="${h - 2}" font-size="9" fill="#6b6b6b">${esc(inUnita(min, map))}</text>`
-      + `<text x="${w - 1}" y="${h - 2}" font-size="9" text-anchor="end" fill="#6b6b6b">${esc(inUnita(max, map))}</text></svg>`;
+      + `<text x="1" y="${h - 2}" font-size="9" fill="#6b6b6b">${esc(tMis(min, map))}</text>`
+      + `<text x="${w - 1}" y="${h - 2}" font-size="9" text-anchor="end" fill="#6b6b6b">${esc(tMis(max, map))}</text></svg>`;
   };
 
   /** sparkline cronologica: per `at` crescente, con l'indice d'inserimento a parimerito — le
@@ -89,12 +107,12 @@
     const riga = (k, v) => `<div class="tmp-riga"><span>${k}</span><b>${v}</b></div>`;
     let h = '<div class="tmp-stats">';
     h += riga('misure', String(st.n));
-    h += riga('min – max', esc(inUnita(st.min, map)) + ' – ' + esc(inUnita(st.max, map)));
-    h += riga('mediana', esc(inUnita(st.median, map)));
-    h += riga('media', esc(inUnita(st.mean, map)));
+    h += riga('min – max', esc(tMis(st.min, map)) + ' – ' + esc(tMis(st.max, map)));
+    h += riga('mediana', esc(tMis(st.median, map)));
+    h += riga('media', esc(tMis(st.mean, map)));
     // da n≥2 (rilievo Codex #4: erano nascosti fino a 3 — statistiche calcolate e non mostrate);
     // con n=1 restano fuori: sarebbero il valore stesso, una riga che non dice niente
-    if (st.n >= 2) h += riga('p10 – p90', esc(inUnita(st.p10, map)) + ' – ' + esc(inUnita(st.p90, map)));
+    if (st.n >= 2) h += riga('p10 – p90', esc(tMis(st.p10, map)) + ' – ' + esc(tMis(st.p90, map)));
     if (st.cv != null) h += riga('variabilità', 'CV ' + fmt(st.cv * 100) + '% · <span class="tmp-classe ' + esc(classe) + '">' + esc(classe) + '</span>');
     h += '</div>';
     h += T.istogrammaSVG(obs.map(o => o.s), map);
@@ -107,7 +125,7 @@
     h += '<div class="tmp-obs-list">' + obs.map((o, i) => {
       const giroDi = (o.giro && o.giro !== map.id && V.doc.maps[o.giro]) ? V.doc.maps[o.giro] : null;
       const dettagli = [o.turno, giroDi ? 'giro: ' + (giroDi.verName || giroDi.title || '?') : null].filter(Boolean).join(' · ');
-      return `<div class="tmp-obs"><b>${esc(inUnita(o.s, map))}</b>`
+      return `<div class="tmp-obs"><b>${esc(tMis(o.s, map))}</b>`
         + (dettagli ? `<span class="k">${esc(dettagli)}</span>` : '')
         + `<button class="btn small tmp-cls" data-obs-cls="${i}" style="color:${CLS_COLORE[o.cls] || CLS_COLORE.normale}"${perche || ' title="Tocca per riclassificare (normale → particolare → eccezionale). Nessuna misura viene esclusa dai conti: è solo una marcatura."'}>${esc(o.cls)}</button>`
         + `<button class="btn small ghost" data-obs-val="${i}"${perche || ' title="Correggi il valore di questa misura a mano"'}>🔢</button>`
@@ -130,7 +148,15 @@
       if ((el.type !== 'box' && el.type !== 'delta') || !V.obsOf(el).length) return null;   // spec D, sezioni vuote
       return {
         title: 'Tempi e variabilità',
-        render: (host) => {
+        render: (host) => T.mount(host, el, map)
+      };
+    }
+  });
+
+  /** Cuce la sezione «Tempi e variabilità» dentro un host DOM: la usano il pop-up (sezione del
+   *  livello) e la schermata di analisi del passo (esito 12, E12-d) — stessa vista, stesse
+   *  scritture (V.setObs), un solo posto. */
+  T.mount = (host, el, map) => {
           const vivo = () => V.byId(el.id, map) || el;
           const disegna = () => {
             host.innerHTML = T.sectionHTML(vivo(), map);
@@ -157,8 +183,5 @@
             });
           };
           disegna();
-        }
-      };
-    }
-  });
+  };
 })(window.VSM);

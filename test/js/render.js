@@ -232,11 +232,20 @@
         if (uiVivo && (map.phase === 'misura' || map.phase === 'analizza')) {
           const ms = map.measure;
           const attivo = !!(ms && ms.phase === 'box' && ms.stepId === el.id);
+          // il passo che si sta misurando ha lo sfondo ombreggiato ROSSO (esito 12, E12-c):
+          // si vede a colpo d'occhio DOVE sta correndo il cronometro. Solo a schermo (uiVivo),
+          // mai nell'export/stampa — e' stato della UI, non documento.
+          if (attivo) s = `<rect class="mis-shade" x="-8" y="-8" width="${w + 16}" height="${h + 16}" rx="10"/>` + s;
+          // al BIVIO la scelta si deve VEDERE (esito 12-bis, caso 2): durante l'attesa i
+          // cronometri di TUTTI i passi raggiungibili con una freccia dal passo appena chiuso
+          // lampeggiano — il modello sapeva già saltare (S3-b), ma nulla lo diceva a chi misura
+          const scelta = !!(ms && ms.phase === 'attesa' && ms.fromId
+            && map.elements.some(cc => cc.type === 'flow' && cc.from && cc.from.el === ms.fromId && cc.to && cc.to.el === el.id));
           const nMis = V.timesOf(el).length;
           // orologio «stile emoticon», PIENO (esito Gt 25/8 sera): corpo solido, lancette bianche,
           // corona e nasi ai lati — grafite da fermo, verde mentre misura
           const cx2 = w - 2, corpo = attivo ? '#2e7d32' : '#2b2b2b';
-          s += `<g class="mis-clock${attivo ? ' mis-attivo' : ''}" data-mis="${esc(el.id)}">`
+          s += `<g class="mis-clock${attivo ? ' mis-attivo' : ''}${scelta ? ' mis-scelta' : ''}" data-mis="${esc(el.id)}">`
             + `<circle class="mis-hit" cx="${cx2}" cy="2" r="24" fill="transparent"/>`
             + `<g fill="${corpo}">`
             + `<rect x="${cx2 - 3.2}" y="-13.5" width="6.4" height="4" rx="1.4"/>`
@@ -604,6 +613,12 @@
   R.nearestT = (c, map, pt) => { const P = R.connPath(c, map); let best = 0.5, bd = Infinity; for (let i = 0; i <= 60; i++) { const t = i / 60; const q = P.bez(t); const d = Math.hypot(q.x - pt.x, q.y - pt.y); if (d < bd) { bd = d; best = t; } } return Math.min(0.92, Math.max(0.08, best)); };
   function drawConn(c, map) {
     const P = R.connPath(c, map); const p = c.props; let s = '';
+    // l'ATTESA che si sta misurando si evidenzia in BLU rispetto al resto del canvas (esito 12,
+    // E12-c): un alone largo sulla freccia su cui l'attesa sta correndo. Solo a schermo.
+    if (uiVivo && c.type === 'flow' && (map.phase === 'misura' || map.phase === 'analizza')) {
+      const ms = map.measure;
+      if (ms && ms.phase === 'attesa' && ms.connId === c.id) s += `<path class="mis-shade-attesa" d="${P.d}"/>`;
+    }
     if (!c.from.el || !c.to.el) s += `<circle cx="${!c.from.el ? P.a.x : P.b.x}" cy="${!c.from.el ? P.a.y : P.b.y}" r="5" fill="#fff" stroke="#c8321e" stroke-dasharray="2 2"/>`;
     if (c.type === 'flow') {
       s += `<path class="pencil" d="${P.d}" ${R.connAttrs(c)}/>`;
@@ -965,7 +980,9 @@
       const id = attrData(g, 'data-layer');
       if (id && !attiviIds.has(id)) { g.innerHTML = ''; layerKeys.delete(id); }
     });
-    const chiaveDi = (l) => l.id + ':' + map.id + ':' + (map.rev | 0)
+    // il FORMATO delle misurazioni entra nella chiave (esito 12): cambiare l'impostazione
+    // vsm.timefmt deve ridisegnare i badge senza aspettare il prossimo commit
+    const chiaveDi = (l) => l.id + ':' + map.id + ':' + (map.rev | 0) + ':' + V.timeFmt()
       + (opts.drag && l.id === 'riepilogo' ? ':drag:' + (opts.dragN || 0) : '');
     attivi.forEach(l => {
       const key = chiaveDi(l);

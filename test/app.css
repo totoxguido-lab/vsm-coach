@@ -63,6 +63,13 @@ header .brand svg{width:22px;height:22px}
 #misctl .mis-tempo{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
 #misctl .mis-tempo.pausa{opacity:.45}
 #misctl .mis-nome{font-size:11px;opacity:.75;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* la legenda fissa della misura (esito 12, E12-f): basso a sinistra, piccola, mai un bersaglio */
+#mislegenda{position:absolute;left:10px;bottom:calc(10px + env(safe-area-inset-bottom, 0px));z-index:30;pointer-events:none;background:rgba(255,253,247,.93);border:1px solid #d9d4c8;border-radius:8px;padding:6px 9px;max-width:255px;font-size:10.5px;line-height:1.5;color:#4a463e}
+#mislegenda b{font-size:11px;color:#2b2b2b}
+#mislegenda.hidden{display:none}
+/* la finestra del passo in Misura (esito 12, E12-d): elenco attività di sola lettura */
+.mis-ro-atti{margin:2px 0 8px;padding-left:22px;font-size:13px;line-height:1.5}
+.tmp-resoconto{margin-bottom:4px}
 /* il calderone in consultazione (C1): voci in sola lettura nel selettore fasi */
 .fase-calderone{border:1px dashed #b7b0a3;border-radius:10px;padding:8px 10px;margin:6px 0;font-size:12px}
 .fase-calderone .cald-voce{margin:6px 0;padding-top:4px;border-top:1px solid #eee7d8}
@@ -74,7 +81,18 @@ header .brand svg{width:22px;height:22px}
 #misctl .mis-warn{flex-basis:100%;font-size:12px;line-height:1.35;color:#c8321e;font-weight:600;padding:2px 2px 4px}
 /* il cronometro grande sul passo e' un bersaglio: mano e ombra al passaggio */
 svg .mis-clock{cursor:pointer}
-@media print{svg .mis-clock,#misctl{display:none!important}}
+/* esito 12-bis: al bivio i cronometri candidati lampeggiano; il cestino arma in due tocchi */
+svg .mis-clock.mis-scelta{animation:misscelta 1.1s ease-in-out infinite}
+@keyframes misscelta{0%,100%{opacity:1}50%{opacity:.35}}
+#misctl .mis-btn.trash{opacity:.45}
+#misctl .mis-btn.trash.armato{opacity:1;background:#b98900;border-color:#b98900;color:#fff}
+/* esito 12 (E12-c): rosso ombreggiato sul passo in misura, alone blu sull'attesa in corso */
+svg .mis-shade{fill:rgba(200,50,30,.13);stroke:rgba(200,50,30,.4);stroke-width:1.5}
+svg .mis-shade-attesa{fill:none;stroke:rgba(31,78,121,.3);stroke-width:14;stroke-linecap:round}
+/* esito 12 (E12-a): il testo del badge resta BIANCO sul fondino pieno — la regola generica
+   svg text{fill:var(--pencil)} lo faceva nero su blu scuro, illeggibile */
+svg .badge text{fill:#fffdf7}
+@media print{svg .mis-clock,svg .mis-shade,svg .mis-shade-attesa,#misctl,#mislegenda{display:none!important}}
 svg .mis-clock:hover circle.pencil{filter:drop-shadow(0 0 4px rgba(46,125,50,.6))}
 .btn.small{min-height:30px;padding:0 9px;font-size:12.5px;border-radius:8px}
 .btn.ghost{background:transparent;border-color:transparent}

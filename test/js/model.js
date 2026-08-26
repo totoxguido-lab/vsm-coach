@@ -1961,6 +1961,28 @@ window.VSM = window.VSM || {};
     const pad = (n) => (n < 10 ? '0' : '') + n;
     return h ? h + ':' + pad(mm) + ':' + pad(ss) : pad(Math.floor(s2 / 60)) + ':' + pad(ss);
   };
+  /** Il FORMATO delle misurazioni (esito 12 della prova iPad, 26/8): di casa la convenzione dei
+   *  cronometri — minuti ′ e secondi ″ (50″ · 1′20″ · 1h01′05″; sotto i 10 secondi un decimale,
+   *  se c'e') — scelta da Gt («scegli quello convenzionale»); in impostazioni si puo' tornare
+   *  all'unita' del foglio (vsm.timefmt='unita'), e allora le viste ripiegano su inUnita. */
+  V.timeFmt = () => { try { return localStorage.getItem('vsm.timefmt') === 'unita' ? 'unita' : 'crono'; } catch (e) { return 'crono'; } };
+  V.fmtMisura = (sec) => {
+    const s2 = Math.max(0, sec || 0);
+    const pad = (n) => (n < 10 ? '0' : '') + n;
+    if (s2 < 10) { const dec = Math.round(s2 * 10) / 10; return String(dec).replace('.', ',') + '″'; }
+    const tondi = Math.round(s2);
+    if (tondi < 60) return tondi + '″';
+    const h = Math.floor(tondi / 3600), mm = Math.floor(tondi / 60) % 60, ss = tondi % 60;
+    return h ? h + 'h' + pad(mm) + '′' + pad(ss) + '″' : mm + '′' + pad(ss) + '″';
+  };
+  /** Il nome del passo come lo dicono le viste di Misura (esito 12): il titolo se c'e', altrimenti
+   *  «Passo N» dalla sequenza della catena — mai un passo anonimo davanti a chi misura. */
+  V.nomePasso = (el, map) => {
+    const t = String((el && el.props && el.props.title) || '').trim();
+    if (t) return t;
+    const n = V.stepNumbers(map).get(el && el.id);
+    return n ? 'Passo ' + n : 'passo senza nome';
+  };
   V.measurePaused = (map) => { const s = V.measureState(map); return !!(s && s.pausedAt); };
   /** Pausa dell'OSSERVATORE: ferma il conteggio (passo O attesa) senza chiudere niente.
    *  Gia' in pausa, o niente in corso: null. */
@@ -2040,6 +2062,17 @@ window.VSM = window.VSM || {};
   V.measureDiscard = (map, now = Date.now()) => {
     const s = V.measureState(map); if (!s || !s.phase) return null;
     return setMeasure(map, senzaPause(Object.assign({}, s, { t0: now })));
+  };
+  /** ELIMINA la misura in corso (esito 12-bis, caso 1: «era il passo sbagliato»): il lap si
+   *  butta SENZA scrivere niente e il giro resta pronto — numero e turno sopravvivono, il
+   *  cronometro non punta più a nulla. Diverso da measureDiscard (riparte da adesso sullo
+   *  STESSO passo) e da measureStop (chiude la sessione). Lo chiama il cestino della barra,
+   *  col doppio tocco. */
+  V.measureAbort = (map) => {
+    const s = V.measureState(map); if (!s || !s.phase || !s.t0) return null;
+    const dopo = Object.assign({ mode: s.mode, giro: s.giro || 1, stepId: null, phase: null, t0: null, fromId: null, connId: null },
+      (typeof s.turno === 'string' && s.turno) ? { turno: s.turno } : {});
+    return setMeasure(map, dopo) ? { ok: true } : null;
   };
   /** Scrive l'osservazione PIENA (spec A4): secondi, quando (Date.now, non null: non è una migrata
    *  dalla 0.9) e in che giro del foglio (map.id: il giro è il foglio su cui si sta misurando, non
