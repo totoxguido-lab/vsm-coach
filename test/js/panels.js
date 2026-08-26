@@ -656,19 +656,29 @@
    *  tasti del cronometro e quando/quali chiudono un giro — la ✕ NON cancella niente. */
   const misLegenda = (mCur) => {
     let leg = $('#mislegenda');
-    if (!leg) {
-      leg = document.createElement('div'); leg.id = 'mislegenda';
-      leg.innerHTML = '<b>Cronometro</b>'
-        + '<div>⏱ sul passo: parte (o riprende) il giro da lì</div>'
-        + '<div>⏸ pausa di chi osserva — il tempo fermo non entra nel dato</div>'
-        + '<div>⏩ passo finito · ▶ comincia il prossimo (l’attesa nasce da sola)</div>'
-        + '<div>🗑 elimina la misura in corso (due tocchi) — niente viene scritto, il giro resta</div>'
-        + '<div>⏹ chiude il giro: chiede conferma — ⏹ rosso = sì, ✕ = annulla (nulla si cancella)</div>'
-        + '<div>Al bivio i cronometri lampeggiano: tocca il passo dove va il lavoro.</div>'
-        + '<div>Dopo l’ultimo passo della catena il giro si chiude da solo.</div>';
-      document.body.appendChild(leg);
+    if (!leg) { leg = document.createElement('div'); leg.id = 'mislegenda'; document.body.appendChild(leg); }
+    const inFase = !!(mCur && ['misura', 'analizza'].includes(mCur.phase));
+    leg.classList.toggle('hidden', !inFase);
+    if (!inFase) return;
+    // esito 12-ter: fissa era «troppo intralciante» — di casa sta RIDOTTA a icona (orologio col
+    // «?»); un tocco la apre, ✕ la riporta a icona; la scelta si ricorda
+    let aperta = false; try { aperta = localStorage.getItem('vsm.mislegenda') === '1'; } catch (e) { /* storage bloccato */ }
+    leg.classList.toggle('aperta', aperta);
+    if (!aperta) {
+      leg.innerHTML = `<button id="misleg-apri" class="misleg-icona" aria-label="Legenda del cronometro" title="Legenda del cronometro">`
+        + `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="9.6" y="1.4" width="4.8" height="2.6" rx="1" fill="currentColor" stroke="none"/><circle cx="12" cy="13.4" r="8.4"/><text x="12" y="17.2" text-anchor="middle" font-size="10" font-weight="700" stroke="none" fill="currentColor">?</text></svg></button>`;
+      const ap = $('#misleg-apri', leg); if (ap) ap.onclick = () => { try { localStorage.setItem('vsm.mislegenda', '1'); } catch (e) { /* niente */ } misLegenda(mCur); };
+      return;
     }
-    leg.classList.toggle('hidden', !(mCur && ['misura', 'analizza'].includes(mCur.phase)));
+    leg.innerHTML = '<div class="misleg-testa"><b>Cronometro</b><button id="misleg-chiudi" class="btn small ghost" aria-label="Riduci a icona" title="Riduci a icona">✕</button></div>'
+      + '<div>⏱ sul passo: parte (o riprende) il giro da lì</div>'
+      + '<div>⏸ pausa di chi osserva — il tempo fermo non entra nel dato</div>'
+      + '<div>⏩ passo finito · ▶ comincia il prossimo (l’attesa nasce da sola)</div>'
+      + '<div>🗑 elimina la misura in corso (due tocchi) — niente viene scritto; ▶ la riavvia</div>'
+      + '<div>⏹ chiude il giro: chiede conferma — ⏹ rosso = sì, ✕ = annulla (nulla si cancella)</div>'
+      + '<div>Al bivio i cronometri lampeggiano: tocca il passo dove va il lavoro.</div>'
+      + '<div>Dopo l’ultimo passo della catena il giro si chiude da solo.</div>';
+    const ch = $('#misleg-chiudi', leg); if (ch) ch.onclick = () => { try { localStorage.setItem('vsm.mislegenda', '0'); } catch (e) { /* niente */ } misLegenda(mCur); };
   };
   UI.renderMisCtl = () => {
     let bar = $('#misctl');
@@ -696,14 +706,35 @@
         if (sNow.phase === 'attesa' && sNow.fromId) mCur.elements.forEach(cc => {
           if (cc.type === 'flow' && cc.from && cc.from.el === sNow.fromId) { out.push(cc.id); if (cc.to && cc.to.el) out.push(cc.to.el); }
         });
+        // esito 12-ter: il bivio si annuncia gia' col timer sul passo in comune — anche i suoi
+        // rami vanno ridisegnati quando il lampeggio si accende o si spegne
+        if (sNow.phase === 'box' && sNow.stepId) {
+          const usc = mCur.elements.filter(cc => cc.type === 'flow' && cc.from && cc.from.el === sNow.stepId);
+          if (usc.length >= 2) usc.forEach(cc => { if (cc.to && cc.to.el) out.push(cc.to.el); });
+        }
         return out;
       })() : [];
       new Set((UI._misPrevIds || []).concat(nuovi)).forEach(ix => { if (mCur && V.byId(ix, mCur)) R.updateEl(ix, mCur); });
       UI._misPrev = attKey; UI._misPrevIds = nuovi;
     }
     if (!m) {
-      bar.classList.add('hidden'); misStopArm = null; misWakeOff();
+      // il cronometro SOSPESO (esito 12-ter): dopo il cestino la barra NON sparisce — resta
+      // ferma sul passo abbandonato, col ▶ che riavvia da lì e ⏹ che chiude la sessione
+      const sSosp = (mCur && ['misura', 'analizza'].includes(mCur.phase) && mCur.measure && !mCur.measure.phase && mCur.measure.sospeso) ? mCur.measure : null;
+      const passoSosp = sSosp ? V.byId(sSosp.sospeso, mCur) : null;
+      misStopArm = null; misTrashArm = null; misWakeOff();
       if (misTick) { clearInterval(misTick); misTick = null; }
+      if (passoSosp) {
+        bar.classList.remove('hidden'); bar.classList.remove('vecchia');
+        bar.innerHTML = ''
+          + `<button id="mis-play" class="mis-btn" aria-label="Riavvia la misura su questo passo" title="Riavvia la misura su questo passo">${MIS_IC.play}</button>`
+          + `<div class="mis-info"><span class="mis-tempo pausa">${misMMSS(0)}</span><span class="mis-nome">${esc(V.nomePasso(passoSosp, mCur))} · misura eliminata</span></div>`
+          + `<button id="mis-stop" class="mis-btn stop" aria-label="Chiudi il giro" title="Chiudi il giro (la barra si toglie)">${MIS_IC.stop}</button>`;
+        $('#mis-play', bar).onclick = () => { const r = V.measureStart(mCur, sSosp.sospeso, sSosp.mode || 'giro'); if (r && r.ko === 'in-corso') UI.toast('C’è già una misura in corso.'); UI.renderMisCtl(); };
+        $('#mis-stop', bar).onclick = () => { V.measureStop(mCur); UI.renderMisCtl(); };
+        return;
+      }
+      bar.classList.add('hidden');
       return;
     }
     bar.classList.remove('hidden');

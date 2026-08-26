@@ -239,8 +239,16 @@
           // al BIVIO la scelta si deve VEDERE (esito 12-bis, caso 2): durante l'attesa i
           // cronometri di TUTTI i passi raggiungibili con una freccia dal passo appena chiuso
           // lampeggiano — il modello sapeva già saltare (S3-b), ma nulla lo diceva a chi misura
-          const scelta = !!(ms && ms.phase === 'attesa' && ms.fromId
-            && map.elements.some(cc => cc.type === 'flow' && cc.from && cc.from.el === ms.fromId && cc.to && cc.to.el === el.id));
+          // …e il bivio si annuncia PRIMA (esito 12-ter): gia' mentre corre il timer del passo
+          // in comune (2+ frecce in uscita) i rami lampeggiano — chi misura sa che dovra' scegliere
+          const scelta = !!(ms && (
+            (ms.phase === 'attesa' && ms.fromId
+              && map.elements.some(cc => cc.type === 'flow' && cc.from && cc.from.el === ms.fromId && cc.to && cc.to.el === el.id))
+            || (ms.phase === 'box' && ms.stepId && ms.stepId !== el.id && (() => {
+              const usc = map.elements.filter(cc => cc.type === 'flow' && cc.from && cc.from.el === ms.stepId);
+              return usc.length >= 2 && usc.some(cc => cc.to && cc.to.el === el.id);
+            })())
+          ));
           const nMis = V.timesOf(el).length;
           // orologio «stile emoticon», PIENO (esito Gt 25/8 sera): corpo solido, lancette bianche,
           // corona e nasi ai lati — grafite da fermo, verde mentre misura

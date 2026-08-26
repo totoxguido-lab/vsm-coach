@@ -250,6 +250,7 @@ window.VSM = window.VSM || {};
         // tempo torna pieno, visibile) che scrivere un dato falso.
         if (s.pausedAt !== undefined && s.pausedTot !== undefined && typeof s.t0 === 'number'
           && s.pausedTot + Math.max(0, Date.now() - s.pausedAt) > Math.max(0, Date.now() - s.t0)) { delete s.pausedAt; delete s.pausedTot; }
+        if (s.sospeso !== undefined && typeof s.sospeso !== 'string') delete s.sospeso;
         if (s.phase !== null && s.phase !== undefined && !['box', 'attesa'].includes(s.phase)) delete m.measure;
       }
     }
@@ -463,6 +464,9 @@ window.VSM = window.VSM || {};
     if (m.measure && typeof m.measure === 'object') {
       const c_e = (id) => !id || live.has(id);
       if (!c_e(m.measure.stepId) || !c_e(m.measure.connId) || !c_e(m.measure.fromId)) delete m.measure;
+      // il SOSPESO (esito 12-ter) e' piu' mite: se il passo abbandonato non c'e' piu' cade solo
+      // il campo — la sessione (numero del giro, turno) non ha colpe e resta
+      else if (m.measure.sospeso && !live.has(m.measure.sospeso)) delete m.measure.sospeso;
     } else if (m.measure != null) delete m.measure;
     const sLive = new Set();
     m.strokes = m.strokes.filter(s => s && typeof s === 'object' && Array.isArray(s.points)).map(s => {
@@ -2072,6 +2076,10 @@ window.VSM = window.VSM || {};
     const s = V.measureState(map); if (!s || !s.phase || !s.t0) return null;
     const dopo = Object.assign({ mode: s.mode, giro: s.giro || 1, stepId: null, phase: null, t0: null, fromId: null, connId: null },
       (typeof s.turno === 'string' && s.turno) ? { turno: s.turno } : {});
+    // il passo abbandonato resta scritto (esito 12-ter): la barra non sparisce — mostra il
+    // cronometro SOSPESO con un ▶ che riavvia da qui. measureStart costruisce uno stato fresco,
+    // quindi ripartendo (da qui o da un altro passo) il sospeso muore da solo.
+    if (s.stepId) dopo.sospeso = s.stepId;
     return setMeasure(map, dopo) ? { ok: true } : null;
   };
   /** Scrive l'osservazione PIENA (spec A4): secondi, quando (Date.now, non null: non è una migrata
