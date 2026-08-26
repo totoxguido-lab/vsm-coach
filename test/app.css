@@ -86,6 +86,13 @@ header .brand svg{width:22px;height:22px}
 #misctl .mis-warn{flex-basis:100%;font-size:12px;line-height:1.35;color:#c8321e;font-weight:600;padding:2px 2px 4px}
 /* il cronometro grande sul passo e' un bersaglio: mano e ombra al passaggio */
 svg .mis-clock{cursor:pointer}
+/* esito 15: la testata del passo — titolo per primo, ? e ✕ accanto; elimina armato in rosso */
+#pop .pop-head.passo{display:flex;gap:6px;align-items:center}
+#pop .pop-head.passo .pop-ptitle{flex:1;min-width:0}
+#pop .btn.danger.armato{background:#c8321e;border-color:#c8321e;color:#fff}
+/* esito 15: il bottone che riporta dove stanno gli elementi, quando la vista si è persa */
+#btn-ritrova{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(150px + env(safe-area-inset-bottom, 0px));z-index:35;box-shadow:0 4px 14px rgba(0,0,0,.2)}
+#btn-ritrova.hidden{display:none}
 /* esito 13: i tempi ereditati dal giro precedente si vedono, ma da fantasma */
 svg .tempi-prec{opacity:.55;font-style:italic}
 #pop .times.tempi-eredita input{opacity:.6;font-style:italic}

@@ -957,6 +957,16 @@
   /** posizione del badge di un elemento: quella VISTA (R.elPos), non x/y grezzi — un elemento legato
    *  (lockTo/attachedTo) si disegna altrove (rilievo della revisione). Funzione condivisa fra il
    *  disegno del badge e R.contentBox: non possono divergere perche' sono la STESSA chiamata. */
+  /** Vero quando il foglio HA elementi ma NESSUNO sta nel rettangolo di vista (esito 15, 26/8):
+   *  trascinando ci si puo' perdere — allora compare il bottone «torna al foglio» (I.fit).
+   *  view = {x,y,k} del viewBox (mondo visibile: x..x+W/k, y..y+H/k). Margine 0: conta il
+   *  contenuto vero, non l'alone del crop. */
+  R.vistaVuota = (map, view, stageW, stageH) => {
+    if (!map || !map.elements || !map.elements.length || !view || !(view.k > 0)) return false;
+    const cb = R.contentBox(map, 0); if (!cb) return false;
+    const vw = { x: view.x, y: view.y, w: stageW / view.k, h: stageH / view.k };
+    return !(cb.x < vw.x + vw.w && cb.x + cb.w > vw.x && cb.y < vw.y + vw.h && cb.y + cb.h > vw.y);
+  };
   R.badgeRect = (el, map) => { const p = R.elPos(el, map); return { x: p.x, y: p.y - 14, w: 0, h: 0 }; };
   /** larghezza del fondino del badge dal suo testo: UN posto solo — la usano il disegno
    *  (R.badgeSVG) e il ritaglio (R.badgeExtent → R.contentBox), che non possono divergere. */

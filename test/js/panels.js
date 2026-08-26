@@ -1406,7 +1406,26 @@
   UI.hideQuick = () => { const q = $('#quick'); if (q) { q.classList.add('hidden'); Q.menu = null; } };
   /** Esc dentro il menu di «Collega» torna all'arco precedente invece di chiudere tutto */
   UI.quickMenuBack = () => { if (!Q.menu || !Q.el || !V.byId(Q.el)) { Q.menu = null; return false; } UI.quickAction('cx-back', Q.el); return true; };
-  UI.onView = () => { if (Q.el && !$('#quick').classList.contains('hidden')) UI.positionQuick(); if (V.pop.current && V.pop.current !== '__title__') { const el = V.byId(V.pop.current); if (el) V.pop.place(el); } };
+  // «Torna al foglio» (esito 15): trascinando ci si può perdere — quando nella vista non c'è
+  // più NESSUN elemento compare il bottone, e un tocco (I.fit) riporta dove stanno i nodi.
+  // Ricalcolato a ogni pan/zoom, ma al più una volta per fotogramma.
+  let vistaRAF = 0;
+  const checkVistaVuota = () => {
+    if (vistaRAF) return;
+    vistaRAF = requestAnimationFrame(() => {
+      vistaRAF = 0;
+      let btn = $('#btn-ritrova');
+      if (!btn) {
+        btn = document.createElement('button'); btn.id = 'btn-ritrova'; btn.className = 'btn primary hidden';
+        btn.textContent = '⌖ Torna al foglio'; btn.title = 'Riporta la vista dove stanno gli elementi';
+        btn.onclick = () => I.fit();
+        document.body.appendChild(btn);
+      }
+      const st = $('#stage'); const map = V.map();
+      btn.classList.toggle('hidden', !(st && map && R.vistaVuota && R.vistaVuota(map, I.view, st.clientWidth || 800, st.clientHeight || 600)));
+    });
+  };
+  UI.onView = () => { checkVistaVuota(); if (Q.el && !$('#quick').classList.contains('hidden')) UI.positionQuick(); if (V.pop.current && V.pop.current !== '__title__') { const el = V.byId(V.pop.current); if (el) V.pop.place(el); } };
   /** dispone i bottoni rotondi ad arco attorno all'ancora (sopra l'elemento): pochi = ventaglio in alto
    *  come il menu del vuoto; tanti = l'arco si allarga fin quasi al cerchio pieno, col raggio che cresce
    *  quel tanto che basta a non farli toccare. Ricalcolato a ogni pan/zoom (UI.onView). */

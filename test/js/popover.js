@@ -253,20 +253,13 @@
     const roStep = (isBox && p.validated) ? ' disabled' : '';
     let h;
     if (isBox) {
-      // Il pannello del passo (variante B, spec 2026-08-21): una fila di tondi in cima — gli stessi
-      // .pm-btn del menu rotondo — con dietro ciò che si tocca di rado; in vista resta ciò che si
-      // compila sempre (titolo, attività, tempi). Il tondo del colore indossa la tinta attuale.
-      const tinta = V.tintHue(p.tint);
-      const rb = (k, icon, lab, tit) => `<button class="pm-btn" data-round="${k}" title="${esc(tit)}" aria-label="${esc(tit)}" aria-pressed="false">${icon}<span>${esc(lab)}</span></button>`;
-      h = `<div class="pop-rounds">`
-        + `<button class="pm-btn" data-round="tint" title="Colore del passo: il sotto-foglio ↗ lo ripete come sfondo" aria-label="Colore del passo" aria-pressed="false"${tinta != null ? ` style="background:hsl(${tinta} 38% 95.5%);border-color:hsl(${tinta} 26% 64%)"` : ''}>${RIC.tint}<span>Colore</span></button>`
-        + rb('link', RIC.link, 'Fogli', 'Collega a un\'altra mappa: sotto-foglio ↗ o richiamo ⇉')
-        + (p.link && V.doc.maps[p.link] ? rb('peek', QICN_PEEK, 'Sbircia', 'Sbircia il foglio collegato senza entrarci') : '')
-        + rb('setup', RIC.setup, 'Extra', 'Correct & Complete, chi/reparto e legami')
-        + `<button class="pm-btn a-destra" id="pop-why" title="Perché / cos'è (dal libro)" aria-label="Spiegazione dal libro" aria-expanded="false">${IC_WHATIS}<span>Perché</span></button>`
-        + `<button class="pm-btn${p.validated ? ' validata' : ''}" data-valid title="${p.validated ? 'Validato: tocca per riaprirlo alle modifiche (con conferma)' : 'Segna come validato: mappato, con attività e tempi'}" aria-label="Valida il passo" aria-pressed="${p.validated ? 'true' : 'false'}">${RIC.valid}<span>${p.validated ? 'Validato' : 'Valida'}</span></button>`
-        + `<button class="pm-btn" id="pop-x" title="Chiudi il pannello" aria-label="Chiudi">${RIC.close}<span>Chiudi</span></button>`
-        + `</div><div class="why hidden" id="pop-whytext">${esc(T.why)}</div>`;
+      // ESITO 15 (26/8, decisione di Gt): niente fila di tondi in cima — «il primo elemento è il
+      // titolo», poi le attività, i tempi SOLO se esistono, le azioni a icone, e in fondo le
+      // Avanzate (fogli, valida, C&C/chi, elimina col doppio tocco). Il «?» resta piccolo in testa.
+      h = `<div class="pop-head passo"><input class="pop-ptitle" data-k="title" value="${esc(p.title)}" placeholder="Nome del passo (es. Accettazione)" autocomplete="off" autofocus${roStep}>`
+        + `<button class="btn small ghost" id="pop-why" title="Perché / cos'è (dal libro)" aria-label="Spiegazione dal libro" aria-expanded="false">?</button>`
+        + `<button class="btn small ghost" id="pop-x" aria-label="Chiudi">✕</button></div>`
+        + `<div class="why hidden" id="pop-whytext">${esc(T.why)}</div>`;
     } else {
       const nomeTipo = el.type === 'storm' ? (V.shapeOf(el) === 'nuvola' ? 'Nuvola temporalesca' : 'Problema · ' + V.shapeOf(el)) : T.name;
       h = `<div class="pop-head">${preview(el, map)}<div class="pop-title"><b>${nomeTipo}</b><div class="pop-sub">${esc(subtitleOf(el, map))}</div></div><button class="btn small ghost" id="pop-why" title="Perché / cos'è (dal libro)" aria-label="Spiegazione dal libro" aria-expanded="false">?</button><button class="btn small ghost" id="pop-x" aria-label="Chiudi">✕</button></div><div class="why hidden" id="pop-whytext">${esc(T.why)}</div>`;
@@ -278,20 +271,25 @@
       // numerica). Colore, collegamenti, sbircia ed extra stanno dietro i tondi, in pannellini che
       // si aprono DENTRO il pannello, sopra il contenuto: nessuna finestra sopra un'altra finestra.
       case 'box': {
-        main += `<input class="pop-ptitle" data-k="title" value="${esc(p.title)}" placeholder="Nome del passo (es. Accettazione)" autocomplete="off" autofocus${roStep}>`;
-        main += `<div class="pop-sec">Attività, una per riga</div><div class="acts" data-acts></div>`;
+        // il titolo sta gia' nella testata (esito 15); la dicitura «una per riga» e' sparita
+        main += `<div class="pop-sec">Attività</div><div class="acts" data-acts></div>`;
         // ⏱ accanto ai tempi: da qui si apre il cronometro (spec 2026-08-21, Parte 2). Sta qui e non
         // fra i tondi perché è di quei tre riquadri che parla — e i tondi sono già sette.
         // esito 13: NIENTE cronometro qui (il ⏱ vive in Misura, dove serve) — al suo posto la
         // STORIA delle misure (questo giro e i precedenti, via l'analisi); i tempi ereditati dal
         // giro precedente si dichiarano e si mostrano da fantasma finche' non vengono riscritti
+        // i TEMPI si vedono solo se esistono (esito 15): misure prese (anche di giri precedenti)
+        // o Hi/Lo/Avg scritti — su un passo nuovo la sezione non compare affatto
         const misGiro = V.timesDelGiro(el, map); const misSt = V.timeStats(misGiro);
         const eredita = V.tempiEreditati(el, map);
-        main += `<div class="pop-sec">Tempi (${esc(map.unit)}) · dalla prima all'ultima attività${V.obsOf(el).length ? `<button class="btn small" data-storia title="Tutte le misure di questo passo, giro per giro" aria-label="Storia delle misure">🕐 Storia</button>` : ''}</div>`
-          + (eredita ? `<div class="hint" style="margin:-2px 0 6px">Tempi del giro precedente: restano come riferimento finché questo giro non li riscrive.</div>` : '')
-          + (misGiro.length ? `<div class="hint" style="margin:-2px 0 6px">${misGiro.length} ${misGiro.length === 1 ? 'misura raccolta' : 'misure raccolte'} in questo giro · media ${esc(fmt(V.toUnit(misSt.avg, map.unit)))}.</div>` : '')
-          + `<div class="times${eredita ? ' tempi-eredita' : ''}">`
-          + [['hi', 'max'], ['lo', 'min'], ['avg', 'media']].map(([k, lab]) => `<label class="tbox"><span>${lab}</span><input data-k="${k}" value="${esc(p[k])}" inputmode="decimal" autocomplete="off"${roStep}></label>`).join('') + `</div>`;
+        const hasTimes = !!(V.obsOf(el).length || p.hi !== '' || p.lo !== '' || p.avg !== '');
+        if (hasTimes) {
+          main += `<div class="pop-sec">Tempi (${esc(map.unit)})${V.obsOf(el).length ? `<button class="btn small" data-storia title="Tutte le misure di questo passo, giro per giro" aria-label="Storia delle misure">🕐 Storia</button>` : ''}</div>`
+            + (eredita ? `<div class="hint" style="margin:-2px 0 6px">Tempi del giro precedente: restano come riferimento finché questo giro non li riscrive.</div>` : '')
+            + (misGiro.length ? `<div class="hint" style="margin:-2px 0 6px">${misGiro.length} ${misGiro.length === 1 ? 'misura raccolta' : 'misure raccolte'} in questo giro · media ${esc(fmt(V.toUnit(misSt.avg, map.unit)))}.</div>` : '')
+            + `<div class="times${eredita ? ' tempi-eredita' : ''}">`
+            + [['hi', 'max'], ['lo', 'min'], ['avg', 'media']].map(([k, lab]) => `<label class="tbox"><span>${lab}</span><input data-k="${k}" value="${esc(p[k])}" inputmode="decimal" autocomplete="off"${roStep}></label>`).join('') + `</div>`;
+        }
         if (p.validated) main += `<div class="hint lockrow">✓ Passo validato: il contenuto è in sola lettura. Si sposta, si colora e si collega come prima — per modificarlo tocca la ✓ in alto.</div>`;
         // il colore è il filo fra il passo e il suo sotto-foglio: area e bordo qui, sfondo di là
         // (V.setTint li cambia insieme, in una sola voce di annulla). Nessuna scritta: pastiglie.
@@ -374,11 +372,14 @@
       const openLink = (p.link && V.doc.maps[p.link]) ? `<div class="actions"><button class="btn small primary" id="pop-openlink">Apri la mappa collegata ↗</button></div>` : '';
       const NUVOLE = ['storm', 'fluffy', 'burst'];
       if (isBox) {
-        // Per il passo il collegamento sta dietro il tondo ↗ in cima al pannello (variante B della
-        // spec 2026-08-21): NON sepolto in «Altre opzioni» — la richiesta di Gt («non deve stare in
-        // altre opzioni») resta onorata, il tondo è in vista quanto il campo di prima.
-        minis += `<div class="pop-mini hidden" data-mini="link"><h4>Collega a un'altra mappa</h4><div class="field">${linkSel}<span class="hint">${linkHint}</span></div>${openLink}</div>`;
-        minis += `<div class="pop-mini hidden" data-mini="setup"><h4>Extra del passo</h4><div class="row">${field('Correct & Complete %', inp('cc', p.cc, 'inputmode="decimal" placeholder="es. 90"' + roStep))}${field('Chi / reparto', inp('owner', p.owner, roStep))}</div>${lockHint}</div>`;
+        // ESITO 15: le AVANZATE del passo, in fondo — fogli (collega/sbircia), valida, i campi
+        // dell'ex «Extra» (C&C per il First Time Quality, chi/reparto) ed elimina col doppio
+        // tocco. La categoria «Extra» sparisce: erano campi senza casa, ora stanno qui.
+        adv += `<div class="field"><label>Collega a un'altra mappa</label>${linkSel}<span class="hint">${linkHint}</span></div>${openLink}`;
+        if (p.link && V.doc.maps[p.link]) adv += `<div class="actions"><button class="btn small" data-pa="peek" title="Sbircia il foglio collegato senza entrarci">👁 Sbircia</button></div>`;
+        adv += `<div class="actions"><button class="btn small${p.validated ? ' primary' : ''}" data-valid title="${p.validated ? 'Validato: tocca per riaprirlo alle modifiche (con conferma)' : 'Segna come validato: mappato, con attività e tempi'}">${p.validated ? '✓ Validato — riapri' : '✓ Valida il passo'}</button></div>`;
+        adv += `<div class="row">${field('Correct & Complete %', inp('cc', p.cc, 'inputmode="decimal" placeholder="es. 90"' + roStep))}${field('Chi / reparto', inp('owner', p.owner, roStep))}</div>${lockHint}`;
+        if (!p.validated) adv += `<div class="actions"><button class="btn small danger" id="pop-del-arm" title="Elimina il passo: chiede un secondo tocco">Elimina il passo…</button></div>`;
       } else {
         main += lockHint;
         if (!NUVOLE.includes(el.type) || p.link) {
@@ -390,13 +391,17 @@
     const CONVERT = { storm: ['fluffy', 'burst', 'text'], fluffy: ['storm', 'burst', 'text'], burst: ['storm', 'fluffy', 'text'], text: ['storm', 'fluffy', 'burst'], inbox: ['delta', 'inventory'], inventory: ['inbox'] };
     if (CONVERT[el.type]) adv += field('Trasforma in…', `<select data-convert><option value="">— tipo attuale: ${T.name} —</option>${CONVERT[el.type].map(t => `<option value="${t}">${V.TYPES[t].name}</option>`).join('')}</select>`, 'Il testo e la posizione restano; cambia il disegno.');
     h += main;
-    if (adv) h += `<details class="adv"><summary>Altre opzioni</summary>${adv}</details>`;
+    if (adv) h += `<details class="adv"><summary>Avanzate</summary>${adv}</details>`;
     // azioni: le stesse della barra rapida (senza "Dettagli"), più quelle proprie del pop-up.
     // Per il passo «Sbircia» non si ripete in coda: è il tondo 👁 in cima.
-    const acts = UI.actionList(el, map).filter(a => !(isBox && a.id === 'peek'));
+    // per il passo: «peek» vive in avanzate (fogli) e «del» pure, col doppio tocco (esito 15)
+    const acts = UI.actionList(el, map).filter(a => !(isBox && (a.id === 'peek' || a.id === 'del')));
+    const tintaPasso = isBox ? V.tintHue(p.tint) : null;
+    const coloreBtn = isBox ? `<button class="pm-btn" data-round="tint" title="Colore del passo: il sotto-foglio ↗ lo ripete come sfondo" aria-label="Colore del passo"${tintaPasso != null ? ` style="background:hsl(${tintaPasso} 38% 95.5%);border-color:hsl(${tintaPasso} 26% 64%)"` : ''}>${RIC.tint}<span>Colore</span></button>` : '';
     let extra = ''; if (el.type === 'burst') extra += '<button class="btn small" id="pop-toplan">→ Aggiungi al piano</button>'; if (el.type === 'legend') extra += '<button class="btn small" id="pop-legendfull">Legenda completa</button>';
-    // azioni a ICONE (esito 13): gli stessi tondi della barra rapida, una fonte sola (quickBtnHTML)
-    h += `<div class="actions pop-actions">${extra}${acts.map(a => UI.quickBtnHTML ? UI.quickBtnHTML(a, el, 'data-pa') : `<button class="btn small ${a.id === 'del' ? 'danger' : ''}" data-pa="${a.id}" title="${esc(a.title)}">${a.label}</button>`).join('')}</div>`;
+    // azioni a ICONE (esito 13): gli stessi tondi della barra rapida, una fonte sola (quickBtnHTML);
+    // per il passo in coda c'è il Colore (esito 15: sceso dai tondi di testa)
+    h += `<div class="actions pop-actions">${extra}${acts.map(a => UI.quickBtnHTML ? UI.quickBtnHTML(a, el, 'data-pa') : `<button class="btn small ${a.id === 'del' ? 'danger' : ''}" data-pa="${a.id}" title="${esc(a.title)}">${a.label}</button>`).join('')}${coloreBtn}</div>`;
     // le sezioni dei livelli (spec D): titolo gia' nell'HTML iniziale (cosi' l'altezza e' giusta
     // dal primo P.place), stato aperto/chiuso letto da localStorage PRIMA di scrivere l'HTML — un
     // livello toccato dal badge (opts.section) si apre sempre, qualunque fosse il suo stato salvato
@@ -426,6 +431,12 @@
     ensurePopRO();
     $('#pop-x').onclick = P.close; $('#pop-why').onclick = () => { const w = $('#pop-whytext'); w.classList.toggle('hidden'); $('#pop-why').setAttribute('aria-expanded', !w.classList.contains('hidden')); };
     $$('[data-pa]', pop).forEach(b => b.onclick = (ev) => { const a = b.dataset.pa; if (['dup', 'del', 'connect', 'lockto', 'lockall', 'peek', 'next'].includes(a)) P.close(); UI.quickAction(a, id, { x: ev.clientX, y: ev.clientY }); if (['invert', 'attach', 'unlock', 'legend'].includes(a) && V.byId(id)) P.open(id); });
+    // ELIMINA col doppio tocco (esito 15): il primo arma e si colora, il secondo elimina
+    const delArm = $('#pop-del-arm', pop);
+    if (delArm) delArm.onclick = () => {
+      if (!delArm.classList.contains('armato')) { delArm.classList.add('armato'); delArm.textContent = 'Sicuro? Tocca di nuovo: elimina'; return; }
+      P.close(); UI.quickAction('del', id);
+    };
     // Ideale validato: il pop-up serve a leggere, i campi e le azioni restano spenti (la modifica riapre dal lucchetto)
     if (map.validated) $$('input,textarea,select,button', pop).forEach(x => { if (x.id !== 'pop-x' && x.id !== 'pop-why') x.disabled = true; });
     const tp = $('#pop-toplan'); if (tp) tp.onclick = () => { const plan = clone(map.plan); plan.push({ id: uid(), what: p.text || 'kaizen', who: p.owner || '', when: '', outcome: '', a3: true }); V.commit({ t: 'plan_set', after: plan }, 'piano'); UI.toast('Aggiunto al piano.'); UI.renderPlan(); };
