@@ -538,6 +538,33 @@ window.VSM = window.VSM || {};
   /** il progetto attivo NON è uno stato a parte: è quello della mappa aperta, così non può disallinearsi */
   V.project = () => { const m = V.map(); return (m && V.doc.projects[m.projectId]) || V.doc.projects[V.doc.activeProjectId] || null; };
   V.mapsOfProject = (pid) => Object.values(V.doc.maps).filter(m => m.projectId === pid);
+  /** L'ALBERO del progetto per il picker dei fogli (esito 16-b, 26/8): righe in ordine di visita
+   *  — le radici, e sotto ognuna i suoi figli, indentati (depth). Ogni riga porta titolo, tipo
+   *  leggibile e indirizzo. Guardia sugli anelli: un parentId circolare (file confezionato) non
+   *  deve appendere la visita. */
+  V.alberoMappe = (map) => {
+    const tutte = V.mapsOfProject(map.projectId);
+    const ids = new Set(tutte.map(m => m.id));
+    const figli = new Map();
+    tutte.forEach(m => {
+      const p = (m.parentId && ids.has(m.parentId)) ? m.parentId : null;
+      if (!figli.has(p)) figli.set(p, []);
+      figli.get(p).push(m);
+    });
+    const out = []; const visti = new Set();
+    const visita = (pid, depth) => {
+      (figli.get(pid) || []).forEach(m => {
+        if (visti.has(m.id)) return;
+        visti.add(m.id);
+        out.push({ id: m.id, depth, titolo: m.title || 'senza titolo', tipo: V.kindLabel(m), indirizzo: V.mapAddress(m), parentId: m.parentId || null });
+        visita(m.id, depth + 1);
+      });
+    };
+    visita(null, 0);
+    // un anello puro (nessuna radice raggiungibile): le rimaste si elencano piatte, mai perse
+    tutte.forEach(m => { if (!visti.has(m.id)) out.push({ id: m.id, depth: 0, titolo: m.title || 'senza titolo', tipo: V.kindLabel(m), indirizzo: V.mapAddress(m), parentId: m.parentId || null }); });
+    return out;
+  };
   V.addProject = (name) => { const p = V.newProject({ name: name || 'Progetto' }); V.doc.projects[p.id] = p; V.save(); return p; };
   V.renameProject = (id, nome) => { const p = V.doc.projects[id]; if (!p) return false; p.name = String(nome || '').trim() || p.name; V.save(); emit({ label: 'progetto', ops: [] }); return true; };
   /** Collega (o scollega) due progetti. Il collegamento vale nei DUE sensi: è una dichiarazione che i

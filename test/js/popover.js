@@ -49,7 +49,9 @@
     close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>'
   };
   let fid = 0;
-  const field = (label, html, hint) => { const id = 'f' + (++fid); html = html.replace(/^<(input|select|textarea)\b/, `<$1 id="${id}"`); return `<div class="field"><label for="${id}">${label}</label>${html}${hint ? `<span class="hint">${hint}</span>` : ''}</div>`; };
+  // esito 16-a (26/8): gli appunti sotto i campi non stanno piu' distesi a rubare spazio —
+  // vivono dietro una ⓘ accanto all'etichetta: un tocco apre la bolla, un tocco fuori la chiude
+  const field = (label, html, hint) => { const id = 'f' + (++fid); html = html.replace(/^<(input|select|textarea)\b/, `<$1 id="${id}"`); return `<div class="field"><label for="${id}">${label}${hint ? `<button type="button" class="hintdot" data-hintdot aria-label="Spiegazione">ⓘ</button><span class="hintpop hidden">${hint}</span>` : ''}</label>${html}</div>`; };
   const inp = (k, v, attrs = '') => `<input data-k="${k}" value="${esc(v)}" autocomplete="off" ${attrs}>`;
   const ta = (k, v, attrs = '') => `<textarea data-k="${k}" ${attrs}>${esc(v)}</textarea>`;
   const sel = (k, v, opts) => `<select data-k="${k}">${opts.map(o => `<option value="${esc(o)}" ${o === v ? 'selected' : ''}>${esc(o || '—')}</option>`).join('')}</select>`;
@@ -378,8 +380,9 @@
         // ESITO 15: le AVANZATE del passo, in fondo — fogli (collega/sbircia), valida, i campi
         // dell'ex «Extra» (C&C per il First Time Quality, chi/reparto) ed elimina col doppio
         // tocco. La categoria «Extra» sparisce: erano campi senza casa, ora stanno qui.
-        adv += `<div class="field"><label>Collega a un'altra mappa</label>${linkSel}<span class="hint">${linkHint}</span></div>${openLink}`;
-        if (p.link && V.doc.maps[p.link]) adv += `<div class="actions"><button class="btn small" data-pa="peek" title="Sbircia il foglio collegato senza entrarci">👁 Sbircia</button></div>`;
+        // esito 16-b: NIENTE tendina («mi ci perdo io stesso») — il bottone apre l'albero del
+        // progetto (UI.openScegliMappa): righe indentate, parole chiare, un tocco per collegare
+        adv += `<div class="actions"><button class="btn small" id="pop-fogli" title="Sotto-foglio e richiami: scegli dall'albero del progetto">↗ Fogli collegati…</button>${p.link && V.doc.maps[p.link] ? `<button class="btn small primary" id="pop-openlink">Apri ↗</button><button class="btn small" data-pa="peek" title="Sbircia il foglio collegato senza entrarci">👁</button>` : ''}</div>`;
         adv += `<div class="row">${field('Correct & Complete %', inp('cc', p.cc, 'inputmode="decimal" placeholder="es. 90"' + roStep))}${field('Chi / reparto', inp('owner', p.owner, roStep))}</div>${lockHint}`;
         if (!p.validated) adv += `<div class="actions"><button class="btn small danger" id="pop-del-arm" title="Elimina il passo: chiede un secondo tocco">Elimina il passo…</button></div>`;
       } else {
@@ -433,6 +436,9 @@
     ensurePopRO();
     $('#pop-x').onclick = P.close; $('#pop-why').onclick = () => { const w = $('#pop-whytext'); w.classList.toggle('hidden'); $('#pop-why').setAttribute('aria-expanded', !w.classList.contains('hidden')); };
     $$('[data-pa]', pop).forEach(b => b.onclick = (ev) => { const a = b.dataset.pa; if (['dup', 'del', 'connect', 'lockto', 'lockall', 'peek', 'next'].includes(a)) P.close(); UI.quickAction(a, id, { x: ev.clientX, y: ev.clientY }); if (['invert', 'attach', 'unlock', 'legend'].includes(a) && V.byId(id)) P.open(id); });
+    // il picker dei fogli (esito 16-b)
+    const pf = $('#pop-fogli', pop);
+    if (pf) pf.onclick = () => { P.close(); UI.openScegliMappa && UI.openScegliMappa(id); };
     // ELIMINA col doppio tocco (esito 15): il primo arma e si colora, il secondo elimina
     const delArm = $('#pop-del-arm', pop);
     if (delArm) delArm.onclick = () => {
@@ -679,6 +685,15 @@
   // '__layers__' (UI.layersMenu) e '__ink__' (UI.inkOptions) vivono in panels.js: elencate qui per
   // chiarezza, anche se V.byId su una qualunque di queste stringhe non trova comunque nulla.
   const NON_ELEMENTO = new Set(['__title__', '__attach__', '__projects__', '__layers__', '__ink__']);
+  // le bolle ⓘ (esito 16-a): delega globale — un tocco sulla ⓘ apre la sua bolla (e chiude le
+  // altre), un tocco ovunque fuori le chiude tutte. Vale per ogni field con hint, ovunque appaia.
+  if (typeof document !== 'undefined' && document.addEventListener) {
+    document.addEventListener('click', (e) => {
+      const dot = e.target && e.target.closest ? e.target.closest('[data-hintdot]') : null;
+      document.querySelectorAll('.hintpop').forEach(hp => { if (!dot || hp !== dot.nextElementSibling) hp.classList.add('hidden'); });
+      if (dot) { const hp = dot.nextElementSibling; if (hp) hp.classList.toggle('hidden'); e.preventDefault(); e.stopPropagation(); }
+    }, true);
+  }
   let popRO = null;
   const ensurePopRO = () => {
     if (popRO || typeof ResizeObserver === 'undefined') return;

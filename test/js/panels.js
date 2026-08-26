@@ -652,6 +652,49 @@
     else body.innerHTML = '<p class="hint">Nessuna misura su questo passo.</p>';
     if (!d.open) d.showModal();
   };
+  /** Il PICKER dei fogli (esito 16-b, 26/8): via la tendina «un sacco di scritte» — l'ALBERO del
+   *  progetto in un dialogo, righe indentate con indirizzo e tipo, e le parole chiare: creare il
+   *  sotto-foglio DENTRO il passo, richiamare un foglio che vive altrove, staccare. */
+  UI.openScegliMappa = (elId) => {
+    const map = V.map(); const el = map && V.byId(elId, map); if (!el || el.type !== 'box') return;
+    let d = $('#dlg-fogli');
+    if (!d) {
+      d = document.createElement('dialog'); d.id = 'dlg-fogli'; d.setAttribute('aria-labelledby', 'fogli-head');
+      d.innerHTML = '<div class="d-head" id="fogli-head">↗ Fogli di questo passo</div><div class="d-body"><div id="fogli-body"></div></div><div class="d-foot"><button class="btn" id="fogli-close">Chiudi</button></div>';
+      document.body.appendChild(d);
+      $('#fogli-close', d).onclick = () => d.close();
+    }
+    const body = $('#fogli-body', d); const p = el.props;
+    const rows = V.alberoMappe(map).filter(r => r.id !== map.id);
+    let h = '<p class="hint">Un passo può CONTENERE un sotto-foglio (il suo dettaglio, ↗) oppure RICHIAMARE un foglio che vive altrove (⇉).</p>';
+    h += `<div class="fogli-riga nuovo"><button class="btn primary" data-fogli="__new__">➕ Crea il sotto-foglio di questo passo</button><span class="k">un foglio nuovo che vive dentro «${esc(V.nomePasso(el, map))}»</span></div>`;
+    if (p.link) h += `<div class="fogli-riga"><button class="btn" data-fogli="">✂ Stacca il collegamento</button><span class="k">il foglio resta dov'è, il passo smette di puntarci</span></div>`;
+    h += rows.length ? rows.map(r => {
+      const legata = p.link === r.id;
+      const effetto = legata ? 'collegata a questo passo ✓' : (r.parentId ? 'verrebbe richiamata ⇉ (resta dov\'è)' : 'diventerebbe il sotto-foglio ↗ di questo passo');
+      return `<button class="fogli-voce${legata ? ' on' : ''}" data-fogli="${esc(r.id)}" style="padding-left:${10 + r.depth * 18}px" title="${esc(r.indirizzo || 'foglio di primo livello')}">${r.depth ? '└ ' : ''}${r.indirizzo ? `<span class="ind">${esc(V.shortAddress(r.indirizzo))}</span> ` : ''}<b>${esc(r.titolo)}</b><span class="k"> · ${esc(r.tipo)} — ${esc(effetto)}</span></button>`;
+    }).join('') : '<p class="hint">Nel progetto non ci sono altri fogli: creane uno col ➕ qui sopra.</p>';
+    body.innerHTML = h;
+    $$('[data-fogli]', body).forEach(b => b.onclick = () => {
+      const v = b.dataset.fogli;
+      d.close();
+      if (v === '__new__') {
+        UI.askNomeSottoFoglio(String(p.title || '').trim() || 'dettaglio', (nomeScelto, indici) => {
+          const nuovo = indici ? V.buildDetailFromActivities(el, map, { nome: nomeScelto, indici }) : V.createDetail(map, nomeScelto, elId);
+          if (!nuovo) { UI.toast(V.DENIED_MSG.fase); V.pop.open(elId); return; }
+          V.commit({ t: 'props', id: elId, after: { link: nuovo.id } }, 'collega mappa');
+          UI.toast('Sotto-foglio creato: si apre con ↗.');
+          V.pop.open(elId);
+        }, () => V.pop.open(elId), p.activities);
+        return;
+      }
+      if (!v) { V.commit({ t: 'props', id: elId, after: { link: '' } }, 'collega mappa'); UI.toast('Collegamento staccato: il foglio resta dov\'è.'); V.pop.open(elId); return; }
+      V.linkMap(elId, v);
+      UI.renderCartina && UI.renderCartina();
+      V.pop.open(elId);
+    });
+    if (!d.open) d.showModal();
+  };
   /** La legenda FISSA della misura (esito 12, E12-f): in basso a sinistra, spiega in piccolo i
    *  tasti del cronometro e quando/quali chiudono un giro — la ✕ NON cancella niente. */
   const misLegenda = (mCur) => {

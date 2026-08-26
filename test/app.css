@@ -86,6 +86,16 @@ header .brand svg{width:22px;height:22px}
 #misctl .mis-warn{flex-basis:100%;font-size:12px;line-height:1.35;color:#c8321e;font-weight:600;padding:2px 2px 4px}
 /* il cronometro grande sul passo e' un bersaglio: mano e ombra al passaggio */
 svg .mis-clock{cursor:pointer}
+/* esito 16-a: gli appunti dietro la ⓘ — la bolla si apre a tocco, si chiude toccando fuori */
+.hintdot{border:none;background:none;color:#1f4e79;cursor:pointer;font-size:13px;padding:0 4px;vertical-align:middle}
+#pop .field{position:relative}
+.hintpop{position:absolute;left:6px;right:6px;top:100%;z-index:6;background:#fffdf7;border:1px solid #d9d4c8;border-radius:8px;padding:7px 9px;font-size:11.5px;line-height:1.45;color:#4a463e;box-shadow:0 4px 12px rgba(0,0,0,.18)}
+.hintpop.hidden{display:none}
+/* esito 16-b: l'albero dei fogli nel picker — righe piene, indentate, un tocco per collegare */
+#dlg-fogli .fogli-riga{display:flex;align-items:center;gap:10px;margin:6px 0}
+#dlg-fogli .fogli-voce{display:block;width:100%;text-align:left;background:#fff;border:1px solid #d9d4c8;border-radius:8px;padding:9px 10px;margin:4px 0;cursor:pointer;font:inherit}
+#dlg-fogli .fogli-voce.on{border-color:#1f4e79;background:hsl(210 40% 96%)}
+#dlg-fogli .fogli-voce .ind{color:#1f4e79;font-weight:700}
 /* esito 15: la testata del passo — titolo per primo, ? e ✕ accanto; elimina armato in rosso */
 #pop .pop-head.passo{display:flex;gap:6px;align-items:center}
 #pop .pop-head.passo .pop-ptitle{flex:1;min-width:0}
