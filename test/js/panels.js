@@ -1625,16 +1625,25 @@
   UI.quickAction = (a, id, opts) => {
     const map = V.map(); const el = V.byId(id, map); if (!el) return;
     switch (a) {
-      // il TIPO di attesa si sceglie PRIMA (esito 13): popup a cerchio nello stile del canvas,
-      // «nessuna» compresa — solo dopo nascono passo, freccia e segnale sull'attesa
+      // ESITO 17 (26/8, revisione dell'esito 13): il passo nasce SUBITO — collegato, a distanza
+      // ragionevole, con l'attesa semplice già sulla freccia — e il menu circolare dei TIPI
+      // compare INTORNO all'attesa appena nata. Prima il radiale veniva PRIMA di creare, e
+      // sembrava che il bottone non funzionasse («fa scomparire il menu»).
       case 'next': {
-        const at = (opts && opts.x != null) ? opts : (() => { const r = $('#stage').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })();
+        const r = V.addNextStep(map, el.id, 'attesa');
+        if (!r) { UI.toast(V.DENIED_MSG.fase || 'Qui non si può.'); break; }
+        I.select([r.boxId], { keepPop: true });
+        const st = $('#stage'); const rect = st.getBoundingClientRect();
+        const d = r.deltaId ? V.byId(r.deltaId, map) : null;
+        const pos = d ? R.deltaPos(d, map) : null;
+        const sc = pos ? I.toScreen(pos.x + (d.w || 30) / 2, pos.y + (d.h || 26) / 2) : null;
+        const at = sc ? { x: sc.x + rect.left, y: sc.y + rect.top } : { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
         apriRadiale(at.x, at.y, VOCI_ATTESA, (vid) => {
           UI.closePlaceMenu();
-          const r = V.addNextStep(map, el.id, vid === 'a:nessuna' ? null : vid.slice(2));
-          if (!r) { UI.toast(V.DENIED_MSG.fase || 'Qui non si può.'); return; }
-          I.select([r.boxId], { keepPop: true }); V.pop.open(r.boxId);
-        }, 'Che attesa c\'è fra questo passo e il prossimo?');
+          if (vid === 'a:nessuna') { const dv = r.deltaId && V.byId(r.deltaId, map); if (dv) V.commit({ t: 'remove', el: dv }, 'attesa'); }
+          else if (r.deltaId && V.byId(r.deltaId, map)) V.commit({ t: 'props', id: r.deltaId, after: { kind: vid.slice(2) } }, 'tipo di attesa');
+          V.pop.open(r.boxId);
+        }, 'Che attesa c\'è qui? Tocca fuori per lasciare quella semplice.');
         break; }
       case 'delta': { const f = map.elements.find(c => c.type === 'flow' && c.from.el === el.id); if (!f) return; const d = V.newElement('delta', 0, 0, {}); d.props.attachedTo = f.id; d.props.dx = 0; d.props.dy = 0; V.commit({ t: 'add', el: d }, 'attesa'); I.select([d.id], { keepPop: true }); V.pop.open(d.id); break; }
       // il problema creato DAL passo nasce gia' legato a quel passo (esito stazione 1, 25/8):
