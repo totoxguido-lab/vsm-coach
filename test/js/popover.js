@@ -271,8 +271,11 @@
       // numerica). Colore, collegamenti, sbircia ed extra stanno dietro i tondi, in pannellini che
       // si aprono DENTRO il pannello, sopra il contenuto: nessuna finestra sopra un'altra finestra.
       case 'box': {
-        // il titolo sta gia' nella testata (esito 15); la dicitura «una per riga» e' sparita
-        main += `<div class="pop-sec">Attività</div><div class="acts" data-acts></div>`;
+        // il titolo sta gia' nella testata (esito 15); la dicitura «una per riga» e' sparita.
+        // «Valida» sta SUBITO SOTTO le attività, come bottone (esito 16-c) — non in avanzate:
+        // e' il gesto del metodo (mappato, con attivita' e tempi), non un'opzione rara
+        main += `<div class="pop-sec">Attività</div><div class="acts" data-acts></div>`
+          + `<div class="actions"><button class="btn small${p.validated ? ' primary' : ''}" data-valid title="${p.validated ? 'Validato: tocca per riaprirlo alle modifiche (con conferma)' : 'Segna come validato: mappato, con attività e tempi'}">${p.validated ? '✓ Validato — riapri' : '✓ Valida il passo'}</button></div>`;
         // ⏱ accanto ai tempi: da qui si apre il cronometro (spec 2026-08-21, Parte 2). Sta qui e non
         // fra i tondi perché è di quei tre riquadri che parla — e i tondi sono già sette.
         // esito 13: NIENTE cronometro qui (il ⏱ vive in Misura, dove serve) — al suo posto la
@@ -377,7 +380,6 @@
         // tocco. La categoria «Extra» sparisce: erano campi senza casa, ora stanno qui.
         adv += `<div class="field"><label>Collega a un'altra mappa</label>${linkSel}<span class="hint">${linkHint}</span></div>${openLink}`;
         if (p.link && V.doc.maps[p.link]) adv += `<div class="actions"><button class="btn small" data-pa="peek" title="Sbircia il foglio collegato senza entrarci">👁 Sbircia</button></div>`;
-        adv += `<div class="actions"><button class="btn small${p.validated ? ' primary' : ''}" data-valid title="${p.validated ? 'Validato: tocca per riaprirlo alle modifiche (con conferma)' : 'Segna come validato: mappato, con attività e tempi'}">${p.validated ? '✓ Validato — riapri' : '✓ Valida il passo'}</button></div>`;
         adv += `<div class="row">${field('Correct & Complete %', inp('cc', p.cc, 'inputmode="decimal" placeholder="es. 90"' + roStep))}${field('Chi / reparto', inp('owner', p.owner, roStep))}</div>${lockHint}`;
         if (!p.validated) adv += `<div class="actions"><button class="btn small danger" id="pop-del-arm" title="Elimina il passo: chiede un secondo tocco">Elimina il passo…</button></div>`;
       } else {
