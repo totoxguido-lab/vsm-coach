@@ -260,7 +260,11 @@
           // orologio «stile emoticon», PIENO (esito Gt 25/8 sera): corpo solido, lancette bianche,
           // corona e nasi ai lati — grafite da fermo, verde mentre misura
           const cx2 = w - 2, corpo = attivo ? '#2e7d32' : '#2b2b2b';
+          // il passo SCELTO durante l'attesa porta l'ANELLO verde (esito 14): la strada e' sua,
+          // manca solo il ▶ — gli altri candidati continuano a lampeggiare (si puo' cambiare idea)
+          const prossimo = !!(ms && ms.phase === 'attesa' && ms.stepId === el.id);
           s += `<g class="mis-clock${attivo ? ' mis-attivo' : ''}${scelta ? ' mis-scelta' : ''}" data-mis="${esc(el.id)}">`
+            + (prossimo ? `<circle class="mis-next-ring" cx="${w - 2}" cy="2" r="19" fill="none" stroke="#2e7d32" stroke-width="2.4" stroke-dasharray="4 3"/>` : '')
             + `<circle class="mis-hit" cx="${cx2}" cy="2" r="24" fill="transparent"/>`
             + `<g fill="${corpo}">`
             + `<rect x="${cx2 - 3.2}" y="-13.5" width="6.4" height="4" rx="1.4"/>`

@@ -676,7 +676,7 @@
       + '<div>⏩ passo finito · ▶ comincia il prossimo (l’attesa nasce da sola)</div>'
       + '<div>🗑 elimina la misura in corso (due tocchi) — niente viene scritto; ▶ la riavvia</div>'
       + '<div>⏹ chiude il giro: chiede conferma — ⏹ rosso = sì, ✕ = annulla (nulla si cancella)</div>'
-      + '<div>Al bivio i cronometri lampeggiano: tocca il passo dove va il lavoro.</div>'
+      + '<div>Al bivio i cronometri lampeggiano: un tocco SCEGLIE la strada (anello verde), ▶ fa partire la misura.</div>'
       + '<div>Dopo l’ultimo passo della catena il giro si chiude da solo.</div>';
     const ch = $('#misleg-chiudi', leg); if (ch) ch.onclick = () => { try { localStorage.setItem('vsm.mislegenda', '0'); } catch (e) { /* niente */ } misLegenda(mCur); };
   };
@@ -805,7 +805,10 @@
     if (s.phase === 'attesa') {
       // il PROSSIMO passo lo sceglie chi misura (bivi compresi): il tocco sul cronometro decide
       const r = V.measureJump(m, id);
-      if (r && r.fuoriOrdine) { const dest = V.byId(id, m); UI.toast('\u26A0 Non hai rispettato l\u2019ordine di lavoro: nessuna freccia arriva a \u00AB' + ((dest.props.title || 'questo passo')) + '\u00BB dal passo precedente \u2014 ' + r.attesaPersa + 's di attesa non scritti.'); }
+      // la SCELTA del ramo non avvia niente (esito 14): la strada si illumina, l'attesa corre \u2014
+      // si parte col \u25B6 verde, o ritoccando il passo scelto
+      if (r && r.scelto) UI.toast('Ramo scelto \u2714 \u2014 l\u2019attesa continua a correre: \u25B6 (o un altro tocco qui) quando il lavoro comincia davvero su questo passo.');
+      else if (r && r.fuoriOrdine) { const dest = V.byId(id, m); UI.toast('\u26A0 Non hai rispettato l\u2019ordine di lavoro: nessuna freccia arriva a \u00AB' + ((dest.props.title || 'questo passo')) + '\u00BB dal passo precedente \u2014 ' + r.attesaPersa + 's di attesa non scritti.'); }
       else if (r && r.ko === 'validato') UI.toast('Questo passo ha la \u2713: la misura non si scrive.');
       UI.renderMisCtl(); return true;
     }
@@ -827,7 +830,7 @@
       // senza una parola e senza il lampeggio la strada sembrava decisa dall'app
       const s2 = V.measureState(m);
       const rami = (s2 && s2.fromId) ? m.elements.filter(cc => cc.type === 'flow' && cc.from && cc.from.el === s2.fromId).length : 0;
-      if (rami > 1) I.hint('Bivio: i cronometri che lampeggiano sono i passi possibili \u2014 tocca quello dove il lavoro va DAVVERO. L\'attesa si scrive sulla freccia del passo scelto.', 6000);
+      if (rami > 1) I.hint('Bivio: tocca il cronometro di un ramo per SCEGLIERE la strada (si illumina, l\'attesa continua); poi \u25b6 quando il lavoro comincia davvero.', 6000);
     }
     UI.renderMisCtl();
   };

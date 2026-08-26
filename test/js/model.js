@@ -2080,10 +2080,15 @@ window.VSM = window.VSM || {};
     if (!dest || dest.type !== 'box' || dest.props.validated) return null;
     if (s.phase === 'box') return { ko: 'in-corso' };
     if (s.phase !== 'attesa') return null;
+    // DUE TEMPI (esito 14, 26/8: «uno crede di selezionare il passo e in realtà fa partire il
+    // timer»): il tocco sul passo GIÀ puntato avvia la misura (il flusso lineare di sempre);
+    // il tocco su un ramo DIVERSO è solo la SCELTA — la strada si illumina (connId nuovo),
+    // l'attesa continua a correre, e si parte col ▶ della barra (o ritoccando il passo scelto).
+    if (stepId === s.stepId) return V.measureAdvance(map, now);
     const conn = map.elements.find(c => c.type === 'flow' && c.from && c.from.el === s.fromId && c.to && c.to.el === stepId);
     if (conn) {
       setMeasure(map, Object.assign({}, s, { stepId, connId: conn.id }));
-      return V.measureAdvance(map, now);
+      return { scelto: true, elId: stepId };
     }
     const persa = misuraNetta(s, now);
     setMeasure(map, senzaPause(Object.assign({}, s, { phase: 'box', stepId, t0: now, fromId: null, connId: null })));
