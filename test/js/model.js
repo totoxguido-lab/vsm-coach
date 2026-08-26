@@ -244,6 +244,12 @@ window.VSM = window.VSM || {};
         // scrivere un dato falso.
         if (s.pausedAt !== undefined && (typeof s.pausedAt !== 'number' || !isFinite(s.pausedAt) || (typeof s.t0 === 'number' && s.pausedAt < s.t0) || s.pausedAt > Date.now() + 60000)) delete s.pausedAt;
         if (s.pausedTot !== undefined && (typeof s.pausedTot !== 'number' || !isFinite(s.pausedTot) || s.pausedTot < 0 || (typeof s.t0 === 'number' && s.pausedTot > Math.max(0, Date.now() - s.t0)))) delete s.pausedTot;
+        // Coerenza CONGIUNTA (C8 del triage debug 25/8, Codex DBG-05): pausedAt e pausedTot possono
+        // essere leciti UNO PER UNO e insieme dire piu' pausa di quanta durata esista — misuraNetta
+        // avrebbe scritto 0 s in silenzio via Math.max. Come sopra: meglio perdere la pausa (il
+        // tempo torna pieno, visibile) che scrivere un dato falso.
+        if (s.pausedAt !== undefined && s.pausedTot !== undefined && typeof s.t0 === 'number'
+          && s.pausedTot + Math.max(0, Date.now() - s.pausedAt) > Math.max(0, Date.now() - s.t0)) { delete s.pausedAt; delete s.pausedTot; }
         if (s.phase !== null && s.phase !== undefined && !['box', 'attesa'].includes(s.phase)) delete m.measure;
       }
     }
@@ -376,6 +382,20 @@ window.VSM = window.VSM || {};
       });
       if (p.pinned !== undefined && typeof p.pinned !== 'boolean') delete p.pinned;
     });
+    // Il CALDERONE parla per id di elementi (C11 del triage debug 25/8, Codex DBG-03): se il
+    // sanitize li ha rinominati, le chiavi di obs/dati/nomi li seguono — un archivio che punta a
+    // id morti non si puo' piu' leggere ne' consultare. Solo le chiavi rimappate si toccano; il
+    // resto della voce (comprese chiavi sconosciute, regola A5) passa intatto.
+    if (remap.size && Array.isArray(m.calderone)) {
+      m.calderone.forEach(voce => {
+        if (!voce || typeof voce !== 'object') return;
+        ['obs', 'dati', 'nomi'].forEach(k => {
+          const o = voce[k];
+          if (!o || typeof o !== 'object' || Array.isArray(o)) return;
+          Object.keys(o).forEach(chiave => { if (remap.has(chiave)) { o[remap.get(chiave)] = o[chiave]; delete o[chiave]; } });
+        });
+      });
+    }
     // Anelli di legami: due elementi legati l'uno all'altro si disegnerebbero a vicenda senza fine.
     // Il legame che chiude l'anello viene sciolto, l'elemento resta dov'e' disegnato.
     // Fra i «genitori» contano anche i CAPI di una freccia: una freccia sta dove la mettono gli
@@ -683,8 +703,8 @@ window.VSM = window.VSM || {};
     emit({ label: 'fase', mapId: map.id, ops: [] });
     return { ok: true };
   };
-  /** SVALIDARE un foglio — la via d'emergenza (esito stazione 2, 25/8; QUESTIONE APERTA: solo
-   *  modello, nessuna UI la offre ancora). La porta di Misura resta a senso unico per il metodo,
+  /** SVALIDARE un foglio — la via d'emergenza (esito stazione 2, 25/8; dal 25/8 sera la UI e' il
+   *  bottone nascosto in «avanzate» del selettore fasi). La porta di Misura resta a senso unico per il metodo,
    *  ma «in extremis» si può tornare in pianificazione: le osservazioni raccolte NON si buttano
    *  e NON restano in uso — finiscono nel CALDERONE del foglio (map.calderone, un archivio per
    *  giro di misura), rievocabili ma fuori da statistiche, badge e livelli. La sessione di
@@ -692,14 +712,34 @@ window.VSM = window.VSM || {};
   V.unvalidate = (map) => {
     const cur = map.phase || 'disegna';
     if (cur !== 'misura' && cur !== 'analizza') return { ok: false, reason: 'fase' };
-    const obs = {};
-    map.elements.forEach(el => { if (el.props && Array.isArray(el.props.obs) && el.props.obs.length) { obs[el.id] = el.props.obs; el.props.obs = []; } });
+    // Nel calderone finisce TUTTO cio' che il giro aveva prodotto o che parlava dei suoi tempi
+    // (C1 del triage debug 25/8, Codex DBG-01 ≡ Grok #5, decisione Gt 26/8): non solo le obs —
+    // anche Hi/Lo/Avg scritti sui passi e sulle attese (calcolati O a mano: svalidare vuol dire
+    // che il disegno era proprio sbagliato) e il ripiego map.samples, che altrimenti riaffiorava
+    // nel riepilogo e nel lint appena numMisure tornava 0. Il foglio torna pulito; la storia
+    // resta consultabile: ogni voce porta anche il CONTESTO (tipo e nome dell'elemento), perche'
+    // un archivio di soli id non si puo' leggere (C11).
+    const obs = {}, dati = {}, nomi = {};
+    const pieno = (v) => v !== undefined && v !== null && String(v).trim() !== '';
+    map.elements.forEach(el => {
+      const p = el.props || {};
+      const conObs = Array.isArray(p.obs) && p.obs.length;
+      const conDati = (el.type === 'box' || el.type === 'delta') && (pieno(p.hi) || pieno(p.lo) || pieno(p.avg));
+      if (!conObs && !conDati) return;
+      if (conObs) { obs[el.id] = p.obs; p.obs = []; }
+      if (conDati) { dati[el.id] = { hi: p.hi, lo: p.lo, avg: p.avg }; p.hi = ''; p.lo = ''; p.avg = ''; }
+      nomi[el.id] = { tipo: el.type, nome: String(p.title || p.note || p.text || '').trim() };
+    });
     if (!Array.isArray(map.calderone)) map.calderone = [];
-    map.calderone.push({ at: Date.now(), da: cur, obs });
+    const voce = { at: Date.now(), da: cur, obs };
+    if (Object.keys(dati).length) voce.dati = dati;
+    if (Object.keys(nomi).length) voce.nomi = nomi;
+    if (pieno(map.samples)) { voce.samples = map.samples; map.samples = ''; }
+    map.calderone.push(voce);
     if (map.measure) delete map.measure;
     map.phase = 'valida'; map.updated = Date.now(); bump(map); V.save();
     emit({ label: 'svalida', mapId: map.id, ops: [] });
-    return { ok: true, archiviate: Object.keys(obs).length };
+    return { ok: true, archiviate: Object.keys(obs).length, elementi: Object.keys(nomi).length };
   };
 
   // ---------- V.allowed: la porta unica dei permessi (A2) ----------
@@ -934,12 +974,22 @@ window.VSM = window.VSM || {};
     // 2) altrimenti salgono al padre della mappa eliminata (senza passo: l'indirizzo resta suo,
     //    per lettera — v. trattoDi);
     // 3) senza un padre restano di primo livello, ma con un indirizzo che le distingue.
-    const figlie = Object.values(V.doc.maps).filter(o => o.parentId === id && o.id !== id);
-    const candidate = [heir].concat(rest, ideal ? [ideal] : []).filter(Boolean).filter(x => x.id !== id && !(opts.withPair && ideal && x.id === ideal.id));
+    // con withPair muoiono in DUE: anche le figlie dell'Ideale vanno riappese (C7 del triage
+    // debug 25/8, Codex DBG-04 — prima solo quelle dell'Attuale, e il cleanup qui sotto azzerava
+    // i parentId delle altre in silenzio)
+    const morte = [id].concat(opts.withPair && ideal ? [ideal.id] : []);
+    const figlie = Object.values(V.doc.maps).filter(o => morte.includes(o.parentId) && !morte.includes(o.id));
+    const candidate = [heir].concat(rest, ideal ? [ideal] : []).filter(Boolean).filter(x => !morte.includes(x.id));
     figlie.forEach(f => {
       let nuovoPar = null, nuovoStep = null;
       if (f.parentStepId) { const cand = candidate.find(x => (x.elements || []).some(e => e.id === f.parentStepId && e.type === 'box')); if (cand) { nuovoPar = cand.id; nuovoStep = f.parentStepId; } }
-      if (!nuovoPar && m.parentId && V.doc.maps[m.parentId]) nuovoPar = m.parentId;
+      // senza un passo superstite si sale: prima al padre della PROPRIA madre (l'Ideale ha il
+      // suo), poi a quello dell'Attuale — mai un genitore che sta anch'esso morendo
+      if (!nuovoPar) {
+        const madre = (f.parentId === id) ? m : ideal;
+        const su = [madre && madre.parentId, m.parentId].find(x => x && !morte.includes(x) && V.doc.maps[x]);
+        if (su) nuovoPar = su;
+      }
       f.parentId = nuovoPar; f.parentStepId = nuovoStep; bump(f);
     });
     delete V.doc.maps[id];
@@ -1035,6 +1085,32 @@ window.VSM = window.VSM || {};
    *  dichiara a mano (feedback iPad 25/8): il campo dell'intestazione è sparito, il numero nasce
    *  dal cronometro. map.samples resta solo come ripiego per le mappe vecchie che l'avevano scritto. */
   V.numMisure = (map) => Math.max(0, ...(map.elements || []).map(e => (e.props && Array.isArray(e.props.obs)) ? e.props.obs.length : 0));
+  /** I PARZIALI per passo (C16 del triage debug 25/8, decisione Gt 26/8): un giro incompleto non
+   *  si racconta col massimo («10 misure» quando un passo ne ha 2) — il conteggio si dice passo
+   *  per passo. Ordine: la catena del flusso, poi i passi fuori catena. Riepilogo e lint leggono
+   *  da qui; il massimo (V.numMisure) resta per i lettori che vogliono solo sapere se si e'
+   *  misurato. */
+  V.misurePerPasso = (map) => {
+    const fo = V.flowOrder(map);
+    const inCatena = new Set(fo.order.map(b => b.id));
+    const boxes = fo.order.concat((map.elements || []).filter(e => e.type === 'box' && !inCatena.has(e.id)));
+    return boxes.map(b => ({
+      id: b.id,
+      nome: String((b.props && b.props.title) || '').trim() || 'passo senza nome',
+      n: (b.props && Array.isArray(b.props.obs)) ? b.props.obs.length : 0
+    }));
+  };
+  /** Il foglio che sta misurando ADESSO (C2 del triage debug 25/8, decisione Gt 26/8: la barra
+   *  del giro segue chi misura anche sugli altri fogli — fermare e mettere in pausa si puo'
+   *  sempre). Prima il foglio attivo, poi gli altri del documento. */
+  V.measureActiveMap = () => {
+    const attiva = (m) => { const s = m && m.measure; return !!(m && ['misura', 'analizza'].includes(m.phase) && s && s.phase && s.t0); };
+    const cur = V.map();
+    if (attiva(cur)) return cur;
+    const maps = (V.doc && V.doc.maps) || {};
+    for (const id of Object.keys(maps)) if (attiva(maps[id])) return maps[id];
+    return null;
+  };
   /** Nuovo sotto-foglio. Non basta sapere da quale MAPPA nasce: serve da quale PASSO, perché è il passo
    *  a dargli l'indirizzo (il sotto-foglio del passo 2 è il 2.1, 2.2, …). Senza, la cartina saprebbe
    *  dire «sta sotto questa mappa» ma non «sta sotto questo passo», che è quello che chi mappa cerca. */
@@ -1876,6 +1952,15 @@ window.VSM = window.VSM || {};
     return Math.max(0, Math.round((now - s.t0 - pausa) / 1000));
   };
   V.measureElapsed = (map, now) => misuraNetta(V.measureState(map), now || Date.now());
+  /** Il tempo del cronometro come lo mostra la barra (C18 del triage debug 25/8): mm:ss con lo
+   *  zero davanti sotto l'ora, h:mm:ss dall'ora in su — un giro riaperto dopo due ore scriveva
+   *  «120:04», che non si legge. Pura, provata in Node; la barra del giro la usa. */
+  V.fmtCrono = (sec) => {
+    const s2 = Math.max(0, Math.floor(sec || 0));
+    const h = Math.floor(s2 / 3600), mm = Math.floor(s2 / 60) % 60, ss = s2 % 60;
+    const pad = (n) => (n < 10 ? '0' : '') + n;
+    return h ? h + ':' + pad(mm) + ':' + pad(ss) : pad(Math.floor(s2 / 60)) + ':' + pad(ss);
+  };
   V.measurePaused = (map) => { const s = V.measureState(map); return !!(s && s.pausedAt); };
   /** Pausa dell'OSSERVATORE: ferma il conteggio (passo O attesa) senza chiudere niente.
    *  Gia' in pausa, o niente in corso: null. */
@@ -1905,6 +1990,11 @@ window.VSM = window.VSM || {};
     // comunque a far partire un cronometro che poi scriverebbe osservazioni bloccate da V.allowed.
     if (!['misura', 'analizza'].includes(map.phase)) return null;
     const prec = V.measureState(map);
+    // Una misura APERTA (passo o attesa, anche in pausa) non si straccia mai in silenzio (C5 del
+    // triage debug 25/8, Grok #4): sul canvas misTap gia' rifiutava («chiudilo prima»), ma il
+    // dialogo con «solo questo passo» sostituiva map.measure e il lap spariva senza scrivere
+    // niente. La barriera sta qui, nel modello: ogni chiamante riceve lo stesso no.
+    if (prec && prec.phase && prec.t0) return { ko: 'in-corso' };
     const s = { mode, giro: (prec && prec.giro) || 1, stepId, phase: 'box', t0: now, fromId: null, connId: null };
     // il turno e' della SESSIONE di misura (F1, Task 4): dichiarato a giro pronto o in corso,
     // sopravvive agli avvii successivi finche' la sessione vive — sempre visibile nel campo del
@@ -1975,6 +2065,10 @@ window.VSM = window.VSM || {};
     const c = campi || {};
     if (c.cls !== undefined && !['normale', 'particolare', 'eccezionale'].includes(c.cls)) return false;
     if (c.nota !== undefined && typeof c.nota !== 'string') return false;
+    // il VALORE si corregge a mano (decisione Gt 26/8, stazione 12-C: flessibilita', ogni misura
+    // modificabile a posteriori): numeri veri non negativi, arrotondati al secondo come quelli
+    // che scrive il cronometro
+    if (c.s !== undefined && !(typeof c.s === 'number' && isFinite(c.s) && c.s >= 0)) return false;
     // Si riscrive una copia dell'array ORIGINALE, non di V.obsOf (rilievo Codex #1 di F1):
     // ricostruire da obsOf avrebbe fatto sparire in silenzio un'osservazione marcia arrivata da
     // fuori — «mai perdere dati», la sana sanitizeMap al prossimo ingresso, non una rilettura.
@@ -1987,6 +2081,7 @@ window.VSM = window.VSM || {};
       const n = Object.assign({}, o);
       if (c.cls !== undefined) n.cls = c.cls;
       if (c.nota !== undefined) { if (c.nota.trim()) n.nota = c.nota.trim(); else delete n.nota; }
+      if (c.s !== undefined) n.s = Math.round(c.s);
       return n;
     });
     return V.commit({ t: 'props', id: elId, after: { obs: dopo } }, 'osservazione riletta', { map });
@@ -2339,7 +2434,14 @@ window.VSM = window.VSM || {};
     if (map.kind === 'current' && M.boxes >= 1 && !map.validation.validatedBy) add('warn', 4, 'La mappa non risulta validata da chi fa il lavoro ("ti sembra giusto? ho dimenticato qualcosa?").');
     if (M.boxes >= 1 && !M.hasData) add('warn', 5, 'Nessun dato Hi/Lo/Avg: senza tempi la mappa non mostra lo spreco (tocca un box o un delta per inserirli).');
     if (M.hasData) {
-      const s = V.numMisure(map) || num(map.samples); if (!s) add('warn', 5, 'Nessuna misura raccolta: il cronometro le conta da sé (~30; 8-10 per una vista rapida).'); else if (s < 8) add('warn', 5, `${s} misure sono poche: 8-10 per una vista rapida, ~30 per significatività.`);
+      // i PARZIALI (C16): un giro incompleto non si giudica dal passo piu' misurato — il lint
+      // guarda il passo MENO misurato, e quando i conteggi divergono lo dice con l'intervallo
+      const mp = V.misurePerPasso(map).filter(x => x.n > 0);
+      const sMax = mp.length ? Math.max(...mp.map(x => x.n)) : (V.numMisure(map) || num(map.samples));
+      const sMin = mp.length ? Math.min(...mp.map(x => x.n)) : sMax;
+      if (!sMax) add('warn', 5, 'Nessuna misura raccolta: il cronometro le conta da sé (~30; 8-10 per una vista rapida).');
+      else if (sMin !== sMax && sMin < 8) add('warn', 5, `Misure diseguali fra i passi (da ${sMin} a ${sMax}): per i passi meno misurati valgono le solite soglie — 8-10 per una vista rapida, ~30 per significatività.`);
+      else if (sMax < 8) add('warn', 5, `${sMax} misure sono poche: 8-10 per una vista rapida, ~30 per significatività.`);
       map.elements.filter(e => e.type === 'box' || e.type === 'delta').forEach(x => { const hi = num(x.props.hi), lo = num(x.props.lo), av = num(x.props.avg); if (hi != null && lo != null && av != null && !(lo <= av && av <= hi)) add('bad', 5, `Dati incoerenti (${x.props.title || x.props.note || 'delta'}): deve valere Lo ≤ Avg ≤ Hi.`, x.id); });
       if (M.incompleteBoxes + M.incompleteDeltas) add('warn', 5, `${M.incompleteBoxes + M.incompleteDeltas} elementi senza media: il riepilogo VA/NVA è parziale.`);
       if (M.looseDeltas) add('warn', 5, `${M.looseDeltas} ${M.looseDeltas === 1 ? 'delta non è agganciato' : 'delta non sono agganciati'} a una freccia della catena: ${M.looseDeltas === 1 ? 'resta fuori' : 'restano fuori'} dal riepilogo e dalla timeline. Trascina il triangolo sulla freccia fra i due passi.`);

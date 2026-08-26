@@ -460,7 +460,32 @@
    *  è l'unico tocco che non si disfa (da lì si esce solo col nuovo giro). Il «?» in testa apre
    *  la spiegazione delle fasi. Da Misura/Analizza sotto la lista compare UN bottone solo —
    *  «Crea un nuovo giro» — perché l'azione è la stessa per tutte e tre le righe chiuse. */
-  UI.openFase = () => { UI._nuovoGiroConferma = false; UI._svalidaConferma = false; UI._faseAiuto = false; UI.renderFase(); const d = $('#dlg-fase'); if (!d.open) d.showModal(); };
+  UI.openFase = () => { UI._nuovoGiroConferma = false; UI._svalidaConferma = false; UI._faseAiuto = false; UI._calderoneAperto = false; UI.renderFase(); const d = $('#dlg-fase'); if (!d.open) d.showModal(); };
+  /** Il CALDERONE si consulta (C1, decisione Gt 26/8): la svalida archivia obs, Hi/Lo/Avg e
+   *  samples — qui si rileggono, in sola lettura, voce per voce. Il nome viene dal contesto
+   *  salvato (voce.nomi); per le voci vecchie (prima del 26/8) si ripiega sull'elemento vivo. */
+  const calderoneHTML = (map) => {
+    const cald = Array.isArray(map.calderone) ? map.calderone : [];
+    if (!cald.length) return '';
+    if (!UI._calderoneAperto) return `<div class="actions" style="margin:2px 0 8px"><button class="btn" id="fase-calderone" style="opacity:.65;font-size:12px">\u{1F4E6} Calderone (${cald.length})… (avanzato)</button></div>`;
+    const voce = (v) => {
+      const quando = v.at ? new Date(v.at).toLocaleString('it-CH') : '?';
+      const ids = Array.from(new Set(Object.keys(v.obs || {}).concat(Object.keys(v.dati || {}))));
+      const righe = ids.map(id => {
+        const ctx = v.nomi && v.nomi[id];
+        const vivo = V.byId(id, map);
+        const nome = (ctx && (ctx.nome || ctx.tipo)) || (vivo && String(vivo.props.title || vivo.props.note || '').trim()) || 'elemento non più sul foglio';
+        const o = (v.obs && v.obs[id]) || [];
+        const d = v.dati && v.dati[id];
+        const pezzi = [];
+        if (o.length) pezzi.push(o.length + (o.length === 1 ? ' misura' : ' misure') + ': ' + o.map(x => (x && x.s) + 's').slice(0, 10).join(', ') + (o.length > 10 ? '…' : ''));
+        if (d) pezzi.push('Hi ' + (d.hi || '–') + ' · Lo ' + (d.lo || '–') + ' · Avg ' + (d.avg || '–'));
+        return `<div class="k">• <b>${esc(nome)}</b> — ${esc(pezzi.join(' · ') || 'niente')}</div>`;
+      }).join('');
+      return `<div class="cald-voce"><div><b>${esc(quando)}</b> <span class="k">(svalidato da ${esc(v.da || '?')})</span></div>${righe}${v.samples ? `<div class="k">campioni dichiarati (campo vecchio): ${esc(v.samples)}</div>` : ''}</div>`;
+    };
+    return `<div class="fase-calderone"><b>\u{1F4E6} Calderone — misure archiviate dalle svalide</b><p class="hint">Sola lettura: sono fuori da conti, badge e viste. Restano qui come storia del foglio.</p>${cald.slice().reverse().map(voce).join('')}<div class="actions"><button class="btn small" id="fase-calderone-chiudi">chiudi</button></div></div>`;
+  };
   UI.renderFase = () => {
     const map = V.map(); const body = $('#fase-body'); if (!map || !body) return;
     const ICONA = { disegna: '\u270F\uFE0F', valida: '\u2705', misura: '\u23F1\uFE0F', analizza: '\u{1F4CA}' };
@@ -491,6 +516,7 @@
       + (['misura', 'analizza'].includes(map.phase) ? (UI._svalidaConferma
         ? `<div class="fase-conferma"><b>Svalidare il foglio?</b><br><small>\u00C8 la via d'emergenza: il foglio torna in pianificazione e le misure prese finiscono nel CALDERONE \u2014 recuperabili, ma fuori da conti e viste. Il giro in corso muore.</small><div class="actions"><button class="btn primary" id="fase-svalida-si">S\u00EC, svalida</button><button class="btn" id="fase-svalida-no">Annulla</button></div></div>`
         : `<div class="actions" style="margin:2px 0 8px"><button class="btn" id="fase-svalida" style="opacity:.65;font-size:12px">Svalida il foglio\u2026 (avanzato)</button></div>`) : '')
+      + calderoneHTML(map)
       + (map.validated ? '<p class="notice">Ideale validato \u{1F512}: apri il lucchetto in alto per cambiare fase.</p>' : '');
     // la nuvoletta si chiude da sola: un tocco su di lei, o su una riga qualsiasi
     const nv = $('.fase-nuvola', body); if (nv) nv.onclick = () => { UI._faseAiuto = false; UI.renderFase(); };
@@ -527,10 +553,15 @@
       const r = V.unvalidate(map);
       if (!r.ok) { UI.toast('Qui non c\u2019\u00E8 niente da svalidare.'); UI.renderFase(); return; }
       UI.buildPalette(); UI.renderMisCtl(); UI.renderHeader(); UI.renderFase();
-      UI.toast('Foglio svalidato: ' + (r.archiviate ? r.archiviate + ' element' + (r.archiviate === 1 ? 'o' : 'i') + ' con misure archiviat' + (r.archiviate === 1 ? 'o' : 'i') + ' nel calderone.' : 'nessuna misura da archiviare.') + ' Sei in Valida.');
+      UI.toast('Foglio svalidato: ' + (r.elementi ? r.elementi + ' element' + (r.elementi === 1 ? 'o' : 'i') + ' con misure o tempi archiviat' + (r.elementi === 1 ? 'o' : 'i') + ' nel calderone.' : 'nessuna misura da archiviare.') + ' Sei in Valida.');
     };
     const svNo = $('#fase-svalida-no', body);
     if (svNo) svNo.onclick = () => { UI._svalidaConferma = false; UI.renderFase(); };
+    // il calderone si apre e si chiude qui, in sola lettura
+    const cd = $('#fase-calderone', body);
+    if (cd) cd.onclick = () => { UI._calderoneAperto = true; UI.renderFase(); };
+    const cdChiudi = $('#fase-calderone-chiudi', body);
+    if (cdChiudi) cdChiudi.onclick = () => { UI._calderoneAperto = false; UI.renderFase(); };
     // il bottone verde della Misura: chiude il selettore e apre il cronometro sul foglio
     const inizia = $('#fase-inizia', body);
     if (inizia) inizia.onclick = () => { $('#dlg-fase').close(); UI.renderMisCtl(); I.hint('Tocca il cronometro \u23F1 sul PRIMO passo del flusso: parte il giro. \u00AB\u270B Passo finito\u00BB chiude il passo e l\u2019attesa corre da sola fino al prossimo.', 7000); };
@@ -568,7 +599,9 @@
    * si perde nemmeno se Safari muore un istante dopo. Il tempo corre dall'orologio di
    * parete (t0), mai da un timer JS; il Wake Lock tiene lo schermo acceso mentre si misura. */
   let misTick = null, misWL = null, misStopArm = null;  // {mapId, giro}: la conferma armata non sopravvive al cambio di contesto (Codex P1)
-  const misAttiva = () => { const m = V.map(); const s = m && V.measureState(m); return !!(m && ['misura', 'analizza'].includes(m.phase) && s && s.phase && s.t0); };
+  // «attiva» e' GLOBALE, non del foglio a schermo (C2, decisione Gt 26/8): il giro puo' vivere su
+  // un altro foglio, e finche' vive la barra resta (e il Wake Lock tiene lo schermo acceso)
+  const misAttiva = () => !!V.measureActiveMap();
   let misWLPend = false;
   const misWake = async () => {
     if (misWL || misWLPend || !navigator.wakeLock || !misAttiva()) return;
@@ -583,8 +616,11 @@
     finally { misWLPend = false; }
   };
   const misWakeOff = () => { try { if (misWL) misWL.release(); } catch (e) { /* niente */ } misWL = null; };
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && misAttiva()) misWake(); });
-  const misMMSS = (sec) => { const m2 = Math.floor(sec / 60), s2 = sec % 60; return (m2 < 10 ? '0' : '') + m2 + ':' + (s2 < 10 ? '0' : '') + s2; };
+  // al RIENTRO nell'app il cronometro torna visibile in primo piano, con l'avviso aggiornato
+  // (decisione Gt 26/8, stazione 12-A/B): non solo il Wake Lock — anche la barra si ridisegna
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && misAttiva()) { misWake(); UI.renderMisCtl(); } });
+  // oltre l'ora la barra scrive h:mm:ss (C18): la logica vive in V.fmtCrono, pura e provata
+  const misMMSS = (sec) => V.fmtCrono(sec);
   // icone della barra del giro: SVG puliti, stessi tratti delle icone della palette — niente
   // scritte nei bottoni (esito di Gt del 25/8 sera); il nome vive in aria-label e title
   const MIS_IC = {
@@ -598,41 +634,63 @@
   UI.renderMisCtl = () => {
     let bar = $('#misctl');
     if (!bar) { bar = document.createElement('div'); bar.id = 'misctl'; const pal = $('#palette'); pal.parentNode.insertBefore(bar, pal); }
-    const m = V.map();
+    // la barra segue il GIRO, non il foglio a schermo (C2, decisione Gt 26/8): se il cronometro
+    // vive su un altro foglio la barra resta — ridotta a pausa · tempo · chiudi — e il nome
+    // riporta al foglio che sta misurando. «Non dovrebbe accadere», ma la possibilita' resta.
+    const mCur = V.map();
+    const m = V.measureActiveMap();
+    const altrove = !!(m && mCur && m.id !== mCur.id);
     // il badge sul passo cambia stato (verde = sta misurando qui): l'op 'meta' del cronometro e'
-    // silenziosa e non ridisegna gli elementi — qui si aggiornano il passo di prima e quello attivo
+    // silenziosa e non ridisegna gli elementi — qui si aggiornano il passo di prima e quello
+    // attivo, ma SOLO sul foglio a schermo (R.updateEl disegna sul canvas corrente)
     const sNow = m && V.measureState(m);
-    const attKey = (m && misAttiva()) ? (sNow.phase + ':' + sNow.stepId) : null;   // fase+passo (Codex P2: attesa→box sullo stesso passo)
+    const attKey = (m && !altrove) ? (sNow.phase + ':' + sNow.stepId) : null;   // fase+passo (Codex P2: attesa→box sullo stesso passo)
     if (UI._misPrev !== attKey) {
-      [UI._misPrev, attKey].filter(Boolean).map(k => String(k).split(':')[1]).forEach(ix => { if (m && V.byId(ix, m)) R.updateEl(ix, m); });
+      [UI._misPrev, attKey].filter(Boolean).map(k => String(k).split(':')[1]).forEach(ix => { if (mCur && V.byId(ix, mCur)) R.updateEl(ix, mCur); });
       UI._misPrev = attKey;
     }
-    if (!misAttiva()) {
+    if (!m) {
       bar.classList.add('hidden'); misStopArm = null; misWakeOff();
       if (misTick) { clearInterval(misTick); misTick = null; }
       return;
     }
     bar.classList.remove('hidden');
-    const s = V.measureState(m);
+    const s = sNow;
     const inPausa = V.measurePaused(m);
     const armato = !!(misStopArm && misStopArm.mapId === m.id && misStopArm.giro === (s.giro || 1));
     if (misStopArm && !armato) misStopArm = null;
     const passo = V.byId(s.stepId, m);
     const nome = passo ? (String(passo.props.title || '').trim() || 'passo senza nome') : '?';
-    const che = s.phase === 'attesa' ? ('attesa \u2192 ' + nome) : nome;
+    const che = altrove
+      ? ('\u23f1 su \u00ab' + (String(m.title || '').trim() || 'foglio senza titolo') + '\u00bb \u2014 tocca per aprirlo')
+      : (s.phase === 'attesa' ? ('attesa \u2192 ' + nome) : nome);
+    // l'avviso \u00abaperta da un pezzo\u00bb BEN VISIBILE in barra (decisione Gt 26/8, stazione 12-B):
+    // prima viveva solo dentro il dialogo Misura, e una misura dimenticata invecchiava in silenzio
+    const vecchia = V.measureElapsed(m) > VECCHIA;
+    bar.classList.toggle('vecchia', vecchia);
     bar.innerHTML = ''
+      + (vecchia ? `<div class="mis-warn" role="alert">\u26a0 Misura aperta da un pezzo: se il giro era rimasto a met\u00e0 (app chiusa, tablet spento), apri \u22ef \u2192 \u00abMisura i tempi \u23f1\u00bb e tocca \u00abscarta\u00bb \u2014 il tempo che vedi non \u00e8 il tempo del passo.</div>` : '')
       + `<button id="mis-pausa" class="mis-btn" aria-label="${inPausa ? 'Riprendi il conteggio' : 'Pausa dell’osservatore'}" title="${inPausa ? 'Riprendi il conteggio' : 'Pausa dell\u2019osservatore: il tempo NON finisce nel dato'}">${inPausa ? MIS_IC.play : MIS_IC.pause}</button>`
-      + `<div class="mis-info"><span class="mis-tempo${inPausa ? ' pausa' : ''}" id="mis-tempo">${misMMSS(V.measureElapsed(m))}</span><span class="mis-nome">${esc(che)}${s.turno ? ' \u00B7 ' + esc(s.turno) : ''}</span></div>`
-      + `<button id="mis-avanti" class="mis-btn mis-fine" aria-label="${s.phase === 'attesa' ? 'Comincia il prossimo passo' : 'Passo finito'}" title="${s.phase === 'attesa' ? 'Comincia il prossimo passo' : 'Passo finito: chiude il passo, l\u2019attesa corre da sola'}">${s.phase === 'attesa' ? MIS_IC.next : MIS_IC.lap}</button>`
+      + `<div class="mis-info${altrove ? ' altrove' : ''}"${altrove ? ' role="button" tabindex="0" title="Apri il foglio che sta misurando"' : ''}><span class="mis-tempo${inPausa ? ' pausa' : ''}" id="mis-tempo">${misMMSS(V.measureElapsed(m))}</span><span class="mis-nome">${esc(che)}${s.turno ? ' \u00B7 ' + esc(s.turno) : ''}</span></div>`
+      + (altrove ? '' : `<button id="mis-avanti" class="mis-btn mis-fine" aria-label="${s.phase === 'attesa' ? 'Comincia il prossimo passo' : 'Passo finito'}" title="${s.phase === 'attesa' ? 'Comincia il prossimo passo' : 'Passo finito: chiude il passo, l\u2019attesa corre da sola'}">${s.phase === 'attesa' ? MIS_IC.next : MIS_IC.lap}</button>`)
       + (armato
         ? `<span class="mis-stoparm"><button id="mis-stop-si" class="mis-btn stop" aria-label="S\u00EC, chiudi il giro" title="S\u00EC, chiudi il giro">${MIS_IC.stop}</button><button id="mis-stop-no" class="mis-btn" aria-label="Annulla" title="Annulla">${MIS_IC.no}</button></span>`
         : `<button id="mis-stop" class="mis-btn stop" aria-label="Chiudi il giro" title="Chiudi il giro (chiede conferma)">${MIS_IC.stop}</button>`);
     $('#mis-pausa', bar).onclick = () => { if (V.measurePaused(m)) V.measureResume(m); else V.measurePause(m); UI.renderMisCtl(); };
-    $('#mis-avanti', bar).onclick = () => UI.misAdvance();
+    const av = $('#mis-avanti', bar); if (av) av.onclick = () => UI.misAdvance();
+    // da un altro foglio il tocco sull'info RIPORTA al foglio che misura: chiudere il passo
+    // senza vederlo non ha senso, fermare e mettere in pausa sì (decisione Gt 26/8)
+    const info = $('.mis-info', bar); if (info && altrove) info.onclick = () => UI.openMap(m.id);
     const st = $('#mis-stop', bar); if (st) st.onclick = () => { misStopArm = { mapId: m.id, giro: s.giro || 1 }; UI.renderMisCtl(); };
     const stSi = $('#mis-stop-si', bar); if (stSi) stSi.onclick = () => { misStopArm = null; V.measureStop(m); I.hint('Giro chiuso. \u22EF \u2192 \u00ABMisura i tempi \u23F1\u00BB per le misure prese e \u00ABCalcola i tempi\u00BB.', 5000); UI.renderMisCtl(); };
     const stNo = $('#mis-stop-no', bar); if (stNo) stNo.onclick = () => { misStopArm = null; UI.renderMisCtl(); };
-    if (!misTick) misTick = setInterval(() => { const t = $('#mis-tempo'); const mm = V.map(); if (t && mm && misAttiva()) t.textContent = misMMSS(V.measureElapsed(mm)); else UI.renderMisCtl(); }, 1000);
+    if (!misTick) misTick = setInterval(() => {
+      const t = $('#mis-tempo'); const mm = V.measureActiveMap();
+      // quando la misura scavalca la soglia dell'avviso la barra si ridisegna intera (compare il
+      // cartello «aperta da un pezzo»); altrimenti si aggiorna solo il numero
+      if (t && mm && (V.measureElapsed(mm) > VECCHIA) === bar.classList.contains('vecchia')) t.textContent = misMMSS(V.measureElapsed(mm));
+      else UI.renderMisCtl();
+    }, 1000);
     misWake();
   };
   /** Il tocco sul cronometro grande di un passo (data-mis, interact). Ritorna true se gestito. */
@@ -642,7 +700,8 @@
     const s = V.measureState(m);
     if (!s || !s.phase) {
       const r = V.measureStart(m, id);
-      if (r) I.hint('Cronometro avviato \u23F1 \u2014 \u23E9 quando il passo chiude: l\u2019attesa poi corre da sola, e il PROSSIMO passo lo scegli toccando il suo cronometro (\u25B6 segue il flusso).', 6000);
+      if (r && r.ko === 'in-corso') UI.toast('C\u2019\u00E8 una misura in corso: chiudila (\u23E9) o chiudi il giro prima di ripartire.');
+      else if (r) I.hint('Cronometro avviato \u23F1 \u2014 \u23E9 quando il passo chiude: l\u2019attesa poi corre da sola, e il PROSSIMO passo lo scegli toccando il suo cronometro (\u25B6 segue il flusso).', 6000);
       else UI.toast('Qui il cronometro non parte: passo validato \u2713 o lucchetto chiuso.');
       UI.renderMisCtl(); return true;
     }
@@ -795,7 +854,9 @@
       if (map.validated) return UI.toast('Questo foglio è validato 🔒: finché il lucchetto è chiuso le misure non si possono scrivere. Aprilo in alto, poi comincia il giro.');
       const primo = c.chain.find(b => !b.props.validated);
       if (!primo) return UI.toast('Tutti i passi di questa catena sono validati ✓: non c\'è niente da misurare.');
-      V.measureStart(map, primo.id, 'giro'); ridisegna();
+      const r = V.measureStart(map, primo.id, 'giro');
+      if (r && r.ko === 'in-corso') UI.toast('C’è già una misura in corso: chiudila (⏩) o chiudi il giro prima di cominciarne un altro.');
+      ridisegna();
     });
     btn('[data-mis-ok]', () => {
       const r = V.measureAdvance(map);
@@ -814,7 +875,13 @@
     btn('[data-mis-stop]', () => { V.measureStop(map); ridisegna(); });
     // niente ridisegna: si scrive lo stato e basta (un re-render a ogni blur farebbe perdere il filo)
     const tu = $('#mis-turno', body); if (tu) tu.onchange = () => V.measureTurno(map, tu.value);
-    $$('[data-mis-solo]', body).forEach(b => b.onclick = () => { V.measureStart(map, b.dataset.misSolo, 'singolo'); ridisegna(); });
+    // «solo questo passo» NON straccia piu' un giro aperto (C5, Grok #4): il modello rifiuta e
+    // qui lo si dice — come gia' faceva il tocco sul canvas («chiudilo prima»)
+    $$('[data-mis-solo]', body).forEach(b => b.onclick = () => {
+      const r = V.measureStart(map, b.dataset.misSolo, 'singolo');
+      if (r && r.ko === 'in-corso') UI.toast('C’è una misura in corso: chiudila (⏩ o «passo finito») o chiudi il giro, poi misura questo passo da solo.');
+      ridisegna();
+    });
     $$('[data-mis-drop]', body).forEach(b => b.onclick = () => { V.dropTime(map, b.dataset.misDrop, +b.dataset.i); ridisegna(); });
     btn('[data-mis-calc]', () => {
       const brevi = rep.reduce((n, r) => n + r.brevi, 0);

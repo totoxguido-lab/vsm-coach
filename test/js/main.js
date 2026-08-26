@@ -304,13 +304,20 @@
     window.addEventListener('beforeunload', flush);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-      navigator.serviceWorker.register('sw.js').catch(() => {});
+      // updateViaCache:'none' (C6): senza, sw.js E i suoi importScripts (version.js, manifest.js)
+      // arrivavano dalla cache HTTP di Pages (max-age=600) — l'aggiornamento del service worker
+      // poteva tardare di dieci minuti, e il canale test si prova a colpi di publish ravvicinati
+      navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
       // quando un service worker NUOVO prende il controllo (aggiornamento installato in sottofondo),
       // la pagina si ricarica da sola: senza questo la versione nuova si vedeva solo al secondo avvio,
       // e sull'iPad "chiudi davvero e riapri" non e' un gesto ovvio. Al primo install non si ricarica.
       // Il ricaricamento aspetta che il salvataggio sia finito: era il modo piu' facile per perdere
       // l'ultima modifica proprio mentre si andava a verificare la versione nuova.
       let hadSW = !!navigator.serviceWorker.controller;
+      // C4 del triage debug 25/8: se sessionStorage lancia (navigazione privata, quota), la rete
+      // anti-raffica resta almeno IN MEMORIA — copre i controllerchange multipli nella stessa
+      // pagina; fra un reload e l'altro senza storage una memoria non esiste, e lo si accetta.
+      let ultimoAutoreloadMem = 0;
       // Al massimo UN ricaricamento automatico al minuto (bug visto sull'iPad il 25/8): con piu'
       // pubblicazioni ravvicinate — o la CDN di Pages che serve byte diversi da edge diversi —
       // controllerchange puo' scattare piu' volte di fila, e la pagina si riavviava a ripetizione,
@@ -320,8 +327,9 @@
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         if (!hadSW) { hadSW = true; return; }
         hadSW = true;
-        let ultimo = 0; try { ultimo = +sessionStorage.getItem('vsm.autoreload') || 0; } catch (e) { /* storage bloccato */ }
+        let ultimo = ultimoAutoreloadMem; try { ultimo = Math.max(ultimo, +sessionStorage.getItem('vsm.autoreload') || 0); } catch (e) { /* storage bloccato */ }
         if (Date.now() - ultimo < 60000) { UI.toast('C\'è un altro aggiornamento: chiudi davvero l\'app e riaprila per usarlo.'); return; }
+        ultimoAutoreloadMem = Date.now();
         try { sessionStorage.setItem('vsm.autoreload', String(Date.now())); } catch (e) { /* storage bloccato */ }
         V.saveNow().then(() => location.reload(), () => location.reload());
       });

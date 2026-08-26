@@ -49,7 +49,7 @@ header .brand svg{width:22px;height:22px}
 .btn.verde{background:#2e7d32;border-color:#2e7d32;color:#fff}
 .btn.verde:active{background:#256428}
 /* la barra del giro (Misura): comandi grandi in zona pollice, al posto del pannello */
-#misctl{position:absolute;left:50%;transform:translateX(-50%);bottom:78px;display:flex;gap:10px;align-items:center;background:#fffdf7;border:1.5px solid #2b2b2b;border-radius:14px;padding:8px 12px;box-shadow:0 4px 14px rgba(0,0,0,.18);z-index:40;max-width:94vw}
+#misctl{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(78px + env(safe-area-inset-bottom, 0px));display:flex;gap:10px;align-items:center;background:#fffdf7;border:1.5px solid #2b2b2b;border-radius:14px;padding:8px 12px;box-shadow:0 4px 14px rgba(0,0,0,.18);z-index:40;max-width:94vw}
 #misctl.hidden{display:none}
 #misctl .mis-btn{min-width:52px;min-height:52px;border:1.5px solid #2b2b2b;border-radius:12px;background:#fff;cursor:pointer;padding:6px 12px;display:inline-flex;align-items:center;justify-content:center}
 #misctl .mis-btn svg{width:26px;height:26px;display:block}
@@ -63,6 +63,15 @@ header .brand svg{width:22px;height:22px}
 #misctl .mis-tempo{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
 #misctl .mis-tempo.pausa{opacity:.45}
 #misctl .mis-nome{font-size:11px;opacity:.75;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* il calderone in consultazione (C1): voci in sola lettura nel selettore fasi */
+.fase-calderone{border:1px dashed #b7b0a3;border-radius:10px;padding:8px 10px;margin:6px 0;font-size:12px}
+.fase-calderone .cald-voce{margin:6px 0;padding-top:4px;border-top:1px solid #eee7d8}
+/* la barra segue il giro sugli altri fogli (C2): l'info diventa un bottone che riporta al foglio */
+#misctl .mis-info.altrove{cursor:pointer}
+#misctl .mis-info.altrove .mis-nome{opacity:1;color:#1f4e79;font-weight:700}
+/* misura aperta da un pezzo (stazione 12-B): avviso a tutta barra, ben visibile in basso */
+#misctl.vecchia{flex-wrap:wrap;border-color:#c8321e}
+#misctl .mis-warn{flex-basis:100%;font-size:12px;line-height:1.35;color:#c8321e;font-weight:600;padding:2px 2px 4px}
 /* il cronometro grande sul passo e' un bersaglio: mano e ombra al passaggio */
 svg .mis-clock{cursor:pointer}
 @media print{svg .mis-clock,#misctl{display:none!important}}

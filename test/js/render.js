@@ -177,10 +177,13 @@
   // restituiscono il documento VSM, non lo stato transitorio dell'interfaccia (finding P2 Codex)
   let uiVivo = true;
   // numeri della catena (esito Gt 25/8 sera): calcolati una volta per giro di render, chiave id+rev
-  let numsCache = { key: null, nums: null };
+  let numsCache = { key: null, map: null, nums: null };
   const numeriPassi = (map) => {
     const k = map.id + ':' + (map.rev || 0);
-    if (numsCache.key !== k) numsCache = { key: k, nums: V.stepNumbers(map) };
+    // conta anche l'IDENTITA' dell'oggetto (C15 del triage debug 25/8, Codex DBG-10): replaceDoc
+    // ricostruisce la mappa, e stesso id + stesso rev possono arrivare con un contenuto diverso
+    // (un import ripetuto dalla stessa base) — la chiave da sola serviva i numeri vecchi
+    if (numsCache.key !== k || numsCache.map !== map) numsCache = { key: k, map, nums: V.stepNumbers(map) };
     return numsCache.nums;
   };
   R.elMarkup = (el, map) => drawEl(el, map);   // la via «a schermo» per le prove
@@ -715,18 +718,29 @@
    *  genitore (o un antenato, o la freccia a cui è agganciato) si è mosso — vale anche per le
    *  catene profonde e per i delta sulle frecce. Ritorna i cambiamenti per l'undo del drag. */
   R.freezePinned = (map, pos0) => {
-    const changed = [];
-    map.elements.forEach(el => {
-      if (!el.props || !el.props.pinned) return;
-      if (!(el.props.lockTo || (el.type === 'delta' && el.props.attachedTo))) return;
-      const p0 = pos0[el.id]; if (!p0) return;
-      const cur = R.elPos(el, map);
-      if (cur.x === p0.x && cur.y === p0.y) return;
-      el.props.dx = (el.props.dx || 0) + (p0.x - cur.x);
-      el.props.dy = (el.props.dy || 0) + (p0.y - cur.y);
-      changed.push({ id: el.id, dx: el.props.dx, dy: el.props.dy });
-    });
-    return changed;
+    // A passate ripetute fino al PUNTO FERMO (C10 del triage debug 25/8, Codex DBG-07): l'ordine
+    // di map.elements non e' un ordine di dipendenza — compensare un genitore bloccato sposta di
+    // nuovo i figli gia' compensati prima di lui (doppia compensazione). Ogni passata corregge chi
+    // non combacia con la foto pos0; si riparte finche' qualcosa si e' mosso. Converge in al piu'
+    // la profondita' della catena (elPos taglia a 8: stesso tetto qui). Per l'undo contano i
+    // dx/dy FINALI: una mappa per id, non un elenco con doppioni.
+    const changed = new Map();
+    for (let giro = 0; giro < 8; giro++) {
+      let mosso = false;
+      map.elements.forEach(el => {
+        if (!el.props || !el.props.pinned) return;
+        if (!(el.props.lockTo || (el.type === 'delta' && el.props.attachedTo))) return;
+        const p0 = pos0[el.id]; if (!p0) return;
+        const cur = R.elPos(el, map);
+        if (cur.x === p0.x && cur.y === p0.y) return;
+        el.props.dx = (el.props.dx || 0) + (p0.x - cur.x);
+        el.props.dy = (el.props.dy || 0) + (p0.y - cur.y);
+        changed.set(el.id, { id: el.id, dx: el.props.dx, dy: el.props.dy });
+        mosso = true;
+      });
+      if (!mosso) break;
+    }
+    return Array.from(changed.values());
   };
 
   /** Area sensibile: molti elementi sono disegnati a sole linee (l'omino ha tratti da 1.6 px su un
@@ -783,6 +797,18 @@
   R.addStrokeEl = (s) => { const p = document.createElementNS(NS, 'path'); p.setAttribute('class', 'stroke'); p.dataset.sid = s.id; p.setAttribute('stroke', s.color); p.setAttribute('stroke-width', s.width); p.setAttribute('d', R.strokePath(s)); L.ink.appendChild(p); return p; };
 
   // ---------- overlay calcolato: timeline + riepilogo ----------
+  /** Il conteggio delle misure nell'intestazione del riepilogo, coi PARZIALI (C16, decisione Gt
+   *  26/8): quando i passi sono misurati in modo diseguale si dicono i conteggi uno per uno,
+   *  nell'ordine della catena («misure per passo: 8, 2») — il numero unico resta solo quando
+   *  dicono tutti lo stesso. Senza passi misurati vale il vecchio ripiego (numMisure/map.samples). */
+  const misureTxt = (map) => {
+    const mp = V.misurePerPasso(map).filter(x => x.n > 0);
+    if (!mp.length) { const s = V.numMisure(map) || +map.samples; return s ? ` · ${esc(String(s))} misure` : ''; }
+    const nMin = Math.min(...mp.map(x => x.n)), nMax = Math.max(...mp.map(x => x.n));
+    if (nMin === nMax) return ` · ${nMax} misure`;
+    const conti = mp.map(x => x.n);
+    return ` · misure per passo: ${esc(conti.slice(0, 8).join(', '))}${conti.length > 8 ? '…' : ''}`;
+  };
   /** Il riepilogo di sempre (timeline + card dei percorsi, R6): oggi e' il primo livello (spec B/C),
    *  sempre acceso. Estratto dal vecchio R.overlay SENZA cambiare un byte dell'HTML prodotto (la
    *  fixture test/fixtures/riepilogo-baseline.txt lo prova), con una sola eccezione dichiarata: i
@@ -863,7 +889,7 @@
     }
     sx = Math.max(20, Math.min(sx, w - sw - 20)); sy = Math.max(20, Math.min(sy, h - sh - 20));
     g += `<g><rect class="box" x="${sx}" y="${sy}" width="${sw}" height="${sh}" rx="2"/>
-      <text class="hand" x="${sx + 12}" y="${sy + 20}" font-size="12" font-weight="700">Riepilogo (${esc(map.unit)})${(V.numMisure(map) || +map.samples) ? ` · ${esc(String(V.numMisure(map) || +map.samples))} misure` : ''}</text>
+      <text class="hand" x="${sx + 12}" y="${sy + 20}" font-size="12" font-weight="700">Riepilogo (${esc(map.unit)})${misureTxt(map)}</text>
       <text class="hand" x="${sx + 12}" y="${sy + 40}" font-size="11">Totale VA: <tspan font-weight="700">${fmt(M.va)}</tspan>   Totale NVA: <tspan font-weight="700" fill="#c8321e">${fmt(M.nva)}</tspan></text>
       <text class="hand" x="${sx + 12}" y="${sy + 58}" font-size="11">VA %: <tspan font-weight="700">${fmt(M.vaPct)} %</tspan>   NVA %: <tspan font-weight="700" fill="#c8321e">${fmt(M.nvaPct)} %</tspan></text>
       ${M.ftq != null ? `<text class="hand" x="${sx + 12}" y="${sy + 76}" font-size="11">First Time Quality: <tspan font-weight="700">${fmt(M.ftq)} %</tspan>${M.ftqPartial ? '<tspan class="muted" font-size="10"> · parziale</tspan>' : ''}</text>` : ''}

@@ -110,6 +110,7 @@
       return `<div class="tmp-obs"><b>${esc(inUnita(o.s, map))}</b>`
         + (dettagli ? `<span class="k">${esc(dettagli)}</span>` : '')
         + `<button class="btn small tmp-cls" data-obs-cls="${i}" style="color:${CLS_COLORE[o.cls] || CLS_COLORE.normale}"${perche || ' title="Tocca per riclassificare (normale → particolare → eccezionale). Nessuna misura viene esclusa dai conti: è solo una marcatura."'}>${esc(o.cls)}</button>`
+        + `<button class="btn small ghost" data-obs-val="${i}"${perche || ' title="Correggi il valore di questa misura a mano"'}>🔢</button>`
         + `<button class="btn small ghost" data-obs-nota="${i}"${perche || ` title="${o.nota ? esc(o.nota) : 'Aggiungi una nota a questa misura'}"`}>${o.nota ? '📝' : '✎'}</button>`
         + (o.nota ? `<div class="tmp-nota k">${esc(o.nota)}</div>` : '')
         + '</div>';
@@ -136,6 +137,17 @@
             host.querySelectorAll('[data-obs-cls]').forEach(b => b.onclick = () => {
               const i = +b.dataset.obsCls; const o = V.obsOf(vivo())[i]; if (!o) return;
               if (V.setObs(map, el.id, i, { cls: CLS_CICLO[o.cls] || 'particolare' })) disegna();
+            });
+            // il valore si corregge a mano (decisione Gt 26/8: flessibilita' — si puo' anche
+            // scartare e rimisurare da solo, ma OGNI misura resta modificabile a posteriori);
+            // il prompt() nativo e' la via che Gt ha provato e tenuto (S4-a)
+            host.querySelectorAll('[data-obs-val]').forEach(b => b.onclick = () => {
+              const i = +b.dataset.obsVal; const o = V.obsOf(vivo())[i]; if (!o) return;
+              const t = prompt('Nuovo valore in ' + map.unit + ' (adesso: ' + fmt(V.toUnit(o.s, map.unit)) + '):', fmt(V.toUnit(o.s, map.unit)));
+              if (t == null) return;   // annullato
+              const v = parseFloat(String(t).trim().replace(',', '.'));
+              if (!isFinite(v) || v < 0) return;
+              if (V.setObs(map, el.id, i, { s: v * V.unitSeconds(map.unit) })) disegna();
             });
             host.querySelectorAll('[data-obs-nota]').forEach(b => b.onclick = () => {
               const i = +b.dataset.obsNota; const o = V.obsOf(vivo())[i]; if (!o) return;
