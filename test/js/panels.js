@@ -941,7 +941,7 @@
       const sospette = rep.reduce((n, r) => n + r.brevi, 0);
       h += rep.map(r => `<div class="mis-mis"><div class="mm-head"><b>${esc(r.label)}</b>`
         + `<span class="k">max ${esc(fmt(r.stats.hi))} · min ${esc(fmt(r.stats.lo))} · media ${esc(fmt(r.stats.avg))} · ${r.n} ${r.n === 1 ? 'misura' : 'misure'}${r.validated ? ' · validato' : ''}</span></div>`
-        + `<div class="mm-chips">` + r.times.map((t, i) => `<button class="mm-chip${t < V.MISURA_BREVE ? ' breve' : ''}" data-mis-drop="${r.id}" data-i="${i}" title="${t < V.MISURA_BREVE ? `Solo ${t} second${t === 1 ? 'o' : 'i'}: un tocco per sbaglio? Toccala per scartarla` : 'Scarta questa misura'}">${esc(fmt(V.toUnit(t, map.unit)))} <span aria-hidden="true">✕</span></button>`).join('') + `</div></div>`).join('');
+        + `<div class="mm-chips">` + r.times.map((t, i) => `<button class="mm-chip${t < V.MISURA_BREVE ? ' breve' : ''}" data-mis-drop="${r.id}" data-i="${r.idx[i]}" title="${t < V.MISURA_BREVE ? `Solo ${t} second${t === 1 ? 'o' : 'i'}: un tocco per sbaglio? Toccala per scartarla` : 'Scarta questa misura'}">${esc(fmt(V.toUnit(t, map.unit)))} <span aria-hidden="true">✕</span></button>`).join('') + `</div></div>`).join('');
       // un tocco per sbaglio scrive «0,02 minuti» su un'accoglienza: il numero è vero e la mappa è falsa
       if (sospette) h += `<p class="notice warn">${sospette === 1 ? 'Una misura dura' : sospette + ' misure durano'} meno di ${V.MISURA_BREVE} secondi: ${sospette === 1 ? 'è' : 'sono'} un tocco per sbaglio, o un giro chiuso subito? ${sospette === 1 ? 'È segnata in arancione' : 'Sono segnate in arancione'} qui sotto — toccala${sospette === 1 ? '' : 'e'} per scartarla${sospette === 1 ? '' : 'e'}. Nessun tempo di un passo vero dura due secondi.</p>`;
       if (poche) h += `<p class="hint">${poche === rep.length ? 'Sono' : 'Per qualcuno sono'} poche per farci un ragionamento: il libro consiglia 8-10 misure per una vista rapida, una trentina per parlare di significatività. Non fissarti sul numero: guarda se i valori si somigliano.</p>`;
@@ -1359,7 +1359,8 @@
   const Q = { el: null, menu: null };
   // un'icona per azione (la lista delle azioni resta UI.actionList: la stessa fonte serve anche il pop-up)
   const QICN = {
-    next: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h6M7 9l3 3-3 3"/><rect x="13" y="5" width="8" height="14" rx="1"/></svg>',
+    // «+ → ▭» (esito 13): il piu', la freccia, il passo nuovo — si legge come il gesto che fa
+    next: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12h3.6M4.3 10.2v3.6M9 12h5.2M11.8 9.2l2.8 2.8-2.8 2.8"/><rect x="16.5" y="7.5" width="5.5" height="9" rx="1"/></svg>',
     delta: IC.delta, deltaOn: IC.delta,
     cloud: IC.storm,
     connect: IC.flow,
@@ -1389,13 +1390,16 @@
   // etichette corte sotto l'icona (poche parole: la spiegazione intera resta nel title)
   const QLBL = { next: 'Passo', delta: 'Attesa', deltaOn: 'Attesa', cloud: 'Problema', connect: 'Collega', request: 'Richiesta', attach: 'Aggancia', invert: 'Inverti', shrink: 'Segnale', expand: 'Espandi', dup: 'Duplica', dupall: 'Duplica', legend: 'Apri', legendfull: 'Simboli', straighten: 'Raddrizza', pin: 'Blocca', unpin: 'Sblocca', lockto: 'Lega', lockall: 'Lega', unlock: 'Slega', unlockall: 'Slega', unlockkids: 'Slega', selkids: 'Gruppo', sheetify: 'Dettaglio', peek: 'Sbircia', del: 'Elimina',
     'cx-chiede': 'Chiede', 'cx-sireca': 'Si reca', 'cx-box': 'Passo', 'cx-inventory': 'Scorta', 'cx-inbox': 'In-box', 'cx-back': 'Indietro' };
-  const qBtn = (a, el) => {
+  /** Il bottone a icona di un'azione (esito 13: lo usano la barra rapida E le azioni del pop-up
+   *  — stessa fonte, stessa lettura). attr dice a chi risponde: data-qa (barra) o data-pa (pop). */
+  UI.quickBtnHTML = (a, el, attr = 'data-qa') => {
     // due azioni cambiano verso con lo stato dell'elemento: l'icona e l'etichetta seguono
     let key = a.id;
     if (a.id === 'shrink' && el && el.props.collapsed) key = 'expand';
-    if (a.id === 'legend' && el && !el.props.collapsed) return `<button class="pm-btn" data-qa="legend" title="${esc(a.title || a.label)}">${IC.legend}<span>Chiudi</span></button>`;
-    return `<button class="pm-btn${a.id === 'del' ? ' danger' : ''}" data-qa="${a.id}" title="${esc(a.title || a.label)}">${QICN[key] || ''}<span>${esc(QLBL[key] || a.label)}</span></button>`;
+    if (a.id === 'legend' && el && !el.props.collapsed) return `<button class="pm-btn" ${attr}="legend" title="${esc(a.title || a.label)}">${IC.legend}<span>Chiudi</span></button>`;
+    return `<button class="pm-btn${a.id === 'del' ? ' danger' : ''}" ${attr}="${a.id}" title="${esc(a.title || a.label)}">${QICN[key] || ''}<span>${esc(QLBL[key] || a.label)}</span></button>`;
   };
+  const qBtn = (a, el) => UI.quickBtnHTML(a, el, 'data-qa');
   UI.hideQuick = () => { const q = $('#quick'); if (q) { q.classList.add('hidden'); Q.menu = null; } };
   /** Esc dentro il menu di «Collega» torna all'arco precedente invece di chiudere tutto */
   UI.quickMenuBack = () => { if (!Q.menu || !Q.el || !V.byId(Q.el)) { Q.menu = null; return false; } UI.quickAction('cx-back', Q.el); return true; };
@@ -1434,7 +1438,7 @@
   /** mette in scena un arco di bottoni: una sola strada per le azioni normali e per i menu di «Collega» */
   const paintQuick = (html) => {
     const q = $('#quick'); q.innerHTML = html; q.classList.remove('hidden'); UI.positionQuick();
-    $$('[data-qa]', q).forEach(b => b.onclick = (ev) => { ev.stopPropagation(); UI.quickAction(b.dataset.qa, Q.el); });
+    $$('[data-qa]', q).forEach(b => b.onclick = (ev) => { ev.stopPropagation(); UI.quickAction(b.dataset.qa, Q.el, { x: ev.clientX, y: ev.clientY }); });
   };
   UI.showQuick = (el, acts) => { Q.el = el.id; paintQuick(acts.map(a => qBtn(a, el)).join('')); };
   /** Il menu di «Collega». Non è mai vuoto: «Passo» c'è sempre, anche quando sul foglio non c'è nessun
@@ -1541,10 +1545,32 @@
     if (!(el.props && el.props.validated)) btn('del', 'Elimina');
     return A;
   };
-  UI.quickAction = (a, id) => {
+  // le icone dei TIPI di attesa (esito 13): le usano il popup radiale di «+ Passo dopo» e il
+  // picker nel pannello dell'attesa (popover, via UI.ICONE_ATTESA) — una fonte sola
+  const svgA = (inner) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
+  UI.ICONE_ATTESA = {
+    attesa: svgA('<path d="M5 6.5h14L12 18.5z"/>'),
+    'in-box': svgA('<path d="M4 13l2.5-7h11L20 13v5H4zM4 13h5l1.5 2h3L15 13h5"/>'),
+    coda: svgA('<circle cx="5.5" cy="12" r="2.3"/><circle cx="12" cy="12" r="2.3"/><circle cx="18.5" cy="12" r="2.3"/>'),
+    viaggio: svgA('<path d="M3.5 11.5h13M13 7.5l4 4-4 4M5.5 17.5h2.6M11 17.5h2.6"/>'),
+    "sala d'attesa": svgA('<circle cx="12" cy="12" r="7.5"/><path d="M12 8.5v3.8l2.7 1.7"/>')
+  };
+  const VOCI_ATTESA = V.DELTA_KINDS.map(k => ({ id: 'a:' + k, label: k === "sala d'attesa" ? 'sala' : k, icon: UI.ICONE_ATTESA[k], title: 'Attesa di tipo «' + k + '»' }))
+    .concat([{ id: 'a:nessuna', label: 'nessuna', icon: svgA('<path d="M5 12h14"/>'), title: 'Solo la freccia: nessuna attesa fra i due passi' }]);
+  UI.quickAction = (a, id, opts) => {
     const map = V.map(); const el = V.byId(id, map); if (!el) return;
     switch (a) {
-      case 'next': { const nx = Math.min(el.x + el.w + 90, V.paperOf(map).w - V.TYPES.box.w - 20); const nb = V.newElement('box', nx, el.y, {}); const f = V.newConnector('flow', { el: el.id }, { el: nb.id }); const d = V.newElement('delta', 0, 0, {}); d.props.attachedTo = f.id; d.props.dx = 0; d.props.dy = 0; V.commit([{ t: 'add', el: nb }, { t: 'add', el: f }, { t: 'add', el: d }], 'passo successivo'); I.select([nb.id], { keepPop: true }); V.pop.open(nb.id); UI.toast('Passo aggiunto con freccia e attesa: tocca il delta per i tempi.'); break; }
+      // il TIPO di attesa si sceglie PRIMA (esito 13): popup a cerchio nello stile del canvas,
+      // «nessuna» compresa — solo dopo nascono passo, freccia e segnale sull'attesa
+      case 'next': {
+        const at = (opts && opts.x != null) ? opts : (() => { const r = $('#stage').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })();
+        apriRadiale(at.x, at.y, VOCI_ATTESA, (vid) => {
+          UI.closePlaceMenu();
+          const r = V.addNextStep(map, el.id, vid === 'a:nessuna' ? null : vid.slice(2));
+          if (!r) { UI.toast(V.DENIED_MSG.fase || 'Qui non si può.'); return; }
+          I.select([r.boxId], { keepPop: true }); V.pop.open(r.boxId);
+        }, 'Che attesa c\'è fra questo passo e il prossimo?');
+        break; }
       case 'delta': { const f = map.elements.find(c => c.type === 'flow' && c.from.el === el.id); if (!f) return; const d = V.newElement('delta', 0, 0, {}); d.props.attachedTo = f.id; d.props.dx = 0; d.props.dy = 0; V.commit({ t: 'add', el: d }, 'attesa'); I.select([d.id], { keepPop: true }); V.pop.open(d.id); break; }
       // il problema creato DAL passo nasce gia' legato a quel passo (esito stazione 1, 25/8):
       // se si sposta il passo il problema lo segue e non si mescola con gli altri. Legato, non

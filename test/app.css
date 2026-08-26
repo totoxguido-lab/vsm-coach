@@ -86,6 +86,15 @@ header .brand svg{width:22px;height:22px}
 #misctl .mis-warn{flex-basis:100%;font-size:12px;line-height:1.35;color:#c8321e;font-weight:600;padding:2px 2px 4px}
 /* il cronometro grande sul passo e' un bersaglio: mano e ombra al passaggio */
 svg .mis-clock{cursor:pointer}
+/* esito 13: i tempi ereditati dal giro precedente si vedono, ma da fantasma */
+svg .tempi-prec{opacity:.55;font-style:italic}
+#pop .times.tempi-eredita input{opacity:.6;font-style:italic}
+/* esito 13: le azioni del pop-up sono gli stessi tondi della barra rapida */
+#pop .pop-actions{flex-wrap:wrap;gap:6px}
+#pop .pop-actions .pm-btn{position:static;margin:0;width:52px;height:52px;flex:none;animation:none}
+/* il picker dei tipi di attesa: icone in fila, come le forme del problema */
+#pop .picker.kinds .pick svg{width:24px;height:24px}
+#pop .picker.kinds .pick span{display:block;font-size:9px}
 /* esito 12-bis: al bivio i cronometri candidati lampeggiano; il cestino arma in due tocchi */
 svg .mis-clock.mis-scelta{animation:misscelta 1.1s ease-in-out infinite}
 @keyframes misscelta{0%,100%{opacity:1}50%{opacity:.35}}

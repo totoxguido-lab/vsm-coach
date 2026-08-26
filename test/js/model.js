@@ -329,6 +329,9 @@ window.VSM = window.VSM || {};
       // mappa che di lì a un attimo sarebbe stata rinominata (verOf attraversava, props.link no).
       // Chi punta al nulla lo scioglie repairDoc, dopo la rinomina.
       if (p.link != null && typeof p.link !== 'string') delete p.link;
+      // la firma dei tempi (esito 13): stringa (un id di mappa) o niente — senza, i tempi sono
+      // del foglio (default sicuro per i documenti scritti prima della firma)
+      if (p.tempiGiro !== undefined && typeof p.tempiGiro !== 'string') delete p.tempiGiro;
       // l'intento e' un segno dichiarato in legenda, non testo libero: fuori elenco si torna a «chiede»
       if (p.intent != null && !V.INTENTS.some(x => x.id === p.intent)) delete p.intent;
       // la tinta finisce dentro un attributo di stile del disegno: solo un numero la puo' scrivere,
@@ -1088,7 +1091,7 @@ window.VSM = window.VSM || {};
   /** Quante volte si è misurato: il massimo delle osservazioni su un singolo elemento. Non si
    *  dichiara a mano (feedback iPad 25/8): il campo dell'intestazione è sparito, il numero nasce
    *  dal cronometro. map.samples resta solo come ripiego per le mappe vecchie che l'avevano scritto. */
-  V.numMisure = (map) => Math.max(0, ...(map.elements || []).map(e => (e.props && Array.isArray(e.props.obs)) ? e.props.obs.length : 0));
+  V.numMisure = (map) => Math.max(0, ...(map.elements || []).map(e => V.obsDelGiro(e, map).length));
   /** I PARZIALI per passo (C16 del triage debug 25/8, decisione Gt 26/8): un giro incompleto non
    *  si racconta col massimo («10 misure» quando un passo ne ha 2) — il conteggio si dice passo
    *  per passo. Ordine: la catena del flusso, poi i passi fuori catena. Riepilogo e lint leggono
@@ -1101,12 +1104,31 @@ window.VSM = window.VSM || {};
     return boxes.map(b => ({
       id: b.id,
       nome: String((b.props && b.props.title) || '').trim() || 'passo senza nome',
-      n: (b.props && Array.isArray(b.props.obs)) ? b.props.obs.length : 0
+      n: V.obsDelGiro(b, map).length
     }));
   };
   /** Il foglio che sta misurando ADESSO (C2 del triage debug 25/8, decisione Gt 26/8: la barra
    *  del giro segue chi misura anche sugli altri fogli — fermare e mettere in pausa si puo'
    *  sempre). Prima il foglio attivo, poi gli altri del documento. */
+  /** «+ Passo dopo» col TIPO di attesa scelto (esito 13, 26/8): crea il passo successivo gia'
+   *  collegato con la freccia e — se kind non e' null — l'attesa di quel tipo agganciata alla
+   *  freccia. kind fuori elenco ripiega su 'attesa'; la porta delle fasi decide come per ogni
+   *  struttura (fuori da Disegna: null, niente nasce). */
+  V.addNextStep = (map, elId, kind) => {
+    const el = V.byId(elId, map); if (!el || el.type !== 'box') return null;
+    const nx = Math.min(el.x + el.w + 90, V.paperOf(map).w - V.TYPES.box.w - 20);
+    const nb = V.newElement('box', nx, el.y, {});
+    const f = V.newConnector('flow', { el: elId }, { el: nb.id });
+    const ops = [{ t: 'add', el: nb }, { t: 'add', el: f }];
+    let deltaId = null;
+    if (kind !== null && kind !== undefined && kind !== '') {
+      const k = V.DELTA_KINDS.includes(kind) ? kind : 'attesa';
+      const d = V.newElement('delta', 0, 0, {}); d.props.attachedTo = f.id; d.props.dx = 0; d.props.dy = 0; d.props.kind = k;
+      ops.push({ t: 'add', el: d }); deltaId = d.id;
+    }
+    if (!V.commit(ops, 'passo successivo', { map })) return null;
+    return { boxId: nb.id, flowId: f.id, deltaId };
+  };
   V.measureActiveMap = () => {
     const attiva = (m) => { const s = m && m.measure; return !!(m && ['misura', 'analizza'].includes(m.phase) && s && s.phase && s.t0); };
     const cur = V.map();
@@ -1843,6 +1865,17 @@ window.VSM = window.VSM || {};
    *  presi: i chiamanti di prima di V.migrate (timeStats, timesReport, applyTimes, dropTime) non
    *  cambiano — leggono ancora un array di numeri. */
   V.timesOf = (el) => V.obsOf(el).map(o => o.s);
+  /** Le misure DEL FOGLIO (esito 13, 26/8): un giro nuovo clona i passi con le obs del giro
+   *  precedente — quella e' STORIA (si legge nell'analisi), non misura di questo giro. Le viste
+   *  vive (badge, resoconto, dialogo Misura, parziali, calcola i tempi) contano solo qui:
+   *  giro assente (migrate 0.9, scritte prima del timbro) o uguale al foglio. */
+  V.obsDelGiro = (el, map) => V.obsOf(el).filter(o => !o.giro || o.giro === (map && map.id));
+  V.timesDelGiro = (el, map) => V.obsDelGiro(el, map).map(o => o.s);
+  /** I tempi scritti (Hi/Lo/Avg) portano la FIRMA del foglio che li ha scritti (props.tempiGiro,
+   *  esito 13): sul giro nuovo, clonati, sono EREDITATI — si mostrano attenuati con «giro prec.»
+   *  finche' questo giro non li riscrive (calcola i tempi, o modifica a mano). Senza firma
+   *  (documenti vecchi) sono del foglio: default sicuro, nessun fantasma inventato. */
+  V.tempiEreditati = (el, map) => !!(el && el.props && typeof el.props.tempiGiro === 'string' && el.props.tempiGiro && map && el.props.tempiGiro !== map.id);
   /** Hi = massimo, Lo = minimo, Avg = media aritmetica (Fig. 5.1). Niente esclusione automatica degli
    *  outlier: chi ha osservato sa se quel 19 era un caso eccezionale o il sintomo di un problema a
    *  monte — l'app li mostra, non decide. */
@@ -1856,10 +1889,14 @@ window.VSM = window.VSM || {};
    *  silenzio) e se sono validati (quelli non si toccano). */
   V.timesReport = (map) => {
     if (!map) return [];
-    return map.elements.filter(e => (e.type === 'box' || e.type === 'delta') && V.timesOf(e).length).map(e => {
-      const t = V.timesOf(e); const s = V.timeStats(t);
+    // solo le misure DI QUESTO giro (esito 13): le ereditate dal giro precedente sono storia —
+    // non si elencano, non si scartano da qui, non entrano in «calcola i tempi». idx = posizione
+    // di ciascuna nella lista sana COMPLETA (V.obsOf): e' l'indice che dropTime/setObs capiscono.
+    return map.elements.filter(e => (e.type === 'box' || e.type === 'delta') && V.obsDelGiro(e, map).length).map(e => {
+      const idx = []; V.obsOf(e).forEach((o, i) => { if (!o.giro || o.giro === map.id) idx.push(i); });
+      const t = V.timesDelGiro(e, map); const s = V.timeStats(t);
       return {
-        id: e.id, type: e.type, n: t.length, times: t, brevi: t.filter(x => x < V.MISURA_BREVE).length,
+        id: e.id, type: e.type, n: t.length, times: t, idx, brevi: t.filter(x => x < V.MISURA_BREVE).length,
         label: e.type === 'box' ? (String(e.props.title || '').trim() || 'passo senza nome') : (String(e.props.note || '').trim() || 'attesa'),
         stats: { hi: V.toUnit(s.hi, map.unit), lo: V.toUnit(s.lo, map.unit), avg: V.toUnit(s.avg, map.unit), n: s.n },
         manual: !!(e.props.hi || e.props.lo || e.props.avg),
@@ -1875,7 +1912,9 @@ window.VSM = window.VSM || {};
     const ops = []; let validati = 0;
     rep.forEach(r => {
       if (r.validated) { validati++; return; }
-      ops.push({ t: 'props', id: r.id, after: { hi: fmt(r.stats.hi), lo: fmt(r.stats.lo), avg: fmt(r.stats.avg) } });
+      // la FIRMA (tempiGiro, esito 13): questi numeri sono di questo giro — sul clone del
+      // prossimo giro si mostreranno come ereditati finche' quello non li riscrive
+      ops.push({ t: 'props', id: r.id, after: { hi: fmt(r.stats.hi), lo: fmt(r.stats.lo), avg: fmt(r.stats.avg), tempiGiro: map.id } });
     });
     if (!ops.length) return { ok: false, written: 0, validati };
     // classe:'osservazioni' (interpretazione 6): artefatto della misura, non un gesto di chi disegna —

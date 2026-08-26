@@ -90,6 +90,13 @@
     return `<button type="button" class="pick ${on ? 'on' : ''}" data-pick="shape" data-v="${f}" role="radio" aria-checked="${on}" title="${esc(FORME_NOMI[f])}" aria-label="Forma: ${esc(FORME_NOMI[f])}"><svg viewBox="0 0 30 24" aria-hidden="true"><path d="${R.shapePath(f, 30, 24)}" fill="#fff" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></button>`;
   }).join('')}</div>`;
   const dataRow = (p) => `<div class="row3">${field('Hi', inp('hi', p.hi, 'inputmode="decimal" placeholder="max"'))}${field('Lo', inp('lo', p.lo, 'inputmode="decimal" placeholder="min"'))}${field('Avg', inp('avg', p.avg, 'inputmode="decimal" placeholder="media"'))}</div>`;
+  /** i TIPI di attesa a icone (esito 13): stesso pattern di shapePicker — il commit passa dal
+   *  meccanismo generico data-pick. Le icone vivono in UI.ICONE_ATTESA (panels), una fonte sola. */
+  const KIND_ETI = { attesa: 'attesa', 'in-box': 'in-box', coda: 'coda', viaggio: 'viaggio', "sala d'attesa": 'sala' };
+  const kindPicker = (cur) => `<div class="picker kinds" role="radiogroup" aria-label="Tipo di attesa">${V.DELTA_KINDS.map(k => {
+    const on = k === (cur || 'attesa');
+    return `<button type="button" class="pick ${on ? 'on' : ''}" data-pick="kind" data-v="${esc(k)}" role="radio" aria-checked="${on}" title="${esc(k)}" aria-label="Tipo: ${esc(k)}">${(UI.ICONE_ATTESA || {})[k] || ''}<span>${esc(KIND_ETI[k] || k)}</span></button>`;
+  }).join('')}</div>`;
   /** Le mappe che si possono scegliere: quelle del progetto corrente, più quelle dei progetti che vi
    *  sono stati collegati a mano. Prima c'erano TUTTE quelle del documento, esempio del libro compreso,
    *  etichettate con le parole grezze del codice (current/future/detail): un elenco in cui perdersi.
@@ -208,7 +215,7 @@
     const res = (V.tempo && V.tempo.resocontoHTML) ? V.tempo.resocontoHTML(el, map) : '';
     h += `<div class="pop-sec">Tempi misurati</div>` + (res || `<div class="hint">Nessuna misura ancora: tocca il cronometro ⏱ sul passo per cominciare.</div>`);
     const acts = UI.actionList(el, map);
-    if (acts.length) h += `<div class="actions pop-actions">${acts.map(a => `<button class="btn small" data-pa="${a.id}" title="${esc(a.title)}">${a.label}</button>`).join('')}</div>`;
+    if (acts.length) h += `<div class="actions pop-actions">${acts.map(a => UI.quickBtnHTML ? UI.quickBtnHTML(a, el, 'data-pa') : `<button class="btn small" data-pa="${a.id}" title="${esc(a.title)}">${a.label}</button>`).join('')}</div>`;
     const secDefs = P.sections(el, map).filter(s => s.id !== 'tempo').map(s => {
       let salvato = null; try { salvato = localStorage.getItem('vsm.pop.sec.' + s.id); } catch (e) { /* storage bloccato */ }
       const aperto = opts.section === s.id ? true : salvato !== '0';
@@ -229,7 +236,7 @@
     }
     ensurePopRO();
     $('#pop-x').onclick = P.close;
-    $$('[data-pa]', pop).forEach(b => b.onclick = () => UI.quickAction(b.dataset.pa, id));
+    $$('[data-pa]', pop).forEach(b => b.onclick = (ev) => UI.quickAction(b.dataset.pa, id, { x: ev.clientX, y: ev.clientY }));
     const an = $('[data-analisi]', pop); if (an) an.onclick = () => { if (UI.openAnalisi) { P.close(); UI.openAnalisi(id); } };
   };
 
@@ -275,10 +282,15 @@
         main += `<div class="pop-sec">Attività, una per riga</div><div class="acts" data-acts></div>`;
         // ⏱ accanto ai tempi: da qui si apre il cronometro (spec 2026-08-21, Parte 2). Sta qui e non
         // fra i tondi perché è di quei tre riquadri che parla — e i tondi sono già sette.
-        const mis = V.timesOf(el); const misSt = V.timeStats(mis);
-        main += `<div class="pop-sec">Tempi (${esc(map.unit)}) · dalla prima all'ultima attività<button class="btn small" data-misura title="Misura i tempi col cronometro" aria-label="Misura i tempi">⏱${mis.length ? ' ' + mis.length : ''}</button></div>`
-          + (mis.length ? `<div class="hint" style="margin:-2px 0 6px">${mis.length} ${mis.length === 1 ? 'misura raccolta' : 'misure raccolte'} · media ${esc(fmt(V.toUnit(misSt.avg, map.unit)))}: da ⏱ si scrivono qui sotto.</div>` : '')
-          + `<div class="times">`
+        // esito 13: NIENTE cronometro qui (il ⏱ vive in Misura, dove serve) — al suo posto la
+        // STORIA delle misure (questo giro e i precedenti, via l'analisi); i tempi ereditati dal
+        // giro precedente si dichiarano e si mostrano da fantasma finche' non vengono riscritti
+        const misGiro = V.timesDelGiro(el, map); const misSt = V.timeStats(misGiro);
+        const eredita = V.tempiEreditati(el, map);
+        main += `<div class="pop-sec">Tempi (${esc(map.unit)}) · dalla prima all'ultima attività${V.obsOf(el).length ? `<button class="btn small" data-storia title="Tutte le misure di questo passo, giro per giro" aria-label="Storia delle misure">🕐 Storia</button>` : ''}</div>`
+          + (eredita ? `<div class="hint" style="margin:-2px 0 6px">Tempi del giro precedente: restano come riferimento finché questo giro non li riscrive.</div>` : '')
+          + (misGiro.length ? `<div class="hint" style="margin:-2px 0 6px">${misGiro.length} ${misGiro.length === 1 ? 'misura raccolta' : 'misure raccolte'} in questo giro · media ${esc(fmt(V.toUnit(misSt.avg, map.unit)))}.</div>` : '')
+          + `<div class="times${eredita ? ' tempi-eredita' : ''}">`
           + [['hi', 'max'], ['lo', 'min'], ['avg', 'media']].map(([k, lab]) => `<label class="tbox"><span>${lab}</span><input data-k="${k}" value="${esc(p[k])}" inputmode="decimal" autocomplete="off"${roStep}></label>`).join('') + `</div>`;
         if (p.validated) main += `<div class="hint lockrow">✓ Passo validato: il contenuto è in sola lettura. Si sposta, si colora e si collega come prima — per modificarlo tocca la ✓ in alto.</div>`;
         // il colore è il filo fra il passo e il suo sotto-foglio: area e bordo qui, sfondo di là
@@ -306,7 +318,15 @@
         }
         break;
       }
-      case 'delta': { const c = p.attachedTo ? V.byId(p.attachedTo, map) : null; if (!c) main += `<div class="hint" style="margin-bottom:6px">Non agganciato a una freccia: conta nel totale NVA ma non nella timeline. Trascinalo vicino a una freccia o usa "Aggancia".</div>`; main += `<div class="hint" style="margin:0 0 6px">Attesa (${esc(map.unit)}) per differenza: fine box precedente → inizio successivo</div>` + dataRow(p) + field('Dove / perché sta ferma', inp('note', p.note, 'placeholder="richiesta nel vassoio; attesa del trasportatore…"')); adv += field('Tipo di attesa (cambia il glifo)', sel('kind', p.kind, V.DELTA_KINDS)); break; }
+      // il pannello dell'attesa SFOLTITO (esito 13: «pieno di roba superflua»): il tipo si sceglie
+      // a icone IN VISTA, i testi-guida vivono dietro il «?» (regola di Gt), restano tempi e nota
+      case 'delta': {
+        if (!p.attachedTo) main += `<div class="hint" style="margin-bottom:6px">Libera: trascinala vicino a una freccia, o «Aggancia».</div>`;
+        main += `<div class="field"><label>Tipo di attesa</label>${kindPicker(p.kind)}</div>`
+          + (V.tempiEreditati(el, map) ? `<div class="hint" style="margin:-2px 0 6px">Tempi del giro precedente.</div>` : '')
+          + dataRow(p)
+          + field('Dove / perché sta ferma', inp('note', p.note, 'placeholder="richiesta nel vassoio; attesa del trasportatore…"'));
+        break; }
       // «chi è» e «ruolo» stanno tutti e due in vista: l'omino nasce senza etichetta, e la prima cosa
       // da fare è dire chi è. Prima «Ruolo» era sepolto sotto «Altre opzioni» e non lo trovava nessuno.
       case 'person': main += field('Chi è (si legge sul foglio)', inp('label', p.label, 'placeholder="paziente, segretaria, corriere…" autofocus')) + field('Ruolo o reparto (facoltativo)', inp('role', p.role, 'placeholder="medico di reparto, familiare, ditta esterna…"')) + `<div class="field"><label>Espressione (come vive questo momento)</label>${facePicker(p.mood)}</div>` + chk('requestor', p.requestor, 'È chi origina la richiesta (l\'omino della fascia alta)'); break;
@@ -375,7 +395,8 @@
     // Per il passo «Sbircia» non si ripete in coda: è il tondo 👁 in cima.
     const acts = UI.actionList(el, map).filter(a => !(isBox && a.id === 'peek'));
     let extra = ''; if (el.type === 'burst') extra += '<button class="btn small" id="pop-toplan">→ Aggiungi al piano</button>'; if (el.type === 'legend') extra += '<button class="btn small" id="pop-legendfull">Legenda completa</button>';
-    h += `<div class="actions pop-actions">${extra}${acts.map(a => `<button class="btn small ${a.id === 'del' ? 'danger' : ''}" data-pa="${a.id}" title="${esc(a.title)}">${a.label}</button>`).join('')}</div>`;
+    // azioni a ICONE (esito 13): gli stessi tondi della barra rapida, una fonte sola (quickBtnHTML)
+    h += `<div class="actions pop-actions">${extra}${acts.map(a => UI.quickBtnHTML ? UI.quickBtnHTML(a, el, 'data-pa') : `<button class="btn small ${a.id === 'del' ? 'danger' : ''}" data-pa="${a.id}" title="${esc(a.title)}">${a.label}</button>`).join('')}</div>`;
     // le sezioni dei livelli (spec D): titolo gia' nell'HTML iniziale (cosi' l'altezza e' giusta
     // dal primo P.place), stato aperto/chiuso letto da localStorage PRIMA di scrivere l'HTML — un
     // livello toccato dal badge (opts.section) si apre sempre, qualunque fosse il suo stato salvato
@@ -404,7 +425,7 @@
     }
     ensurePopRO();
     $('#pop-x').onclick = P.close; $('#pop-why').onclick = () => { const w = $('#pop-whytext'); w.classList.toggle('hidden'); $('#pop-why').setAttribute('aria-expanded', !w.classList.contains('hidden')); };
-    $$('[data-pa]', pop).forEach(b => b.onclick = () => { const a = b.dataset.pa; if (['dup', 'del', 'connect', 'lockto', 'lockall', 'peek'].includes(a)) P.close(); UI.quickAction(a, id); if (['invert', 'attach', 'unlock', 'legend'].includes(a) && V.byId(id)) P.open(id); });
+    $$('[data-pa]', pop).forEach(b => b.onclick = (ev) => { const a = b.dataset.pa; if (['dup', 'del', 'connect', 'lockto', 'lockall', 'peek', 'next'].includes(a)) P.close(); UI.quickAction(a, id, { x: ev.clientX, y: ev.clientY }); if (['invert', 'attach', 'unlock', 'legend'].includes(a) && V.byId(id)) P.open(id); });
     // Ideale validato: il pop-up serve a leggere, i campi e le azioni restano spenti (la modifica riapre dal lucchetto)
     if (map.validated) $$('input,textarea,select,button', pop).forEach(x => { if (x.id !== 'pop-x' && x.id !== 'pop-why') x.disabled = true; });
     const tp = $('#pop-toplan'); if (tp) tp.onclick = () => { const plan = clone(map.plan); plan.push({ id: uid(), what: p.text || 'kaizen', who: p.owner || '', when: '', outcome: '', a3: true }); V.commit({ t: 'plan_set', after: plan }, 'piano'); UI.toast('Aggiunto al piano.'); UI.renderPlan(); };
@@ -466,9 +487,12 @@
           V.commit({ t: 'props', id, after }, 'intento della via');
           P.open(id); return;
         }
-        if (!final) { V.commit({ t: 'props', id, after: { [k]: v } }, 'modifica', { silent: true }); return; } // anteprima: nessuna voce di undo
+        // i tempi scritti a mano su passi e attese si FIRMANO col foglio (esito 13, tempiGiro):
+        // sul giro nuovo un valore riscritto qui smette di essere «giro prec.»
+        const firma = (cur.type === 'box' || cur.type === 'delta') && ['hi', 'lo', 'avg'].includes(k) ? { tempiGiro: map.id } : null;
+        if (!final) { V.commit({ t: 'props', id, after: Object.assign({ [k]: v }, firma) }, 'modifica', { silent: true }); return; } // anteprima: nessuna voce di undo
         // una sola voce di undo per campo (dal focus al cambio)
-        V.commit({ t: 'props', id, after: { [k]: v }, before: { [k]: before === undefined ? cur.props[k] : before } }, 'modifica');
+        V.commit({ t: 'props', id, after: Object.assign({ [k]: v }, firma), before: Object.assign({ [k]: before === undefined ? cur.props[k] : before }, firma ? { tempiGiro: cur.props.tempiGiro } : null) }, 'modifica');
         before = undefined;
         // la nuvola cresce (o si stringe) da sola per far stare il testo: prima sforava sempre
         if (k === 'text' && ['storm', 'fluffy'].includes(cur.type) && !cur.props.collapsed) {
@@ -537,8 +561,8 @@
         }
       };
       $$('[data-round]', pop).forEach(b => b.onclick = () => { P._mini = (P._mini === b.dataset.round) ? null : b.dataset.round; paintMini(P._mini); });
-      const mb = $('[data-misura]', pop);
-      if (mb) mb.onclick = () => { P.close(); UI.openMisura(id); };
+      const stor = $('[data-storia]', pop);
+      if (stor) stor.onclick = () => { P.close(); if (UI.openAnalisi) UI.openAnalisi(id); };
       if (P._mini && $(`.pop-mini[data-mini="${P._mini}"]`, pop)) paintMini(P._mini); else P._mini = null;
       // la ✓: validare costa un tocco; riaprire costa un tocco + conferma (è metodo, non interfaccia)
       const vb = $('[data-valid]', pop);

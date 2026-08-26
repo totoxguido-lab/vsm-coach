@@ -26,7 +26,8 @@
    *  variabilità (n≥2) il tono la segue; con una misura sola si dice il numero, non una classe. */
   T.badgeDi = (el, map) => {
     if (!el || (el.type !== 'box' && el.type !== 'delta')) return null;
-    const st = A.obsStats(V.obsOf(el));
+    // solo le misure DI QUESTO giro (esito 13): le ereditate sono storia, non badge
+    const st = A.obsStats(V.obsDelGiro(el, map));
     if (!st.n) return null;
     const classe = A.variabilita(st.cv);
     // niente «~» davanti (esito 12: illeggibile e non aggiunge nulla — la media resta una media)
@@ -38,7 +39,7 @@
   /** Il RESOCONTO del passo per la finestra di sola lettura di Misura (esito 12, E12-d):
    *  max · min · media in formato misurazione + il totale, e il pulsante che apre l'analisi. */
   T.resocontoHTML = (el, map) => {
-    const st = A.obsStats(V.obsOf(el));
+    const st = A.obsStats(V.obsDelGiro(el, map));
     if (!st.n) return '';
     const riga = (k, v) => `<div class="tmp-riga"><span>${k}</span><b>${v}</b></div>`;
     return '<div class="tmp-stats tmp-resoconto">'
@@ -100,40 +101,64 @@
   /** la sezione del pop-up, come stringa (pura, provabile): statistiche, grafici, elenco delle
    *  osservazioni, e le soglie SCRITTE — con il loro stato provvisorio, non spacciate per legge. */
   T.sectionHTML = (el, map) => {
-    const obs = V.obsOf(el);
+    // le statistiche vive sono del GIRO (esito 13): le obs clonate da un giro precedente sono
+    // STORIA — si leggono sotto, raggruppate per giro, e non entrano nei conti di questo foglio
+    const tutte = V.obsOf(el);
+    const righe = []; tutte.forEach((o, i) => { if (!o.giro || o.giro === map.id) righe.push({ o, i }); });
+    const obs = righe.map(r => r.o);
     const st = A.obsStats(obs);
-    if (!st.n) return '';
+    const prec = {}; tutte.forEach(o => { if (o.giro && o.giro !== map.id) (prec[o.giro] = prec[o.giro] || []).push(o); });
+    const giriPrec = Object.keys(prec);
+    if (!st.n && !giriPrec.length) return '';
     const classe = A.variabilita(st.cv);
     const riga = (k, v) => `<div class="tmp-riga"><span>${k}</span><b>${v}</b></div>`;
-    let h = '<div class="tmp-stats">';
-    h += riga('misure', String(st.n));
-    h += riga('min – max', esc(tMis(st.min, map)) + ' – ' + esc(tMis(st.max, map)));
-    h += riga('mediana', esc(tMis(st.median, map)));
-    h += riga('media', esc(tMis(st.mean, map)));
-    // da n≥2 (rilievo Codex #4: erano nascosti fino a 3 — statistiche calcolate e non mostrate);
-    // con n=1 restano fuori: sarebbero il valore stesso, una riga che non dice niente
-    if (st.n >= 2) h += riga('p10 – p90', esc(tMis(st.p10, map)) + ' – ' + esc(tMis(st.p90, map)));
-    if (st.cv != null) h += riga('variabilità', 'CV ' + fmt(st.cv * 100) + '% · <span class="tmp-classe ' + esc(classe) + '">' + esc(classe) + '</span>');
-    h += '</div>';
-    h += T.istogrammaSVG(obs.map(o => o.s), map);
-    h += T.sparklineSVG(obs);
-    // la ✓ del passo blocca ogni scrittura sulle sue props (toccaValidato, A2): senza questo
-    // 'disabled' i bottoni restavano vivi ma V.setObs tornava false in silenzio — un bottone che
-    // non fa niente e non dice perche' (verificato eseguendo, rilievo del committente di F1)
-    const fermo = !!(el.props && el.props.validated);
-    const perche = fermo ? ' disabled title="Passo validato ✓: togli la ✓ per rileggere le misure."' : '';
-    h += '<div class="tmp-obs-list">' + obs.map((o, i) => {
-      const giroDi = (o.giro && o.giro !== map.id && V.doc.maps[o.giro]) ? V.doc.maps[o.giro] : null;
-      const dettagli = [o.turno, giroDi ? 'giro: ' + (giroDi.verName || giroDi.title || '?') : null].filter(Boolean).join(' · ');
-      return `<div class="tmp-obs"><b>${esc(tMis(o.s, map))}</b>`
-        + (dettagli ? `<span class="k">${esc(dettagli)}</span>` : '')
-        + `<button class="btn small tmp-cls" data-obs-cls="${i}" style="color:${CLS_COLORE[o.cls] || CLS_COLORE.normale}"${perche || ' title="Tocca per riclassificare (normale → particolare → eccezionale). Nessuna misura viene esclusa dai conti: è solo una marcatura."'}>${esc(o.cls)}</button>`
-        + `<button class="btn small ghost" data-obs-val="${i}"${perche || ' title="Correggi il valore di questa misura a mano"'}>🔢</button>`
-        + `<button class="btn small ghost" data-obs-nota="${i}"${perche || ` title="${o.nota ? esc(o.nota) : 'Aggiungi una nota a questa misura'}"`}>${o.nota ? '📝' : '✎'}</button>`
-        + (o.nota ? `<div class="tmp-nota k">${esc(o.nota)}</div>` : '')
-        + '</div>';
-    }).join('') + '</div>';
-    h += `<p class="hint tmp-soglie">Variabilità dal coefficiente di variazione: sotto ${fmt(A.CV_SOGLIE.stabile * 100)}% stabile, sotto ${fmt(A.CV_SOGLIE.moderata * 100)}% moderata, oltre alta. Soglie provvisorie: vanno validate sulle vostre misure.</p>`;
+    let h = '';
+    if (st.n) {
+      h += '<div class="tmp-stats">';
+      h += riga('misure', String(st.n));
+      h += riga('min – max', esc(tMis(st.min, map)) + ' – ' + esc(tMis(st.max, map)));
+      h += riga('mediana', esc(tMis(st.median, map)));
+      h += riga('media', esc(tMis(st.mean, map)));
+      // da n≥2 (rilievo Codex #4: erano nascosti fino a 3 — statistiche calcolate e non mostrate);
+      // con n=1 restano fuori: sarebbero il valore stesso, una riga che non dice niente
+      if (st.n >= 2) h += riga('p10 – p90', esc(tMis(st.p10, map)) + ' – ' + esc(tMis(st.p90, map)));
+      if (st.cv != null) h += riga('variabilità', 'CV ' + fmt(st.cv * 100) + '% · <span class="tmp-classe ' + esc(classe) + '">' + esc(classe) + '</span>');
+      h += '</div>';
+      h += T.istogrammaSVG(obs.map(o => o.s), map);
+      h += T.sparklineSVG(obs);
+      // la ✓ del passo blocca ogni scrittura sulle sue props (toccaValidato, A2); e fuori da
+      // Misura/Analizza le osservazioni non si riscrivono (porta delle fasi): in tutti e due i
+      // casi i bottoni si spengono E dicono perche' — mai bottoni vivi che non fanno niente
+      const fermo = !!(el.props && el.props.validated);
+      const fuoriFase = !['misura', 'analizza'].includes(map.phase);
+      const perche = fermo ? ' disabled title="Passo validato ✓: togli la ✓ per rileggere le misure."'
+        : fuoriFase ? ' disabled title="Le misure si rileggono in Misura o Analizza."' : '';
+      // data-obs-* portano l'indice nella lista sana COMPLETA (V.obsOf): e' quello che
+      // V.setObs/posObs capiscono — con la storia davanti gli indici filtrati mentirebbero
+      h += '<div class="tmp-obs-list">' + righe.map(({ o, i }) => {
+        const dettagli = [o.turno].filter(Boolean).join(' · ');
+        return `<div class="tmp-obs"><b>${esc(tMis(o.s, map))}</b>`
+          + (dettagli ? `<span class="k">${esc(dettagli)}</span>` : '')
+          + `<button class="btn small tmp-cls" data-obs-cls="${i}" style="color:${CLS_COLORE[o.cls] || CLS_COLORE.normale}"${perche || ' title="Tocca per riclassificare (normale → particolare → eccezionale). Nessuna misura viene esclusa dai conti: è solo una marcatura."'}>${esc(o.cls)}</button>`
+          + `<button class="btn small ghost" data-obs-val="${i}"${perche || ' title="Correggi il valore di questa misura a mano"'}>🔢</button>`
+          + `<button class="btn small ghost" data-obs-nota="${i}"${perche || ` title="${o.nota ? esc(o.nota) : 'Aggiungi una nota a questa misura'}"`}>${o.nota ? '📝' : '✎'}</button>`
+          + (o.nota ? `<div class="tmp-nota k">${esc(o.nota)}</div>` : '')
+          + '</div>';
+      }).join('') + '</div>';
+      h += `<p class="hint tmp-soglie">Variabilità dal coefficiente di variazione: sotto ${fmt(A.CV_SOGLIE.stabile * 100)}% stabile, sotto ${fmt(A.CV_SOGLIE.moderata * 100)}% moderata, oltre alta. Soglie provvisorie: vanno validate sulle vostre misure.</p>`;
+    } else {
+      h += '<p class="hint">Nessuna misura di questo giro: il cronometro le prende in Misura.</p>';
+    }
+    if (giriPrec.length) {
+      h += '<div class="pop-sec">Giri precedenti</div>';
+      giriPrec.forEach(g => {
+        const os = prec[g]; const st2 = A.obsStats(os);
+        const mp = V.doc.maps[g];
+        const nome = mp ? (mp.verName || mp.title || 'giro') : 'giro chiuso';
+        h += `<div class="tmp-riga tmp-giroprec"><span>${esc(nome)}</span><b>${os.length} ${os.length === 1 ? 'misura' : 'misure'} · media ${esc(tMis(st2.mean, map))}</b></div>`;
+      });
+      h += '<p class="hint">La storia del passo sui giri precedenti: si legge, non entra nei conti di questo giro.</p>';
+    }
     return h;
   };
 

@@ -223,7 +223,14 @@
         // in DISEGNA i numeri non ci sono per definizione: al posto della targhetta vuota un
         // orologino tenue ricorda che i tempi arriveranno dal cronometro (esito stazione 1, 25/8)
         if (!hasData && map.phase === 'disegna') s += clockHint(w / 2, h + 14);
-        else s += `<text class="hand ${hasData ? '' : 'muted'}" x="${w / 2}" y="${h + 14}" text-anchor="middle" font-size="10">${hasData ? tspans(['Hi: ' + fmt(num(p.hi)), 'Lo: ' + fmt(num(p.lo)), 'Avg: ' + fmt(num(p.avg))], w / 2, h + 14, 12) : `<tspan x="${w / 2}" y="${h + 14}">Hi / Lo / Avg ?</tspan>`}</text>`;
+        else {
+          // i tempi EREDITATI dal giro precedente (esito 13) si dichiarano: attenuati, con la
+          // targhetta «giro prec.» — spariscono appena questo giro li riscrive (tempiGiro)
+          const eredita = hasData && V.tempiEreditati(el, map);
+          const voci = ['Hi: ' + fmt(num(p.hi)), 'Lo: ' + fmt(num(p.lo)), 'Avg: ' + fmt(num(p.avg))].concat(eredita ? ['(giro prec.)'] : []);
+          const testo = `<text class="hand ${hasData ? '' : 'muted'}" x="${w / 2}" y="${h + 14}" text-anchor="middle" font-size="10">${hasData ? tspans(voci, w / 2, h + 14, 12) : `<tspan x="${w / 2}" y="${h + 14}">Hi / Lo / Avg ?</tspan>`}</text>`;
+          s += eredita ? `<g class="tempi-prec">${testo}</g>` : testo;
+        }
         if (p.cc !== '' && p.cc != null) s += `<text class="hand" x="${w / 2}" y="${h + 52}" text-anchor="middle" font-size="9">C&amp;C ${esc(p.cc)} %</text>`;
         // In Misura/Analizza ogni passo porta il suo CRONOMETRO grande e toccabile (esito
         // stazione 3, 25/8): il tocco fa partire (o riprendere) la misura di quel passo — il
@@ -284,7 +291,12 @@
         const dy = h + 14 + (p.note ? noteLines.length * 10 + 4 : 4);
         // stessa regola del box: in disegna niente «attesa ?», solo l'orologino (esito stazione 1)
         if (!hasData && map.phase === 'disegna') s += clockHint(w / 2, dy);
-        else s += `<text class="hand delta-txt" x="${w / 2}" y="${dy}" text-anchor="middle" font-size="10" ${hasData ? '' : 'opacity=".55"'}>${hasData ? tspans(['Hi: ' + fmt(num(p.hi)), 'Lo: ' + fmt(num(p.lo)), 'Avg: ' + fmt(num(p.avg))], w / 2, dy, 12) : `<tspan x="${w / 2}" y="${dy}">attesa ?</tspan>`}</text>`;
+        else {
+          const eredita = hasData && V.tempiEreditati(el, map);
+          const voci = ['Hi: ' + fmt(num(p.hi)), 'Lo: ' + fmt(num(p.lo)), 'Avg: ' + fmt(num(p.avg))].concat(eredita ? ['(giro prec.)'] : []);
+          const testo = `<text class="hand delta-txt" x="${w / 2}" y="${dy}" text-anchor="middle" font-size="10" ${hasData ? '' : 'opacity=".55"'}>${hasData ? tspans(voci, w / 2, dy, 12) : `<tspan x="${w / 2}" y="${dy}">attesa ?</tspan>`}</text>`;
+          s += eredita ? `<g class="tempi-prec">${testo}</g>` : testo;
+        }
         break;
       }
       case 'person': {
