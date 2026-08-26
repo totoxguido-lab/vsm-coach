@@ -1632,7 +1632,10 @@
       case 'next': {
         const r = V.addNextStep(map, el.id, 'attesa');
         if (!r) { UI.toast(V.DENIED_MSG.fase || 'Qui non si può.'); break; }
-        I.select([r.boxId], { keepPop: true });
+        // 17-bis (foto di Gt dall'iPad): selezionare SUBITO il passo apriva anche la barra
+        // rapida — due menu ammucchiati sopra il passo nuovo. Finché il tipo non è scelto c'è
+        // SOLO il cerchio dell'attesa; il passo si seleziona a scelta fatta.
+        UI.hideQuick();
         const st = $('#stage'); const rect = st.getBoundingClientRect();
         const d = r.deltaId ? V.byId(r.deltaId, map) : null;
         const pos = d ? R.deltaPos(d, map) : null;
@@ -1642,6 +1645,7 @@
           UI.closePlaceMenu();
           if (vid === 'a:nessuna') { const dv = r.deltaId && V.byId(r.deltaId, map); if (dv) V.commit({ t: 'remove', el: dv }, 'attesa'); }
           else if (r.deltaId && V.byId(r.deltaId, map)) V.commit({ t: 'props', id: r.deltaId, after: { kind: vid.slice(2) } }, 'tipo di attesa');
+          I.select([r.boxId], { keepPop: true });
           V.pop.open(r.boxId);
         }, 'Che attesa c\'è qui? Tocca fuori per lasciare quella semplice.');
         break; }

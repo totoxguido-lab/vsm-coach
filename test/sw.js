@@ -11,7 +11,7 @@ const FAMILY = 'vsm-coach-test';
 // due timbri coincidano, cosi' non possono separarsi.
 importScripts('./js/version.js');
 importScripts('./js/manifest.js');
-const BUILD = '20260826-1525';
+const BUILD = '20260826-1531';
 const CACHE = FAMILY + '-v' + self.VSM_VERSION + '-' + BUILD;
 const FILES = ['./', './index.html', './app.css', './manifest.webmanifest', './icon.svg',
   './icon-180.png', './icon-192.png', './icon-512.png', './js/manifest.js']
