@@ -4,7 +4,7 @@
   const I = V.interact, R = V.render, UI = V.ui, C = V.coach; const { clone, today } = V.util;
   const $ = (s, r = document) => r.querySelector(s); const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 
-  function fullRender() { const map = V.map(); R.all(map, { selection: I.selection.filter(id => V.byId(id, map)) }); UI.renderHeader(); UI.renderCartina && UI.renderCartina(); if (UI.guideVisible && UI.guideVisible()) UI.renderGuide(); if (!$('#drawer').classList.contains('closed') && !$('#pane-plan').classList.contains('hidden')) UI.renderPlan(); }
+  function fullRender() { const map = V.map(); R.all(map, { selection: I.selection.filter(id => V.byId(id, map)) }); UI.renderHeader(); UI.renderCartina && UI.renderCartina(); if (UI.guideVisible && UI.guideVisible()) UI.renderGuide(); if (!$('#drawer').classList.contains('closed') && !$('#pane-plan').classList.contains('hidden')) UI.renderPlan(); UI.renderMisCtl && UI.renderMisCtl(); }
   let sugTimer = null;
   V.onChange((info) => {
     if (info.switched) { I.selection = []; V.pop.close(); UI.hideQuick(); fullRender(); return; }
@@ -123,7 +123,10 @@
       V.setValidated(m, !m.validated);
       UI.toast(m.validated ? 'Ideale validato \u{1F512}: per modificarlo riapri il lucchetto.' : 'Lucchetto aperto \u{1F513}: l’Ideale si può modificare.');
     };
-    $('#btn-undo').onclick = () => V.undo(); $('#btn-redo').onclick = () => V.redo();
+    // Le frecce rispondono SEMPRE (cancello 1B, rilievo 4 — «Grigia sì, ma che dica perché»):
+    // quando non c'è da lavorare non succede niente in silenzio, si dice il perché.
+    const freccia = (verso, fa) => () => { const m = V.motivoAnnulla(verso); if (m) UI.toast(m); else fa(); };
+    $('#btn-undo').onclick = freccia('undo', () => V.undo()); $('#btn-redo').onclick = freccia('redo', () => V.redo());
     $('#drawer-close').onclick = UI.closeDrawer;
     ['coach', 'plan'].forEach(t => $('#tab-' + t).onclick = () => UI.showTab(t));
     // il bottone «Mappe» in barra non c'e' piu' (feedback iPad 25/8): la libreria vive in ⋯ → «Le tue mappe»
@@ -152,6 +155,15 @@
       R.traceOn = !R.traceOn; localStorage.setItem('vsm.trace', R.traceOn ? '1' : '0');
       menuCheck('#btn-trace', R.traceOn); R.selection(I.selection, V.map());
       UI.toast(R.traceOn ? 'Selezionando un elemento si illumina dove va a finire.' : 'Evidenziazione del percorso spenta.');
+    };
+    // formato delle misurazioni (esito 12, E12-b): convenzione cronometro (50″, 1′20″) di casa,
+    // oppure l'unita' del foglio — la scelta vive in localStorage e ridisegna subito badge e viste
+    $('#btn-timefmt').onclick = () => {
+      const nuovo = V.timeFmt() === 'crono' ? 'unita' : 'crono';
+      try { localStorage.setItem('vsm.timefmt', nuovo); } catch (e) { /* storage bloccato */ }
+      menuCheck('#btn-timefmt', nuovo === 'crono');
+      fullRender();
+      UI.toast(nuovo === 'crono' ? 'Misurazioni in formato cronometro: 50″, 1′20″.' : 'Misurazioni nell\'unità del foglio (es. minuti).');
     };
     UI.menuCheck = menuCheck;
     $('#zoom-in').onclick = () => { const r = $('#stage').getBoundingClientRect(); I.zoomAt(1.2, r.left + r.width / 2, r.top + r.height / 2); };
@@ -202,6 +214,19 @@
       case 'info': {
         const m2 = V.map(); const M = V.metrics(m2);
         const at = V.lastSaved(); const salvato = at ? new Date(at).toLocaleString('it-CH') : '—';
+        // Lo spazio (piano 02-11): sono le due righe che Gt legge sull'iPad alla stazione 6 della
+        // checklist. Parole di reparto, non di database: «tenuto da parte», non «quota» ne'
+        // «origine». Sono anche l'unico modo di sciogliere l'assunzione A3 della ricerca — le
+        // fonti si contraddicono su che cosa serva a Safari per concedere la persistenza, quindi
+        // l'esito si guarda invece di darlo per noto.
+        const p = V.storage.persistente;
+        const tenuto = p === true ? 'sì' : p === false ? 'no — il sistema può liberarlo se gli serve posto' : 'non richiesto';
+        const misura = (n) => (typeof n === 'number' && isFinite(n) && n >= 0)
+          ? (n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' kB') : '?';
+        const st = V.storage.stima;
+        const usato = (st && typeof st.usage === 'number')
+          ? misura(st.usage) + (typeof st.quota === 'number' ? ' su ' + misura(st.quota) + ' disponibili' : '')
+          : 'non disponibile';
         // niente contenuti della mappa: solo come e' fatta e da dove viene la build
         const info = [
           'VSM Coach ' + V.versionLabel(),
@@ -210,7 +235,9 @@
           'browser: ' + navigator.userAgent,
           'mappa attiva: ' + V.kindLabel(m2) + (m2.validated ? ' 🔒' : '') + ' · ' + M.boxes + ' box, ' + M.deltas + ' delta, ' + M.requests + ' vie, ' + m2.strokes.length + ' tratti',
           'mappe in libreria: ' + Object.keys(V.doc.maps).length,
-          'ultimo salvataggio: ' + salvato
+          'ultimo salvataggio: ' + salvato,
+          'spazio tenuto da parte: ' + tenuto,
+          'spazio usato: ' + usato
         ].join('\n');
         const copia = () => { try { navigator.clipboard.writeText(info); UI.toast('Dati per la diagnosi copiati.'); } catch (e) { alert(info); } };
         copia();
@@ -280,11 +307,14 @@
     UI.guideOn = localStorage.getItem('vsm.guideOn') !== '0';
     try { R.traceOn = localStorage.getItem('vsm.trace') !== '0'; } catch (e) { /* storage bloccato */ }
     { const vl = $('#ver-label'); if (vl) vl.textContent = 'VSM Coach ' + V.VERSION + (location.pathname.includes('/beta/') ? ' beta' : '') + ' · ' + V.BUILD; }
-    UI.buildPalette(); bindHeader(); UI.bindCartina(); UI.renderCartina(); C.init(); UI.menuCheck('#btn-pen-mode', I.penDraws); UI.menuCheck('#btn-overlays', !!(V.map() && V.map().layers && V.map().layers.riepilogo)); UI.menuCheck('#btn-trace', R.traceOn);
+    UI.buildPalette(); bindHeader(); UI.bindCartina(); UI.renderCartina(); C.init(); UI.menuCheck('#btn-pen-mode', I.penDraws); UI.menuCheck('#btn-overlays', !!(V.map() && V.map().layers && V.map().layers.riepilogo)); UI.menuCheck('#btn-trace', R.traceOn); UI.menuCheck('#btn-timefmt', V.timeFmt() === 'crono');
     { let chrome = '1', tools = '0'; try { chrome = localStorage.getItem('vsm.chrome') ?? '1'; tools = localStorage.getItem('vsm.toolsLeft') ?? '0'; } catch (e) { /* storage bloccato */ }
       UI.setToolsLeft(tools === '1'); if (chrome === '0') UI.setChrome(false, { hint: false }); }
     try { if (localStorage.getItem('vsm.paletteHidden') === '1') UI.setPaletteHidden(true, { quiet: true }); } catch (e) { /* storage bloccato */ }
     fullRender(); I.restoreView();
+    // la barra del giro e la legenda della misura devono esserci gia' al primo avvio, se il
+    // documento riapre in Misura con un giro vivo (esito 12) — non solo dopo un cambio foglio
+    UI.renderMisCtl && UI.renderMisCtl();
     // «Azzera la copia di prova» esiste solo dove ha senso: sull'app stabile la voce non compare,
     // cosi' nessuno puo' cancellare per sbaglio le mappe vere cercando di ripulire una prova
     if ((V.storage().canale || 'sviluppo') === 'stabile') $$('.prova-only').forEach(n => n.classList.add('hidden'));
@@ -304,13 +334,20 @@
     window.addEventListener('beforeunload', flush);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-      navigator.serviceWorker.register('sw.js').catch(() => {});
+      // updateViaCache:'none' (C6): senza, sw.js E i suoi importScripts (version.js, manifest.js)
+      // arrivavano dalla cache HTTP di Pages (max-age=600) — l'aggiornamento del service worker
+      // poteva tardare di dieci minuti, e il canale test si prova a colpi di publish ravvicinati
+      navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
       // quando un service worker NUOVO prende il controllo (aggiornamento installato in sottofondo),
       // la pagina si ricarica da sola: senza questo la versione nuova si vedeva solo al secondo avvio,
       // e sull'iPad "chiudi davvero e riapri" non e' un gesto ovvio. Al primo install non si ricarica.
       // Il ricaricamento aspetta che il salvataggio sia finito: era il modo piu' facile per perdere
       // l'ultima modifica proprio mentre si andava a verificare la versione nuova.
       let hadSW = !!navigator.serviceWorker.controller;
+      // C4 del triage debug 25/8: se sessionStorage lancia (navigazione privata, quota), la rete
+      // anti-raffica resta almeno IN MEMORIA — copre i controllerchange multipli nella stessa
+      // pagina; fra un reload e l'altro senza storage una memoria non esiste, e lo si accetta.
+      let ultimoAutoreloadMem = 0;
       // Al massimo UN ricaricamento automatico al minuto (bug visto sull'iPad il 25/8): con piu'
       // pubblicazioni ravvicinate — o la CDN di Pages che serve byte diversi da edge diversi —
       // controllerchange puo' scattare piu' volte di fila, e la pagina si riavviava a ripetizione,
@@ -320,8 +357,9 @@
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         if (!hadSW) { hadSW = true; return; }
         hadSW = true;
-        let ultimo = 0; try { ultimo = +sessionStorage.getItem('vsm.autoreload') || 0; } catch (e) { /* storage bloccato */ }
+        let ultimo = ultimoAutoreloadMem; try { ultimo = Math.max(ultimo, +sessionStorage.getItem('vsm.autoreload') || 0); } catch (e) { /* storage bloccato */ }
         if (Date.now() - ultimo < 60000) { UI.toast('C\'è un altro aggiornamento: chiudi davvero l\'app e riaprila per usarlo.'); return; }
+        ultimoAutoreloadMem = Date.now();
         try { sessionStorage.setItem('vsm.autoreload', String(Date.now())); } catch (e) { /* storage bloccato */ }
         V.saveNow().then(() => location.reload(), () => location.reload());
       });

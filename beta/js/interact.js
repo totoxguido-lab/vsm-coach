@@ -430,7 +430,13 @@
       case 'peek': if (V.ui.showPeek) V.ui.showPeek(g.boxId, e.clientX, e.clientY); break;
       case 'badge': if (V.byId(g.elId, map) && V.pop && V.pop.open) { I.select([g.elId], { keepPop: true }); V.pop.open(g.elId, { section: g.layer }); } break;
       case 'legend': { const el = V.byId(g.id, map); if (!el) break; const collapsed = !el.props.collapsed; V.commit([{ t: 'props', id: el.id, after: { collapsed } }, { t: 'update', id: el.id, after: { w: collapsed ? 74 : 170, h: collapsed ? 18 : 104 } }], 'legenda'); break; }
-      case 'chan': { const c = V.byId(g.id, map); if (!g.moved) { I.select([c.id], { keepPop: true }); V.pop.open(c.id); break; } V.commit({ t: 'props', id: c.id, after: { t: c.props.t }, before: { t: g.t0 } }, 'sposta icona'); break; }
+      case 'chan': { const c = V.byId(g.id, map); if (!g.moved) { I.select([c.id], { keepPop: true }); V.pop.open(c.id); break; }
+        // il gesto ha gia' scritto props.t sul documento vivo: se il commit rifiuta (in Misura il
+        // flusso e' fermo, o il lucchetto e' chiuso) la scrittura non autorizzata NON deve restare
+        // e persistere col prossimo salvataggio (C19 del triage debug 25/8, Codex DBG-06) — stesso
+        // rollback del pointercancel
+        if (!V.commit({ t: 'props', id: c.id, after: { t: c.props.t }, before: { t: g.t0 } }, 'sposta icona')) rollback(g);
+        break; }
       case 'reconnect': {
         R.ghost(''); const c = V.byId(g.id, map); if (!c) break;
         const over = hitAt(e); const other = g.end === 'from' ? c.to : c.from;

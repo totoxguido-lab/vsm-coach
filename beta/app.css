@@ -49,7 +49,7 @@ header .brand svg{width:22px;height:22px}
 .btn.verde{background:#2e7d32;border-color:#2e7d32;color:#fff}
 .btn.verde:active{background:#256428}
 /* la barra del giro (Misura): comandi grandi in zona pollice, al posto del pannello */
-#misctl{position:absolute;left:50%;transform:translateX(-50%);bottom:78px;display:flex;gap:10px;align-items:center;background:#fffdf7;border:1.5px solid #2b2b2b;border-radius:14px;padding:8px 12px;box-shadow:0 4px 14px rgba(0,0,0,.18);z-index:40;max-width:94vw}
+#misctl{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(78px + env(safe-area-inset-bottom, 0px));display:flex;gap:10px;align-items:center;background:#fffdf7;border:1.5px solid #2b2b2b;border-radius:14px;padding:8px 12px;box-shadow:0 4px 14px rgba(0,0,0,.18);z-index:40;max-width:94vw}
 #misctl.hidden{display:none}
 #misctl .mis-btn{min-width:52px;min-height:52px;border:1.5px solid #2b2b2b;border-radius:12px;background:#fff;cursor:pointer;padding:6px 12px;display:inline-flex;align-items:center;justify-content:center}
 #misctl .mis-btn svg{width:26px;height:26px;display:block}
@@ -63,15 +63,86 @@ header .brand svg{width:22px;height:22px}
 #misctl .mis-tempo{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
 #misctl .mis-tempo.pausa{opacity:.45}
 #misctl .mis-nome{font-size:11px;opacity:.75;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* la legenda della misura (esito 12-ter): di casa RIDOTTA a icona (orologio col «?»),
+   un tocco la apre come pop-up in basso a sinistra, ✕ la riporta a icona */
+#mislegenda{position:absolute;left:10px;bottom:calc(10px + env(safe-area-inset-bottom, 0px));z-index:30;font-size:10.5px;line-height:1.5;color:#4a463e}
+#mislegenda.aperta{background:rgba(255,253,247,.96);border:1px solid #d9d4c8;border-radius:8px;padding:6px 9px;max-width:265px;box-shadow:0 3px 10px rgba(0,0,0,.14)}
+#mislegenda b{font-size:11px;color:#2b2b2b}
+#mislegenda .misleg-testa{display:flex;align-items:center;justify-content:space-between;gap:8px}
+#mislegenda .misleg-icona{width:42px;height:42px;border-radius:50%;border:1.5px solid #2b2b2b;background:#fffdf7;color:#2b2b2b;cursor:pointer;display:flex;align-items:center;justify-content:center;opacity:.75;box-shadow:0 2px 8px rgba(0,0,0,.14)}
+#mislegenda .misleg-icona svg{width:26px;height:26px;display:block}
+#mislegenda.hidden{display:none}
+/* la finestra del passo in Misura (esito 12, E12-d): elenco attività di sola lettura */
+.mis-ro-atti{margin:2px 0 8px;padding-left:22px;font-size:13px;line-height:1.5}
+.tmp-resoconto{margin-bottom:4px}
+/* il calderone in consultazione (C1): voci in sola lettura nel selettore fasi */
+.fase-calderone{border:1px dashed #b7b0a3;border-radius:10px;padding:8px 10px;margin:6px 0;font-size:12px}
+.fase-calderone .cald-voce{margin:6px 0;padding-top:4px;border-top:1px solid #eee7d8}
+/* la barra segue il giro sugli altri fogli (C2): l'info diventa un bottone che riporta al foglio */
+#misctl .mis-info.altrove{cursor:pointer}
+#misctl .mis-info.altrove .mis-nome{opacity:1;color:#1f4e79;font-weight:700}
+/* misura aperta da un pezzo (stazione 12-B): avviso a tutta barra, ben visibile in basso */
+#misctl.vecchia{flex-wrap:wrap;border-color:#c8321e}
+#misctl .mis-warn{flex-basis:100%;font-size:12px;line-height:1.35;color:#c8321e;font-weight:600;padding:2px 2px 4px}
 /* il cronometro grande sul passo e' un bersaglio: mano e ombra al passaggio */
 svg .mis-clock{cursor:pointer}
-@media print{svg .mis-clock,#misctl{display:none!important}}
+/* esito 16-a: gli appunti dietro la ⓘ — la bolla si apre a tocco, si chiude toccando fuori */
+.hintdot{border:none;background:none;color:#1f4e79;cursor:pointer;font-size:13px;padding:0 4px;vertical-align:middle}
+#pop .field{position:relative}
+.hintpop{position:absolute;left:6px;right:6px;top:100%;z-index:6;background:#fffdf7;border:1px solid #d9d4c8;border-radius:8px;padding:7px 9px;font-size:11.5px;line-height:1.45;color:#4a463e;box-shadow:0 4px 12px rgba(0,0,0,.18)}
+.hintpop.hidden{display:none}
+/* esito 16-b: l'albero dei fogli nel picker — righe piene, indentate, un tocco per collegare */
+#dlg-fogli .fogli-riga{display:flex;align-items:center;gap:10px;margin:6px 0}
+#dlg-fogli .fogli-voce{display:block;width:100%;text-align:left;background:#fff;border:1px solid #d9d4c8;border-radius:8px;padding:9px 10px;margin:4px 0;cursor:pointer;font:inherit}
+#dlg-fogli .fogli-voce.on{border-color:#1f4e79;background:hsl(210 40% 96%)}
+#dlg-fogli .fogli-voce .ind{color:#1f4e79;font-weight:700}
+/* esito 15: la testata del passo — titolo per primo, ? e ✕ accanto; elimina armato in rosso */
+#pop .pop-head.passo{display:flex;gap:6px;align-items:center}
+#pop .pop-head.passo .pop-ptitle{flex:1;min-width:0}
+#pop .btn.danger.armato{background:#c8321e;border-color:#c8321e;color:#fff}
+/* esito 15: il bottone che riporta dove stanno gli elementi, quando la vista si è persa */
+#btn-ritrova{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(150px + env(safe-area-inset-bottom, 0px));z-index:35;box-shadow:0 4px 14px rgba(0,0,0,.2)}
+#btn-ritrova.hidden{display:none}
+/* esito 13: i tempi ereditati dal giro precedente si vedono, ma da fantasma.
+   Rilievo G-1A-01 del cancello del 1A: .55 era sbiadito al punto che i numeri non si leggevano.
+   A .72 restano DISTINGUIBILI da quelli di oggi — ed è il corsivo, non lo sbiadito, a dire
+   «giro precedente»: due segnali per la stessa cosa, e uno dei due rendeva illeggibile il dato. */
+svg .tempi-prec{opacity:.72;font-style:italic}
+#pop .times.tempi-eredita input{opacity:.6;font-style:italic}
+/* esito 13: le azioni del pop-up sono gli stessi tondi della barra rapida */
+#pop .pop-actions{flex-wrap:wrap;gap:6px}
+#pop .pop-actions .pm-btn{position:static;margin:0;width:52px;height:52px;flex:none;animation:none}
+/* il picker dei tipi di attesa: icone in fila, come le forme del problema */
+#pop .picker.kinds .pick svg{width:24px;height:24px}
+#pop .picker.kinds .pick span{display:block;font-size:9px}
+/* esito 12-bis: al bivio i cronometri candidati lampeggiano; il cestino arma in due tocchi */
+svg .mis-clock.mis-scelta{animation:misscelta 1.1s ease-in-out infinite}
+@keyframes misscelta{0%,100%{opacity:1}50%{opacity:.35}}
+#misctl .mis-btn.trash{opacity:.45}
+/* Il ⚠ «qui e' andata diversa» (F1-1C, D-10): gruppo di SINISTRA, staccato di 14px da cio' che fa
+   correre il giro — lo stesso stacco che .mis-btn.stop usa a destra, dall'altra parte. Nessun
+   colore a riposo: il primo elemento che si legge dev'essere il numero del cronometro. Acceso e'
+   l'ambra gia' provata sull'iPad col cestino armato, e la regola e' LA STESSA riga, non una copia
+   che un giorno andrebbe alla deriva. */
+#misctl .mis-btn.diverso{margin-right:14px}
+#misctl .mis-btn.trash.armato,#misctl .mis-btn.diverso.armato{opacity:1;background:#b98900;border-color:#b98900;color:#fff}
+/* esito 12 (E12-c): rosso ombreggiato sul passo in misura, alone blu sull'attesa in corso */
+svg .mis-shade{fill:rgba(200,50,30,.13);stroke:rgba(200,50,30,.4);stroke-width:1.5}
+svg .mis-shade-attesa{fill:none;stroke:rgba(31,78,121,.3);stroke-width:14;stroke-linecap:round}
+/* esito 12 (E12-a): il testo del badge resta BIANCO sul fondino pieno — la regola generica
+   svg text{fill:var(--pencil)} lo faceva nero su blu scuro, illeggibile */
+svg .badge text{fill:#fffdf7}
+@media print{svg .mis-clock,svg .mis-shade,svg .mis-shade-attesa,#misctl,#mislegenda{display:none!important}}
 svg .mis-clock:hover circle.pencil{filter:drop-shadow(0 0 4px rgba(46,125,50,.6))}
 .btn.small{min-height:30px;padding:0 9px;font-size:12.5px;border-radius:8px}
 .btn.ghost{background:transparent;border-color:transparent}
 .btn.danger{color:var(--bad)}
 .btn.icon{width:36px;padding:0;justify-content:center;font-size:16px}
 .btn[disabled]{opacity:.45;cursor:default}
+/* SPENTA ma non morta (cancello 1B, rilievo 4 — «Grigia sì, ma che dica perché»): il bottone non
+   ha niente da fare, ma il tocco arriva e risponde. Più chiaro del .45 dei bottoni disabilitati,
+   che vuol dire un'altra cosa: là non c'è nessuno, qui c'è chi ti spiega. */
+.btn[aria-disabled="true"]{opacity:.62;cursor:default}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--panel-2)}
 .seg button{border:0;background:transparent;padding:4px 12px;color:var(--ink-2);white-space:nowrap;min-height:34px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;line-height:1.15}
 .seg button small{font-size:9.5px;color:var(--muted);max-width:92px;overflow:hidden;text-overflow:ellipsis}
@@ -362,7 +433,10 @@ header .btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
 .peek-strip{display:flex;align-items:center;gap:6px;overflow-x:auto;padding:2px 2px 8px;margin-bottom:8px;border-bottom:1px dashed var(--line);font-size:12.5px;white-space:nowrap}
 .peek-strip .ps-box b{color:var(--accent);margin-right:1px}
 .peek-strip .ps-delta{color:var(--delta);font-weight:700}
-.peek-strip .ps-fork{color:var(--accent);font-weight:700}
+/* lo stesso ⑂ della striscia dell'occhio vale nell'elenco del percorso della Misura (rilievo
+   G-1A-02 del cancello del 1A): stesso segno, stessa regola — una copia sarebbe due segni che un
+   giorno non si somigliano più */
+.peek-strip .ps-fork,.mis-row .ps-fork{color:var(--accent);font-weight:700}
 .peek-strip .ps-sep{color:var(--muted)}
 .gp-lint{display:flex;flex-direction:column;gap:6px;padding:8px 10px 4px;border-top:1px solid var(--line);margin-top:6px}
 /* le spunte «un passo per ogni attivita'» nel pop-up del sotto-foglio: oltre le ~6 righe l'elenco
@@ -402,6 +476,18 @@ table.plan input:focus{border-color:var(--line);background:var(--panel-2)}
 .picker.forme .pick{width:52px;min-height:44px}
 .picker.forme .pick svg{width:38px;height:30px;border-radius:6px;color:var(--cloud)}
 .pick-group{font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:6px 0 3px}
+/* le quattro voci dell'ORIGINE (1B, D-06): stesso idioma delle altre pastiglie — 44px, bordo
+   accento sulla scelta — con le sole due differenze che il contratto di disegno chiede. Qui la
+   pastiglia porta una PAROLA e non una sagoma: niente riquadro da 30px da riservare all'icona
+   (quindi larghezza dal testo) e testo a 11px, il minimo delle superfici nuove (UI-SPEC
+   §Typography; il 9.5px di .picker .pick e' del codice storico e resta dov'e'). */
+.picker.fonti{margin:4px 0}
+.picker.fonti .pick{width:auto;flex:1 1 auto;min-width:92px;padding:4px 8px;font-size:11px;justify-content:center}
+.picker.fonti .pick span{max-width:none}
+/* la bolla della ⓘ si appoggia al campo che la porta: nel pannello del passo c'e' gia'
+   (#pop .field), ma la sezione dei tempi vive ANCHE nel dialogo dell'analisi delle misure —
+   senza questa riga la bolla del «chi o dove» si appoggerebbe al dialogo e uscirebbe dal campo. */
+#dlg-analisi .field{position:relative}
 svg .icon-bg{fill:#fffdf7;stroke:var(--pencil-2);stroke-width:1}
 /* legenda completa (cassetto) */
 .lg-var{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:10px}
@@ -449,10 +535,67 @@ dialog::backdrop{background:rgba(10,14,20,.45)}
 dialog .d-head{padding:12px 16px;border-bottom:1px solid var(--line);font-weight:600;display:flex;align-items:center}
 dialog .d-body{padding:14px 16px;max-height:70vh;overflow:auto}
 dialog .d-foot{padding:10px 16px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end}
+/* La finestrella che chiede UN dato (cancello 1B, rilievo 2 di Gt, 27/8): la nota su una misura e
+   la correzione del suo valore, al posto degli ultimi due pop-up del browser. Niente forme nuove —
+   è un <dialog> come gli altri; qui c'è solo il bersaglio da 44 px sul campo e sui due bottoni. */
+#dlg-chiedi{max-width:420px;width:min(420px,94vw)}
+#dlg-chiedi #chiedi-campo,#dlg-chiedi .d-foot .btn{min-height:var(--tap)}
+#dlg-chiedi #chiedi-campo{font-size:16px}
+#dlg-chiedi #chiedi-spiega{margin:0 0 10px}
+/* La NOTA VELOCE del ⚠ (F1-1C, D-10): stessa forma della finestrella qui sopra — campo grande,
+   16px perché iOS non ingrandisca la pagina quando ci si scrive, e bersagli da 44 px sui bottoni.
+   Il microfono per dettare è quello della TASTIERA di iOS: qui non c'è niente da accendere. */
+#dlg-nota{max-width:460px;width:min(460px,94vw)}
+#dlg-nota #nota-campo{font-size:16px;min-height:96px}
+#dlg-nota .d-foot .btn{min-height:var(--tap)}
+#dlg-nota #nota-togli{margin-right:auto}
+/* Il RESOCONTO DI FINE GIRO (F1-1C, D-16): una riga da 44 px per voce — che cosa era, quanto è
+   durato, e la sua nota sotto in piccolo — col gesto che la fa diventare un problema sul foglio.
+   Tutto su token già in casa (--tap, --line, --muted): nessuna variabile di colore nuova. */
+#dlg-fine{max-width:560px;width:min(560px,94vw)}
+#dlg-fine .fg-sec{font-size:11px;font-weight:600;letter-spacing:.4px;color:var(--muted);margin:2px 0 8px}
+#dlg-fine .fg-riga{display:flex;align-items:center;gap:10px;min-height:var(--tap);padding:6px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:6px}
+#dlg-fine .fg-testo{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+#dlg-fine .fg-testo b{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis}
+#dlg-fine .fg-nota{font-size:12px;color:var(--muted)}
+#dlg-fine .fg-riga .k{font-size:12px;color:var(--ink-2);white-space:nowrap;font-variant-numeric:tabular-nums}
+#dlg-fine .fg-riga .btn{min-height:var(--tap);white-space:nowrap}
 .presets{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
 .presets .btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
 .notice{font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--panel-2)}
 .notice.warn{color:var(--warn)}
+/* ---------- Il Brief della mappa (F1-1A, D-01, UI-SPEC §1) ----------
+   Una colonna di campi in quattro gruppi, 24px di stacco fra l'uno e l'altro. Niente bordi rossi,
+   niente asterischi, nessun segno che dica «questo lo devi riempire» (D-02): il Brief documenta.
+   Tutto è costruito sui token già in casa (--tap, --panel-2, --line) e sulle taglie già in uso. */
+#dlg-brief .field{position:relative}
+#dlg-brief .brief-riepilogo{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-height:var(--tap);font-size:12px;color:var(--muted)}
+#dlg-brief .brief-riepilogo>span{flex:1;min-width:0;overflow-wrap:anywhere}
+#dlg-brief .brief-riepilogo .btn{flex:none;color:var(--accent)}
+#dlg-brief .brief-vuoto{border:1px solid var(--line);background:var(--panel-2);border-radius:8px;padding:8px;margin-bottom:8px;font-size:12px;color:var(--muted)}
+#dlg-brief .brief-vuoto b{display:block;font-size:15px;font-weight:600;color:var(--ink);margin-bottom:4px}
+#dlg-brief .brief-vuoto.hidden{display:none}
+#dlg-brief .brief-gruppo{margin-bottom:24px}
+#dlg-brief .brief-gruppo:last-child{margin-bottom:0}
+#dlg-brief .brief-gruppo-t{font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.2px;margin-bottom:8px}
+#dlg-brief .brief-vit-cap{margin-bottom:4px}
+/* la riga dell'indicatore vitale (D-04): [ nome ] [ ⇄ ] [ 🗑 ], tutto a 44px — si tocca col guanto */
+#dlg-brief .vit-row{display:flex;align-items:center;gap:8px;min-height:var(--tap)}
+#dlg-brief .vit-row input{flex:1;min-width:0;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);border-radius:8px;padding:7px 9px;min-height:36px}
+#dlg-brief .vit-bil,#dlg-brief .vit-del{flex:none;width:var(--tap);min-height:var(--tap);display:flex;align-items:center;justify-content:center;border:1px solid var(--line);background:var(--panel-2);color:var(--ink-2);border-radius:8px;font-size:14px;cursor:pointer}
+#dlg-brief .vit-bil.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset;color:var(--accent)}
+/* il cestino ARMATO (secondo tocco): l'unico rosso della scheda, ed è una conferma distruttiva */
+#dlg-brief .vit-del.armato{background:var(--bad);border-color:var(--bad);color:#fff}
+/* Il promemoria del Brief alla porta di Valida (D-03, UI-SPEC §5): dice quanto è pieno e non ferma
+   nessuno — niente bordo, niente colore d'allarme, e il pulsante Valida resta quello di ieri.
+   È un <button> perché il bersaglio è la riga intera e non la ⓘ (44px, --tap): bordo, sfondo e
+   allineamento del sistema si tolgono qui, così a vedersi resta la riga di prima. */
+.fase-brief{display:flex;align-items:center;gap:8px;min-height:var(--tap);padding:0 4px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;border:0;background:none;width:100%;text-align:left}
+/* La riga d'ingresso al Brief nella scheda dell'intestazione: nome, conteggio, chevron. */
+#pop .brief-ingresso{display:flex;align-items:center;gap:8px;width:100%;min-height:var(--tap);padding:0 8px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);border-radius:8px;font:inherit;font-size:14px;text-align:left;cursor:pointer}
+#pop .brief-ingresso>span:first-child{flex:1;min-width:0}
+#pop .brief-ingresso .k{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+#pop .brief-ingresso .chev{color:var(--muted)}
 #menu{position:absolute;right:10px;top:52px;z-index:20;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:6px;min-width:250px;max-height:calc(100vh - 70px);overflow-y:auto;display:flex;flex-direction:column}
 #menu button{border:0;background:transparent;text-align:left;padding:10px 12px;border-radius:8px;min-height:40px;color:var(--ink);display:flex;align-items:center;gap:11px}
 #menu button>svg:first-child{width:18px;height:18px;flex:none;color:var(--ink-2)}
@@ -477,7 +620,12 @@ dialog .d-foot{padding:10px 16px;border-top:1px solid var(--line);display:flex;g
 .mis-list{margin:8px 0}
 .mis-row{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:8px;border:1px solid var(--line);margin-bottom:5px}
 .mis-row b{font-weight:600;font-size:13px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mis-row .k{font-size:12px;color:var(--muted);white-space:nowrap}
+/* Rilievo G-1A-01 del cancello del 1A, con le parole di Gt: «i numeri del cronometro sono in
+   grigio chiaro, poco visibili». Sono QUESTI — i tempi già raccolti di ogni passo («✓ 1′20″ ·
+   3 misure») — non il numerone che corre, che è il 46px del riquadro e non si tocca. Da --muted
+   a --ink-2:
+   il grigio di --muted è per le spiegazioni, non per i dati presi camminando. */
+.mis-row .k{font-size:12.5px;color:var(--ink-2);white-space:nowrap}
 .mis-row .btn{min-width:44px;min-height:44px;font-size:15px}
 .mis-row.now{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent)}
 .mis-row.fuori{border-style:dashed}

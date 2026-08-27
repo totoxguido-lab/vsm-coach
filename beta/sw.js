@@ -11,7 +11,7 @@ const FAMILY = 'vsm-coach-beta';
 // due timbri coincidano, cosi' non possono separarsi.
 importScripts('./js/version.js');
 importScripts('./js/manifest.js');
-const BUILD = '20260825-1722';
+const BUILD = '20260827-1713';
 const CACHE = FAMILY + '-v' + self.VSM_VERSION + '-' + BUILD;
 const FILES = ['./', './index.html', './app.css', './manifest.webmanifest', './icon.svg',
   './icon-180.png', './icon-192.png', './icon-512.png', './js/manifest.js']
@@ -35,7 +35,11 @@ self.addEventListener('fetch', (e) => {
     if (hit && self.navigator && self.navigator.onLine === false) return hit;
     // il catch va agganciato SUBITO: con `hit || fresh.catch(...)` l'|| corto-circuitava e la fetch di
     // sottofondo restava con la rejection non gestita (16+ errori a ogni avvio offline)
-    const fresh = fetch(e.request)
+    // `cache: 'no-cache'` (C6 del triage debug 25/8, Grok #6): il refresh DEVE rivalidare con
+    // l'origine. Senza, la fetch passava dalla cache HTTP del browser (GitHub Pages: max-age=600)
+    // e poteva rimettere byte VECCHI sopra i file appena installati con cache:'reload' — build
+    // miste dentro la stessa cache, e il timbro data-ora poteva mentire.
+    const fresh = fetch(e.request, { cache: 'no-cache' })
       .then((r) => { if (r && r.ok) { const copy = r.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)); } return r; })
       .catch(() => hit);
     // niente respondWith(undefined): se cache e rete falliscono entrambe, un errore di rete esplicito

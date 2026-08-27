@@ -177,10 +177,13 @@
   // restituiscono il documento VSM, non lo stato transitorio dell'interfaccia (finding P2 Codex)
   let uiVivo = true;
   // numeri della catena (esito Gt 25/8 sera): calcolati una volta per giro di render, chiave id+rev
-  let numsCache = { key: null, nums: null };
+  let numsCache = { key: null, map: null, nums: null };
   const numeriPassi = (map) => {
     const k = map.id + ':' + (map.rev || 0);
-    if (numsCache.key !== k) numsCache = { key: k, nums: V.stepNumbers(map) };
+    // conta anche l'IDENTITA' dell'oggetto (C15 del triage debug 25/8, Codex DBG-10): replaceDoc
+    // ricostruisce la mappa, e stesso id + stesso rev possono arrivare con un contenuto diverso
+    // (un import ripetuto dalla stessa base) — la chiave da sola serviva i numeri vecchi
+    if (numsCache.key !== k || numsCache.map !== map) numsCache = { key: k, map, nums: V.stepNumbers(map) };
     return numsCache.nums;
   };
   R.elMarkup = (el, map) => drawEl(el, map);   // la via «a schermo» per le prove
@@ -220,7 +223,14 @@
         // in DISEGNA i numeri non ci sono per definizione: al posto della targhetta vuota un
         // orologino tenue ricorda che i tempi arriveranno dal cronometro (esito stazione 1, 25/8)
         if (!hasData && map.phase === 'disegna') s += clockHint(w / 2, h + 14);
-        else s += `<text class="hand ${hasData ? '' : 'muted'}" x="${w / 2}" y="${h + 14}" text-anchor="middle" font-size="10">${hasData ? tspans(['Hi: ' + fmt(num(p.hi)), 'Lo: ' + fmt(num(p.lo)), 'Avg: ' + fmt(num(p.avg))], w / 2, h + 14, 12) : `<tspan x="${w / 2}" y="${h + 14}">Hi / Lo / Avg ?</tspan>`}</text>`;
+        else {
+          // i tempi EREDITATI dal giro precedente (esito 13) si dichiarano: attenuati, con la
+          // targhetta «giro prec.» — spariscono appena questo giro li riscrive (tempiGiro)
+          const eredita = hasData && V.tempiEreditati(el, map);
+          const voci = ['Hi: ' + fmt(num(p.hi)), 'Lo: ' + fmt(num(p.lo)), 'Avg: ' + fmt(num(p.avg))].concat(eredita ? ['(giro prec.)'] : []);
+          const testo = `<text class="hand ${hasData ? '' : 'muted'}" x="${w / 2}" y="${h + 14}" text-anchor="middle" font-size="10">${hasData ? tspans(voci, w / 2, h + 14, 12) : `<tspan x="${w / 2}" y="${h + 14}">Hi / Lo / Avg ?</tspan>`}</text>`;
+          s += eredita ? `<g class="tempi-prec">${testo}</g>` : testo;
+        }
         if (p.cc !== '' && p.cc != null) s += `<text class="hand" x="${w / 2}" y="${h + 52}" text-anchor="middle" font-size="9">C&amp;C ${esc(p.cc)} %</text>`;
         // In Misura/Analizza ogni passo porta il suo CRONOMETRO grande e toccabile (esito
         // stazione 3, 25/8): il tocco fa partire (o riprendere) la misura di quel passo — il
@@ -229,11 +239,37 @@
         if (uiVivo && (map.phase === 'misura' || map.phase === 'analizza')) {
           const ms = map.measure;
           const attivo = !!(ms && ms.phase === 'box' && ms.stepId === el.id);
-          const nMis = V.timesOf(el).length;
+          // il passo che si sta misurando ha lo sfondo ombreggiato ROSSO (esito 12, E12-c):
+          // si vede a colpo d'occhio DOVE sta correndo il cronometro. Solo a schermo (uiVivo),
+          // mai nell'export/stampa — e' stato della UI, non documento.
+          if (attivo) s = `<rect class="mis-shade" x="-8" y="-8" width="${w + 16}" height="${h + 16}" rx="10"/>` + s;
+          // al BIVIO la scelta si deve VEDERE (esito 12-bis, caso 2): durante l'attesa i
+          // cronometri di TUTTI i passi raggiungibili con una freccia dal passo appena chiuso
+          // lampeggiano — il modello sapeva già saltare (S3-b), ma nulla lo diceva a chi misura
+          // …e il bivio si annuncia PRIMA (esito 12-ter): gia' mentre corre il timer del passo
+          // in comune (2+ frecce in uscita) i rami lampeggiano — chi misura sa che dovra' scegliere
+          const scelta = !!(ms && (
+            (ms.phase === 'attesa' && ms.fromId
+              && map.elements.some(cc => cc.type === 'flow' && cc.from && cc.from.el === ms.fromId && cc.to && cc.to.el === el.id))
+            || (ms.phase === 'box' && ms.stepId && ms.stepId !== el.id && (() => {
+              const usc = map.elements.filter(cc => cc.type === 'flow' && cc.from && cc.from.el === ms.stepId);
+              return usc.length >= 2 && usc.some(cc => cc.to && cc.to.el === el.id);
+            })())
+          ));
+          // le misure di QUESTO giro, non tutte quelle che il passo si porta dietro (debito D2,
+          // decisione di Gt 27/8: «Conti solo il giro in corso»). Un giro nuovo clona i passi con
+          // dentro le misure del giro vecchio, e quelle sono storia: badge, resoconto, parziali e
+          // analisi passano da V.obsDelGiro dall'esito 13 in qua — l'orologio era rimasto indietro,
+          // e sullo stesso passo si leggevano due numeri diversi a due centimetri di distanza
+          const nMis = V.obsDelGiro(el, map).length;
           // orologio «stile emoticon», PIENO (esito Gt 25/8 sera): corpo solido, lancette bianche,
           // corona e nasi ai lati — grafite da fermo, verde mentre misura
           const cx2 = w - 2, corpo = attivo ? '#2e7d32' : '#2b2b2b';
-          s += `<g class="mis-clock${attivo ? ' mis-attivo' : ''}" data-mis="${esc(el.id)}">`
+          // il passo SCELTO durante l'attesa porta l'ANELLO verde (esito 14): la strada e' sua,
+          // manca solo il ▶ — gli altri candidati continuano a lampeggiare (si puo' cambiare idea)
+          const prossimo = !!(ms && ms.phase === 'attesa' && ms.stepId === el.id);
+          s += `<g class="mis-clock${attivo ? ' mis-attivo' : ''}${scelta ? ' mis-scelta' : ''}" data-mis="${esc(el.id)}">`
+            + (prossimo ? `<circle class="mis-next-ring" cx="${w - 2}" cy="2" r="19" fill="none" stroke="#2e7d32" stroke-width="2.4" stroke-dasharray="4 3"/>` : '')
             + `<circle class="mis-hit" cx="${cx2}" cy="2" r="24" fill="transparent"/>`
             + `<g fill="${corpo}">`
             + `<rect x="${cx2 - 3.2}" y="-13.5" width="6.4" height="4" rx="1.4"/>`
@@ -264,7 +300,12 @@
         const dy = h + 14 + (p.note ? noteLines.length * 10 + 4 : 4);
         // stessa regola del box: in disegna niente «attesa ?», solo l'orologino (esito stazione 1)
         if (!hasData && map.phase === 'disegna') s += clockHint(w / 2, dy);
-        else s += `<text class="hand delta-txt" x="${w / 2}" y="${dy}" text-anchor="middle" font-size="10" ${hasData ? '' : 'opacity=".55"'}>${hasData ? tspans(['Hi: ' + fmt(num(p.hi)), 'Lo: ' + fmt(num(p.lo)), 'Avg: ' + fmt(num(p.avg))], w / 2, dy, 12) : `<tspan x="${w / 2}" y="${dy}">attesa ?</tspan>`}</text>`;
+        else {
+          const eredita = hasData && V.tempiEreditati(el, map);
+          const voci = ['Hi: ' + fmt(num(p.hi)), 'Lo: ' + fmt(num(p.lo)), 'Avg: ' + fmt(num(p.avg))].concat(eredita ? ['(giro prec.)'] : []);
+          const testo = `<text class="hand delta-txt" x="${w / 2}" y="${dy}" text-anchor="middle" font-size="10" ${hasData ? '' : 'opacity=".55"'}>${hasData ? tspans(voci, w / 2, dy, 12) : `<tspan x="${w / 2}" y="${dy}">attesa ?</tspan>`}</text>`;
+          s += eredita ? `<g class="tempi-prec">${testo}</g>` : testo;
+        }
         break;
       }
       case 'person': {
@@ -601,6 +642,12 @@
   R.nearestT = (c, map, pt) => { const P = R.connPath(c, map); let best = 0.5, bd = Infinity; for (let i = 0; i <= 60; i++) { const t = i / 60; const q = P.bez(t); const d = Math.hypot(q.x - pt.x, q.y - pt.y); if (d < bd) { bd = d; best = t; } } return Math.min(0.92, Math.max(0.08, best)); };
   function drawConn(c, map) {
     const P = R.connPath(c, map); const p = c.props; let s = '';
+    // l'ATTESA che si sta misurando si evidenzia in BLU rispetto al resto del canvas (esito 12,
+    // E12-c): un alone largo sulla freccia su cui l'attesa sta correndo. Solo a schermo.
+    if (uiVivo && c.type === 'flow' && (map.phase === 'misura' || map.phase === 'analizza')) {
+      const ms = map.measure;
+      if (ms && ms.phase === 'attesa' && ms.connId === c.id) s += `<path class="mis-shade-attesa" d="${P.d}"/>`;
+    }
     if (!c.from.el || !c.to.el) s += `<circle cx="${!c.from.el ? P.a.x : P.b.x}" cy="${!c.from.el ? P.a.y : P.b.y}" r="5" fill="#fff" stroke="#c8321e" stroke-dasharray="2 2"/>`;
     if (c.type === 'flow') {
       s += `<path class="pencil" d="${P.d}" ${R.connAttrs(c)}/>`;
@@ -715,18 +762,29 @@
    *  genitore (o un antenato, o la freccia a cui è agganciato) si è mosso — vale anche per le
    *  catene profonde e per i delta sulle frecce. Ritorna i cambiamenti per l'undo del drag. */
   R.freezePinned = (map, pos0) => {
-    const changed = [];
-    map.elements.forEach(el => {
-      if (!el.props || !el.props.pinned) return;
-      if (!(el.props.lockTo || (el.type === 'delta' && el.props.attachedTo))) return;
-      const p0 = pos0[el.id]; if (!p0) return;
-      const cur = R.elPos(el, map);
-      if (cur.x === p0.x && cur.y === p0.y) return;
-      el.props.dx = (el.props.dx || 0) + (p0.x - cur.x);
-      el.props.dy = (el.props.dy || 0) + (p0.y - cur.y);
-      changed.push({ id: el.id, dx: el.props.dx, dy: el.props.dy });
-    });
-    return changed;
+    // A passate ripetute fino al PUNTO FERMO (C10 del triage debug 25/8, Codex DBG-07): l'ordine
+    // di map.elements non e' un ordine di dipendenza — compensare un genitore bloccato sposta di
+    // nuovo i figli gia' compensati prima di lui (doppia compensazione). Ogni passata corregge chi
+    // non combacia con la foto pos0; si riparte finche' qualcosa si e' mosso. Converge in al piu'
+    // la profondita' della catena (elPos taglia a 8: stesso tetto qui). Per l'undo contano i
+    // dx/dy FINALI: una mappa per id, non un elenco con doppioni.
+    const changed = new Map();
+    for (let giro = 0; giro < 8; giro++) {
+      let mosso = false;
+      map.elements.forEach(el => {
+        if (!el.props || !el.props.pinned) return;
+        if (!(el.props.lockTo || (el.type === 'delta' && el.props.attachedTo))) return;
+        const p0 = pos0[el.id]; if (!p0) return;
+        const cur = R.elPos(el, map);
+        if (cur.x === p0.x && cur.y === p0.y) return;
+        el.props.dx = (el.props.dx || 0) + (p0.x - cur.x);
+        el.props.dy = (el.props.dy || 0) + (p0.y - cur.y);
+        changed.set(el.id, { id: el.id, dx: el.props.dx, dy: el.props.dy });
+        mosso = true;
+      });
+      if (!mosso) break;
+    }
+    return Array.from(changed.values());
   };
 
   /** Area sensibile: molti elementi sono disegnati a sole linee (l'omino ha tratti da 1.6 px su un
@@ -783,6 +841,18 @@
   R.addStrokeEl = (s) => { const p = document.createElementNS(NS, 'path'); p.setAttribute('class', 'stroke'); p.dataset.sid = s.id; p.setAttribute('stroke', s.color); p.setAttribute('stroke-width', s.width); p.setAttribute('d', R.strokePath(s)); L.ink.appendChild(p); return p; };
 
   // ---------- overlay calcolato: timeline + riepilogo ----------
+  /** Il conteggio delle misure nell'intestazione del riepilogo, coi PARZIALI (C16, decisione Gt
+   *  26/8): quando i passi sono misurati in modo diseguale si dicono i conteggi uno per uno,
+   *  nell'ordine della catena («misure per passo: 8, 2») — il numero unico resta solo quando
+   *  dicono tutti lo stesso. Senza passi misurati vale il vecchio ripiego (numMisure/map.samples). */
+  const misureTxt = (map) => {
+    const mp = V.misurePerPasso(map).filter(x => x.n > 0);
+    if (!mp.length) { const s = V.numMisure(map) || +map.samples; return s ? ` · ${esc(String(s))} misure` : ''; }
+    const nMin = Math.min(...mp.map(x => x.n)), nMax = Math.max(...mp.map(x => x.n));
+    if (nMin === nMax) return ` · ${nMax} misure`;
+    const conti = mp.map(x => x.n);
+    return ` · misure per passo: ${esc(conti.slice(0, 8).join(', '))}${conti.length > 8 ? '…' : ''}`;
+  };
   /** Il riepilogo di sempre (timeline + card dei percorsi, R6): oggi e' il primo livello (spec B/C),
    *  sempre acceso. Estratto dal vecchio R.overlay SENZA cambiare un byte dell'HTML prodotto (la
    *  fixture test/fixtures/riepilogo-baseline.txt lo prova), con una sola eccezione dichiarata: i
@@ -863,7 +933,7 @@
     }
     sx = Math.max(20, Math.min(sx, w - sw - 20)); sy = Math.max(20, Math.min(sy, h - sh - 20));
     g += `<g><rect class="box" x="${sx}" y="${sy}" width="${sw}" height="${sh}" rx="2"/>
-      <text class="hand" x="${sx + 12}" y="${sy + 20}" font-size="12" font-weight="700">Riepilogo (${esc(map.unit)})${(V.numMisure(map) || +map.samples) ? ` · ${esc(String(V.numMisure(map) || +map.samples))} misure` : ''}</text>
+      <text class="hand" x="${sx + 12}" y="${sy + 20}" font-size="12" font-weight="700">Riepilogo (${esc(map.unit)})${misureTxt(map)}</text>
       <text class="hand" x="${sx + 12}" y="${sy + 40}" font-size="11">Totale VA: <tspan font-weight="700">${fmt(M.va)}</tspan>   Totale NVA: <tspan font-weight="700" fill="#c8321e">${fmt(M.nva)}</tspan></text>
       <text class="hand" x="${sx + 12}" y="${sy + 58}" font-size="11">VA %: <tspan font-weight="700">${fmt(M.vaPct)} %</tspan>   NVA %: <tspan font-weight="700" fill="#c8321e">${fmt(M.nvaPct)} %</tspan></text>
       ${M.ftq != null ? `<text class="hand" x="${sx + 12}" y="${sy + 76}" font-size="11">First Time Quality: <tspan font-weight="700">${fmt(M.ftq)} %</tspan>${M.ftqPartial ? '<tspan class="muted" font-size="10"> · parziale</tspan>' : ''}</text>` : ''}
@@ -892,6 +962,16 @@
   /** posizione del badge di un elemento: quella VISTA (R.elPos), non x/y grezzi — un elemento legato
    *  (lockTo/attachedTo) si disegna altrove (rilievo della revisione). Funzione condivisa fra il
    *  disegno del badge e R.contentBox: non possono divergere perche' sono la STESSA chiamata. */
+  /** Vero quando il foglio HA elementi ma NESSUNO sta nel rettangolo di vista (esito 15, 26/8):
+   *  trascinando ci si puo' perdere — allora compare il bottone «torna al foglio» (I.fit).
+   *  view = {x,y,k} del viewBox (mondo visibile: x..x+W/k, y..y+H/k). Margine 0: conta il
+   *  contenuto vero, non l'alone del crop. */
+  R.vistaVuota = (map, view, stageW, stageH) => {
+    if (!map || !map.elements || !map.elements.length || !view || !(view.k > 0)) return false;
+    const cb = R.contentBox(map, 0); if (!cb) return false;
+    const vw = { x: view.x, y: view.y, w: stageW / view.k, h: stageH / view.k };
+    return !(cb.x < vw.x + vw.w && cb.x + cb.w > vw.x && cb.y < vw.y + vw.h && cb.y + cb.h > vw.y);
+  };
   R.badgeRect = (el, map) => { const p = R.elPos(el, map); return { x: p.x, y: p.y - 14, w: 0, h: 0 }; };
   /** larghezza del fondino del badge dal suo testo: UN posto solo — la usano il disegno
    *  (R.badgeSVG) e il ritaglio (R.badgeExtent → R.contentBox), che non possono divergere. */
@@ -939,7 +1019,9 @@
       const id = attrData(g, 'data-layer');
       if (id && !attiviIds.has(id)) { g.innerHTML = ''; layerKeys.delete(id); }
     });
-    const chiaveDi = (l) => l.id + ':' + map.id + ':' + (map.rev | 0)
+    // il FORMATO delle misurazioni entra nella chiave (esito 12): cambiare l'impostazione
+    // vsm.timefmt deve ridisegnare i badge senza aspettare il prossimo commit
+    const chiaveDi = (l) => l.id + ':' + map.id + ':' + (map.rev | 0) + ':' + V.timeFmt()
       + (opts.drag && l.id === 'riepilogo' ? ':drag:' + (opts.dragN || 0) : '');
     attivi.forEach(l => {
       const key = chiaveDi(l);
