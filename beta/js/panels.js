@@ -394,7 +394,15 @@
     // niente modalita' appese sulla mappa nuova: il primo tocco li' deve funzionare
     if (I.pickConn) I.cancelPickConnect(); if (I.pickLock) I.cancelPickLock(); UI.closePlaceMenu(); if (!V.doc.maps[id]) { UI.toast('Mappa non trovata.'); return; } P.close(); I.select([]); V.switchMap(id); I.restoreView();
     // la palette e la barra del giro seguono la FASE del foglio aperto (stazione 3)
-    UI.buildPalette(); UI.renderMisCtl && UI.renderMisCtl(); };
+    UI.buildPalette(); UI.renderMisCtl && UI.renderMisCtl();
+    // D8: aprire un giro chiuso e' legittimo — si torna a guardarlo, si sistema il layout, si
+    // scrive un appunto. Quello che NON e' legittimo e' farlo senza saperlo, ed e' il rilievo di
+    // Gt: «posso rimisurare la mappa iniziale anche se sono al 4 giro, fare foto e non si capisce
+    // bene piu' nulla». Quindi si dice, una volta, all'apertura: e' il flusso voluto, ecco cosa si
+    // puo' ancora fare, ed ecco la cosa che sorprende — quello che scrivi qui non entra nel giro
+    // gia' generato, perche' la sua copia e' stata presa quando quel giro e' nato.
+    if (V.giroChiuso(V.map())) UI.toast('Giro chiuso: da qui è nato il giro successivo. Puoi sistemare il layout e scrivere note — non entreranno nel giro nuovo. Misure, foto e memo si raccolgono di là.');
+  };
   /** Sale al foglio che contiene questo. Se il passo che lo conteneva esiste ancora, lo seleziona:
    *  tornando su ci si ritrova dove si era scesi, invece che in mezzo al foglio. */
   UI.goUp = () => {
@@ -539,12 +547,19 @@
     // ridisegnare) vive SOLO dietro il «?» della nuvoletta qui sotto.
     // il promemoria del Brief (D-03): tutto il perché sta sull'emettitore, qui sopra
     const briefRiga = briefRigaHTML(V.briefStato(map));
+    // D8: se questo giro ha gia' generato il successivo, il selettore lo dice PRIMA di ogni altra
+    // cosa. Non e' un avviso di cortesia: e' la riga che risponde alla domanda «perche' qui non
+    // parte il cronometro», e senza di lei il no della porta arriverebbe senza un perche' visibile.
+    const chiusoRiga = V.giroChiuso(map)
+      ? '<div class="fase-chiuso" role="note"><b>Giro chiuso</b><br>Da qui è nato il giro successivo, ed è là che si raccolgono misure, foto e memo. Qui puoi ancora sistemare il layout e scrivere note: <b>non entreranno nel giro nuovo</b>, perché la sua copia è stata presa quando è nato.</div>'
+      : '';
     body.innerHTML = nuvola
+      + chiusoRiga
       + gruppo('1 \u00B7 Pianificazione', ['disegna'])
       + briefRiga
       + `<div class="fase-valida-blocco"><span class="fase-freccia" aria-hidden="true">\u2193</span>${riga('valida', 'primary fase-valida')}<span class="fase-freccia" aria-hidden="true">validato \u2193</span></div>`
       + gruppo('2 \u00B7 Misura e analisi', ['misura', 'analizza'])
-      + (['misura', 'analizza'].includes(map.phase) ? `<div class="actions" style="margin:8px 0 10px"><button class="btn big verde" id="fase-inizia">\u25B6 Inizia la misura</button></div>` : '')
+      + (['misura', 'analizza'].includes(map.phase) && !V.giroChiuso(map) ? `<div class="actions" style="margin:8px 0 10px"><button class="btn big verde" id="fase-inizia">\u25B6 Inizia la misura</button></div>` : '')
       + (nuovoGiro ? (UI._nuovoGiroConferma
         ? `<div class="fase-conferma"><b>Creare un nuovo giro?</b><br><small>È una COPIA di questo foglio che riparte da Disegna: questo giro resta com'è, con le sue misure.</small><div class="actions"><button class="btn primary" id="fase-nuovo-giro-si">Sì, nuovo giro</button><button class="btn" id="fase-nuovo-giro-no">Annulla</button></div></div>`
         : `<div class="hint" style="margin:8px 2px 4px">${esc(V.DENIED_MSG['nuovo-giro'])}</div><div class="actions" style="margin:0 0 10px"><button class="btn" id="fase-nuovo-giro">Crea un nuovo giro\u2026</button></div>`) : '')

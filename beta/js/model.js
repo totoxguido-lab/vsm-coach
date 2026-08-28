@@ -1028,6 +1028,11 @@ window.VSM = window.VSM || {};
     const fase = (map && map.phase) || 'disegna';
     const classe = opts.classe || V.classOfOp(op, map);   // opts.classe: SOLO attesaDi e applyTimes (interp. 6)
     if (!classe) return { ok: false, reason: 'fase' };
+    // D8: in un giro chiuso le EVIDENZE non entrano piu'. Il controllo sta qui, nella porta unica,
+    // e non nei pannelli: una via di scrittura che non passasse di qua rimetterebbe in piedi
+    // esattamente il difetto: un'evidenza raccolta oggi che il documento attribuisce a un giro
+    // finito tre giri fa. Le altre classi passano: si chiude la raccolta, non il foglio.
+    if (classe === 'osservazioni' && V.giroChiuso(map)) return { ok: false, reason: 'giro-chiuso' };
     if (classe === 'livelli') {
       const prima = (map && map.layers) || {};
       const dopo = (op.after && op.after.layers) || {};
@@ -1054,7 +1059,8 @@ window.VSM = window.VSM || {};
     fase: 'In questa fase del foglio questo non si può fare: tocca la fase in alto per saperne di più.',
     validato: 'Passo validato ✓: tocca la ✓ nel suo pannello per riaprirlo.',
     ideale: 'Ideale validato \u{1F512}: apri il lucchetto in alto per modificarlo.',
-    'nuovo-giro': 'Da Misura o Analizza non si torna indietro a disegnare: crea un nuovo giro per cambiare il foglio.'
+    'nuovo-giro': 'Da Misura o Analizza non si torna indietro a disegnare: crea un nuovo giro per cambiare il foglio.',
+    'giro-chiuso': 'Questo giro è chiuso: da qui è nato il giro successivo. Puoi ancora spostare le cose e scrivere note — ma le misure, le foto e i memo si raccolgono nel giro di adesso.'
   };
 
   V.commit = (ops, label = '', opts = {}) => {
@@ -1225,6 +1231,19 @@ window.VSM = window.VSM || {};
     }
     return out;
   };
+  /** Un giro che ha gia' generato il giro successivo e' CHIUSO (D8, rilievo di Gt al cancello 1C).
+   *  Non c'e' uno stato nuovo da salvare e non c'e' niente da migrare: ogni giro punta al padre con
+   *  `verOf`, quindi «ha almeno un figlio» vuol dire «non e' piu' l'ultimo della catena», e quel
+   *  fatto il documento lo dice gia' da se'.
+   *  Perche' non si e' appeso alla fase: Misura e Analizza vanno e vengono apposta (FASE_AVANTI le
+   *  ammette in tutte e due le direzioni), quindi entrare in Analizza non significa «ho finito».
+   *  Il momento in cui un giro diventa storia e' quello in cui qualcuno crea il giro dopo — un
+   *  gesto esplicito, con la sua conferma. Si chiude quando la persona ha gia' detto che ha finito.
+   *  Che cosa chiude: la raccolta di EVIDENZE (misure, ⚠, foto, memo), non il foglio. Il layout e i
+   *  commenti restano scrivibili (decisione di Gt), e quello che si scrive li' non entra nel giro
+   *  gia' generato — la copia e' stata presa quando il giro nuovo e' nato. */
+  V.giroChiuso = (map) => !!(map && map.kind === 'current' && map.id
+    && Object.values(V.doc.maps).some(y => y && y.kind === 'current' && y.verOf === map.id));
   /** l'Ideale e' UNO per catena di giri: si cerca su tutta la catena, non solo sulla mappa attiva */
   V.idealOf = (map) => {
     if (!map) return null; if (map.kind === 'future') return map;
@@ -2748,6 +2767,11 @@ window.VSM = window.VSM || {};
     // frase del libro, qui e' la barriera vera — un chiamante che aggirasse il pannello non riesce
     // comunque a far partire un cronometro che poi scriverebbe osservazioni bloccate da V.allowed.
     if (!['misura', 'analizza'].includes(map.phase)) return null;
+    // D8: e nemmeno su un giro chiuso. La barriera sta PRIMA di aprire il giro, non dopo: se il
+    // cronometro partisse e poi V.allowed rifiutasse la scrittura, il tempo scorrerebbe per niente
+    // e la misura sparirebbe alla chiusura — la perdita silenziosa che il cancello 1B ha gia'
+    // pagato una volta (V.measureStop che buttava via la misura senza scriverla e senza dirlo).
+    if (V.giroChiuso(map)) return null;
     const prec = V.measureState(map);
     // Una misura APERTA (passo o attesa, anche in pausa) non si straccia mai in silenzio (C5 del
     // triage debug 25/8, Grok #4): sul canvas misTap gia' rifiutava («chiudilo prima»), ma il
@@ -2814,6 +2838,7 @@ window.VSM = window.VSM || {};
     if (!el || el.type !== 'box' || el.props.validated) return { ko: 'chiuso' };
     if (map.validated) return { ko: 'chiuso' };
     if (!['misura', 'analizza'].includes(map.phase)) return { ko: 'fuori-fase' };
+    if (V.giroChiuso(map)) return { ko: 'giro-chiuso' };   // D8, stessa ragione di measureStart
     if (!V.obsDelGiro(el, map).length) return { ko: 'mai-misurato' };
     const s = V.measureState(map);
     const prima = registraCorrente(map, now);
