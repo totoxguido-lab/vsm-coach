@@ -253,7 +253,16 @@
           'mappe in libreria: ' + Object.keys(V.doc.maps).length,
           'ultimo salvataggio: ' + salvato,
           'spazio tenuto da parte: ' + tenuto,
-          'spazio usato: ' + usato
+          'spazio usato: ' + usato,
+          // Chi apre l'app puo' non essere in Safari: sull'iPad aziendale di Gt il browser e'
+          // Web@Work (MobileIron), e un browser dentro un contenitore gestito puo' non offrire
+          // affatto il service worker. Senza service worker NON c'e' apertura senza rete — cioe'
+          // salta l'assunzione su cui poggia tutta la stazione 7, e nessuno se ne accorgerebbe
+          // finche' qualcuno non prova a camminare in reparto col wi-fi assente. Qui la domanda
+          // si risponde guardando, come per lo spazio tenuto da parte.
+          'apertura senza rete: ' + (!('serviceWorker' in navigator)
+            ? 'no — questo browser non offre il service worker'
+            : (navigator.serviceWorker.controller ? 'sì' : 'non ancora: chiudi e riapri l\u2019app'))
         ].join('\n');
         const copia = () => { try { navigator.clipboard.writeText(info); UI.toast('Dati per la diagnosi copiati.'); } catch (e) { alert(info); } };
         copia();
