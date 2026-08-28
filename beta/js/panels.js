@@ -888,6 +888,42 @@
     if (!d.open) d.showModal();
   };
 
+  /** La foto a schermo intero, DENTRO l'app (rilievo R-1C-01 del cancello 1C). Su un iPad la
+   *  miniatura e' larga 72 px: una foto che documenta un modulo, un cartello o una postazione li'
+   *  dentro NON si legge, e un'evidenza che non si puo' guardare non ha ancora fatto il suo lavoro.
+   *  Terza sorella di UI.chiediValore e UI.chiediConferma: stessa <dialog> riusata, stesso stampo.
+   *  Niente window.open: l'object URL di un allegato non esce mai dall'app (T-02-13-01) — e il
+   *  `src` arriva gia' pronto dal pannello, che il mime lo ha scelto da V.mimeAllegato. */
+  UI.mostraFoto = (src, titolo) => {
+    let d = $('#dlg-foto');
+    if (!d) {
+      d = document.createElement('dialog'); d.id = 'dlg-foto'; d.setAttribute('aria-labelledby', 'foto-head');
+      d.innerHTML = '<div class="d-head" id="foto-head"></div><div class="d-body foto-vista"><img id="foto-grande" alt=""></div>'
+        + '<div class="d-foot"><button class="btn primary" id="foto-chiudi">Chiudi</button></div>';
+      document.body.appendChild(d);
+      $('#foto-chiudi', d).onclick = () => UI.chiudiFoto();
+      // toccare fuori dall'immagine chiude: e' il gesto che chiunque fa su una foto a pieno schermo,
+      // e senza di esso su iPad resta solo il bottone in fondo
+      d.addEventListener('click', (e) => { if (e.target === d) UI.chiudiFoto(); });
+      // Esc passa da 'cancel': anche li' l'immagine va mollata, o resta appesa a un URL revocato
+      d.addEventListener('cancel', () => { const i = $('#foto-grande', d); if (i) i.removeAttribute('src'); });
+    }
+    const img = $('#foto-grande', d);
+    $('#foto-head', d).textContent = titolo || 'Foto';
+    img.alt = titolo || 'foto del passo';
+    img.src = src;
+    if (!d.open) d.showModal();
+  };
+  /** Chiude la vista e MOLLA l'immagine. Non e' pulizia di cortesia: l'object URL che sta mostrando
+   *  appartiene al pannello, che lo revoca a ogni ridisegno — un `src` rimasto appeso a un URL
+   *  revocato e' una finestra che si riapre su un rettangolo rotto, cioe' il quarto stato che il
+   *  02-13 aveva escluso dichiarandone tre. */
+  UI.chiudiFoto = () => {
+    const d = $('#dlg-foto'); if (!d) return;
+    const img = $('#foto-grande', d); if (img) img.removeAttribute('src');
+    if (d.open) d.close();
+  };
+
   UI.renderMaps = () => {
     const list = $('#maplist'); const mia = V.map();
     // la libreria è la libreria DI QUESTO progetto: gli altri si raggiungono dalla cartina

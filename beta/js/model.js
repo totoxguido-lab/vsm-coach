@@ -1491,7 +1491,11 @@ window.VSM = window.VSM || {};
       r.onblocked = () => res(null);
     });
   }
-  function idbGet(k) { return new Promise((res) => { if (!idb) return res(undefined); const tx = idb.transaction(STORE, 'readonly'); const rq = tx.objectStore(STORE).get(k); rq.onsuccess = () => res(rq.result); rq.onerror = () => res(undefined); }); }
+  // onabort accanto a onerror anche in LETTURA (debito D6): una transazione interrotta dal browser
+  // non emette onerror, e senza questa riga la promessa resta appesa — V.load() non si chiude e
+  // l'app resta sulla schermata di avvio, senza nemmeno ripiegare su localStorage e senza spia.
+  // E' una readonly, quindi aborta di rado; ma il prezzo di quel «di rado» e' l'avvio dell'app.
+  function idbGet(k) { return new Promise((res) => { if (!idb) return res(undefined); const tx = idb.transaction(STORE, 'readonly'); const rq = tx.objectStore(STORE).get(k); rq.onsuccess = () => res(rq.result); rq.onerror = () => res(undefined); tx.onabort = () => res(undefined); }); }
   // onabort oltre a onerror: una transazione interrotta (quota esaurita, scheda chiusa a meta') non
   // emette onerror, e senza questo la promessa restava appesa per sempre — il salvataggio spariva in
   // silenzio, senza nemmeno ripiegare su localStorage
@@ -1795,7 +1799,9 @@ window.VSM = window.VSM || {};
       // lo store si legge solo se c'e': senza questa guardia la transazione lancia NotFoundError,
       // il travaso risponde null e si perde anche quello che l'origine aveva scritto nel ripiego
       if (!vecchio.objectStoreNames.contains(STORE)) { try { vecchio.close(); } catch (e) { } return daRipiego(); }
-      const s = await new Promise((res) => { try { const tx = vecchio.transaction(STORE, 'readonly'); const rq = tx.objectStore(STORE).get('doc'); rq.onsuccess = () => res(rq.result); rq.onerror = () => res(null); } catch (e) { res(null); } });
+      // onabort come in idbGet, e per la stessa ragione (debito D6): qui la promessa appesa
+      // fermerebbe l'avvio della beta al primo giro, quello in cui il travaso serve davvero.
+      const s = await new Promise((res) => { try { const tx = vecchio.transaction(STORE, 'readonly'); const rq = tx.objectStore(STORE).get('doc'); rq.onsuccess = () => res(rq.result); rq.onerror = () => res(null); tx.onabort = () => res(null); } catch (e) { res(null); } });
       try { vecchio.close(); } catch (e) { }
       return s || daRipiego();
     } catch (e) { return null; }
@@ -2371,6 +2377,29 @@ window.VSM = window.VSM || {};
   V.allegatiDi = (el) => (el && Array.isArray(el.props && el.props.allegati))
     ? el.props.allegati.filter(a => a && typeof a === 'object' && !Array.isArray(a)
       && typeof a.id === 'string' && a.id.trim() && V.ALLEGATI_TIPI.includes(a.tipo)) : [];
+  /** Di QUESTO giro, o ereditati da un giro precedente (rilievo R-1C-02 del cancello 1C).
+   *  Criterio identico a V.obsDelGiro, e non per simmetria estetica: `allegati[].giro` e
+   *  `obs[].giro` sono la stessa cosa — un riferimento a un FOGLIO (map.id), scritto quando la
+   *  voce nasce e rimappato insieme alle mappe da V.importMaps. «Crea un nuovo giro» copia il
+   *  foglio con dentro le sue props, quindi in un giro nuovo un passo si porta appresso le foto
+   *  di quello prima: senza queste due funzioni la sezione le mostrava indistinguibili da quelle
+   *  raccolte oggi, ed e' esattamente la bugia che il cancello 1B aveva gia' pagato una volta col
+   *  contatore N×.
+   *  Si SEPARA, non si cancella: un'evidenza di ieri resta guardabile, deve solo dire che e' di
+   *  ieri. La chiave assente vale «di questo giro» — e' la marca che manca ai documenti nati prima
+   *  che questa marca esistesse, e sono per definizione del giro in cui si trovano.
+   *  PURE tutte e due, e incapaci di lanciare su qualunque cosa: le chiama il disegno del pannello,
+   *  e un'eccezione li' vorrebbe dire un passo che non si apre. */
+  V.allegatiDelGiro = (el, map) => V.allegatiDi(el).filter(a => !a.giro || a.giro === (map && map.id));
+  V.allegatiPerGiroPrecedente = (el, map) => {
+    const out = [], dove = Object.create(null);
+    V.allegatiDi(el).forEach(a => {
+      if (!a.giro || a.giro === (map && map.id)) return;
+      if (dove[a.giro] == null) { dove[a.giro] = out.length; out.push({ giro: a.giro, allegati: [] }); }
+      out[dove[a.giro]].allegati.push(a);
+    });
+    return out;
+  };
   /** «Su questo passo ci sono 3 foto e 1 memo: spariscono anche loro.» (D-15) — QUI escono solo i
    *  numeri; la frase la compone la UI (UI-SPEC §Copywriting), perche' il singolare e il plurale
    *  sono cose da schermo, non da modello.

@@ -271,7 +271,9 @@
   let allegSeq = 0;        // la chiave di validità: cresce a ogni disegno della sezione
   let allegUrls = [];      // gli object URL vivi di ciò che è a schermo, da revocare al ridisegno
   let allegArm = null;     // {elId, id}: il 🗑 armato vale per QUELLA voce e muore a ogni ridisegno
-  const allegRevoca = () => { allegUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch (e) { /* niente */ } }); allegUrls = []; };
+  // la vista grande si chiude PRIMA di revocare: sta mostrando uno di questi URL, e lasciarla
+  // aperta vorrebbe dire una finestra su un'immagine morta (R-1C-01)
+  const allegRevoca = () => { if (UI && UI.chiudiFoto) UI.chiudiFoto(); allegUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch (e) { /* niente */ } }); allegUrls = []; };
   const allegDurata = (a) => { const s = Math.max(0, Math.round(Number(a.dur) || 0)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
   const allegNome = (a) => (a.tipo === 'foto' ? 'la foto' : 'il memo');
   /** PURA e SINCRONA: legge i soli metadati del documento e non chiede i byte a nessuno. */
@@ -285,24 +287,51 @@
       return `<button type="button" class="alle-x${armato ? ' armato' : ''}" data-alle-x="${esc(a.id)}"`
         + ` aria-label="${armato ? esc(secondo) : 'Togli ' + esc(allegNome(a))}" title="${armato ? esc(secondo) : 'Togli ' + esc(allegNome(a)) + ' (chiede un secondo tocco)'}">${ALL_IC.trash}</button>`;
     };
-    const foto = list.filter(a => a.tipo === 'foto'), memo = list.filter(a => a.tipo === 'memo');
-    let h = '';
-    if (foto.length) h += '<div class="alle-griglia">' + foto.map(a =>
-      `<div class="alle-voce" ${chiave(a)}><div class="alle-mini" data-alle-vista></div>${cestino(a)}</div>`).join('') + '</div>';
-    if (memo.length) h += '<div class="alle-righe">' + memo.map(a =>
-      `<div class="alle-voce alle-riga" ${chiave(a)}>`
-      + `<span data-alle-vista><button type="button" class="alle-ply" disabled aria-label="Riascolta ${esc(allegNome(a))}">${ALL_IC.play}</button></span>`
-      + `<span class="alle-meta">${esc(allegDurata(a))}${a.turno ? ' · ' + esc(a.turno) : ''}</span>${cestino(a)}</div>`).join('') + '</div>';
+    // un gruppo di voci: la griglia delle foto e le righe dei memo, come sono sempre state
+    const gruppoHTML = (voci) => {
+      const foto = voci.filter(a => a.tipo === 'foto'), memo = voci.filter(a => a.tipo === 'memo');
+      let g = '';
+      if (foto.length) g += '<div class="alle-griglia">' + foto.map(a =>
+        `<div class="alle-voce" ${chiave(a)}><button type="button" class="alle-mini" disabled data-alle-vista aria-label="Apri ${esc(allegNome(a))} a schermo intero"></button>${cestino(a)}</div>`).join('') + '</div>';
+      if (memo.length) g += '<div class="alle-righe">' + memo.map(a =>
+        `<div class="alle-voce alle-riga" ${chiave(a)}>`
+        + `<span data-alle-vista><button type="button" class="alle-ply" disabled aria-label="Riascolta ${esc(allegNome(a))}">${ALL_IC.play}</button></span>`
+        + `<span class="alle-meta">${esc(allegDurata(a))}${a.turno ? ' · ' + esc(a.turno) : ''}</span>${cestino(a)}</div>`).join('') + '</div>';
+      return g;
+    };
+    // R-1C-02: di questo giro sopra, gli ereditati sotto, ognuno col nome del giro da cui viene.
+    // Si SEPARA e si dichiara, non si nasconde: una foto di ieri resta guardabile — deve solo
+    // smettere di farsi passare per un'evidenza raccolta oggi. Stessa forma di js/tempo.js.
+    let h = gruppoHTML(V.allegatiDelGiro(el, map));
+    const prec = V.allegatiPerGiroPrecedente(el, map);
+    if (prec.length) {
+      h += '<div class="pop-sec">Giri precedenti</div>';
+      prec.forEach(g => {
+        const mp = V.doc.maps[g.giro];
+        const nome = mp ? (mp.verName || mp.title || 'giro') : 'giro chiuso';
+        h += `<div class="alle-giroprec">${esc(nome)}</div>` + gruppoHTML(g.allegati);
+      });
+      h += '<p class="hint">Raccolte in un giro precedente: si guardano, non contano come evidenza di questo giro.</p>';
+    }
     return h;
   };
   /** Il <details> della sezione, o '' se il passo non ha niente da mostrare. Chiusa di suo: si apre
    *  solo se qualcuno l'ha aperta prima (lo stato lo ricorda localStorage, come le altre sezioni). */
   const allegatiSezioneHTML = (el, map) => {
-    const n = V.contaAllegati(map, el.id).totale;
-    if (!n) return '';
+    // il numero fra parentesi e' quello di QUESTO giro (R-1C-02): era il conto di tutto, ed e' il
+    // modo in cui la sezione diceva «tre evidenze» a chi ne aveva raccolta una. Gli ereditati si
+    // dichiarano a parte invece di sparire dal conto in silenzio — e la sezione si apre anche
+    // quando di questo giro non c'e' niente, altrimenti le foto di ieri diventerebbero
+    // irraggiungibili proprio mentre si prova a dire che esistono.
+    const n = V.allegatiDelGiro(el, map).length;
+    const eredit = V.allegatiPerGiroPrecedente(el, map).reduce((t, g) => t + g.allegati.length, 0);
+    if (!n && !eredit) return '';
     let salvato = null; try { salvato = localStorage.getItem('vsm.pop.sec.allegati'); } catch (e) { /* storage bloccato */ }
+    // il titolo si compone in UN posto: scritto due volte (un ramo con gli ereditati, uno senza)
+    // erano due copie della stessa stringa, ed e' proprio quello che sorveglia la prova del 02-13
+    const titolo = `Foto e memo (${n}${eredit ? ` · ${eredit} da giri precedenti` : ''})`;
     return `<details class="pop-section" data-sec="allegati"${salvato === '1' ? ' open' : ''}>`
-      + `<summary>Foto e memo (${n})</summary><div class="pop-sec-body" data-alle-body></div></details>`;
+      + `<summary>${titolo}</summary><div class="pop-sec-body" data-alle-body></div></details>`;
   };
   /** Il montaggio: lega gli eventi e va a prendere i byte, uno per voce. */
   const allegatiMonta = (pop, el, map) => {
@@ -374,6 +403,13 @@
           img.onerror = () => segnaposto(voce, 'Questo file non si apre più.');
           img.src = url;
           vista.innerHTML = ''; vista.appendChild(img);
+          // i byte ci sono: adesso la miniatura si puo' aprire. Il bottone nasce spento apposta —
+          // acceso prima di qui aprirebbe una finestra vuota (R-1C-01)
+          if (vista.tagName === 'BUTTON') {
+            vista.disabled = false;
+            const nome = (el.props && el.props.title) ? String(el.props.title) : 'passo';
+            vista.onclick = () => UI.mostraFoto(url, 'Foto \u00b7 ' + nome);
+          }
           return;
         }
         const au = document.createElement('audio');
