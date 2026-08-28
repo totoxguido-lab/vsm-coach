@@ -162,7 +162,11 @@
       });
   };
 
-  P.close = () => { const pop = $('#pop'); const was = !pop.classList.contains('hidden'); pop.classList.add('hidden'); pop.classList.remove('sheet'); pop.classList.remove('step'); P.current = null; P._mini = null; if (was && I.selection.length && UI.onSelection) UI.onSelection(I.selection); };
+  // chiudendo il pannello gli object URL delle miniature e dei memo tornano indietro: sono memoria
+  // che non si libera da sola finché la pagina vive, e in una camminata di pannelli aperti e
+  // chiusi si accumulerebbe senza che nessuno se ne accorga (T-02-13-08). `allegRevoca` è
+  // dichiarata più sotto con la sezione degli allegati: qui si legge solo quando si chiude.
+  P.close = () => { const pop = $('#pop'); const was = !pop.classList.contains('hidden'); pop.classList.add('hidden'); pop.classList.remove('sheet'); pop.classList.remove('step'); P.current = null; P._mini = null; allegRevoca(); if (was && I.selection.length && UI.onSelection) UI.onSelection(I.selection); };
   /** rettangolo a schermo dell'elemento, allargato a maniglie e badge (px dello stage) */
   const elScreenRect = (el, map) => {
     if (V.isConnector(el)) { const Pc = R.connPath(el, map); const m = I.toScreen(Pc.mid.x, Pc.mid.y); return { x1: m.x - 34, y1: m.y - 34, x2: m.x + 34, y2: m.y + 44 }; } // attorno all'icona/punto centrale (la linea è sottile)
@@ -238,6 +242,154 @@
     $('#gpc-x', c).onclick = no; $('[data-rp-no]', c).onclick = no;
     $('[data-rp-ok]', c).onclick = () => { UI.closeGuideCard(); onOk(); };
   };
+  /* ---------- gli ALLEGATI nel pannello del passo (F1-1C, D-15, UI-SPEC §3) --------------------
+   * Quello che si è raccolto camminando si rivede qui, e si toglie in modo recuperabile. Una
+   * sezione a fisarmonica sola, costruita UNA volta e montata da DUE chiamanti — P.open (disegna,
+   * valida) e openPassoMisura (misura, analizza) — sullo stampo di T.sectionHTML/T.mount: una
+   * parte pura che fa la stringa, una che lega gli eventi. Due copie andrebbero alla deriva.
+   *
+   * IL PUNTO DELICATO: lo stampo di T.mount è SINCRONO, V.alleg.prendi no. I byte arrivano da una
+   * promessa, e la regola è in tre parti:
+   * 1. si disegna SUBITO tutto, leggendo i soli METADATI del documento (V.allegatiDi): la cornice
+   *    vuota della miniatura, il ▶ spento con la durata. Il numero fra parentesi e il numero di
+   *    voci non cambiano mai dopo — così il pannello non salta e P.place non deve riposizionarsi;
+   * 2. al resolve si sostituisce SOLO il nodo di quella voce. Mai un ridisegno dell'host intero:
+   *    chiuderebbe la fisarmonica e perderebbe lo scorrimento sotto le dita di chi sta guardando;
+   * 3. prima di toccare il DOM si verifica che il nodo sia ANCORA nel documento, ancora dello
+   *    stesso passo e ancora dello stesso disegno (la chiave {elId, seq}) — fra la richiesta e la
+   *    risposta il pannello può essere stato chiuso, riaperto su un altro passo o ridisegnato. Se
+   *    la guardia fallisce non si tocca niente e l'object URL appena creato si revoca SUBITO,
+   *    altrimenti resterebbe appeso senza nessuno che lo mostri. È lo stesso ragionamento della
+   *    guardia dopo l'attesa di misWake: la cosa può essere finita mentre la richiesta era in volo.
+   *
+   * Se il passo non ha niente, la sezione non compare affatto: nessuno stato vuoto (UI-SPEC). */
+  const ALL_IC = {
+    play: '<svg viewBox="0 0 24 24"><path d="M8 5.2l10 6.8-10 6.8z" fill="currentColor"/></svg>',
+    pausa: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M9.5 6v12M14.5 6v12"/></svg>',
+    trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 7h15M9.5 7V4.8h5V7M7 7l1 12.5h8L17 7"/></svg>',
+  };
+  let allegSeq = 0;        // la chiave di validità: cresce a ogni disegno della sezione
+  let allegUrls = [];      // gli object URL vivi di ciò che è a schermo, da revocare al ridisegno
+  let allegArm = null;     // {elId, id}: il 🗑 armato vale per QUELLA voce e muore a ogni ridisegno
+  const allegRevoca = () => { allegUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch (e) { /* niente */ } }); allegUrls = []; };
+  const allegDurata = (a) => { const s = Math.max(0, Math.round(Number(a.dur) || 0)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+  const allegNome = (a) => (a.tipo === 'foto' ? 'la foto' : 'il memo');
+  /** PURA e SINCRONA: legge i soli metadati del documento e non chiede i byte a nessuno. */
+  const allegatiHTML = (el, map, seq) => {
+    const list = V.allegatiDi(el);
+    if (!list.length) return '';
+    const chiave = (a) => `data-alle="${esc(a.id)}" data-alle-el="${esc(el.id)}" data-alle-seq="${seq}"`;
+    const cestino = (a) => {
+      const armato = !!(allegArm && allegArm.elId === el.id && allegArm.id === a.id);
+      const secondo = 'Tocca ancora per togliere ' + allegNome(a);
+      return `<button type="button" class="alle-x${armato ? ' armato' : ''}" data-alle-x="${esc(a.id)}"`
+        + ` aria-label="${armato ? esc(secondo) : 'Togli ' + esc(allegNome(a))}" title="${armato ? esc(secondo) : 'Togli ' + esc(allegNome(a)) + ' (chiede un secondo tocco)'}">${ALL_IC.trash}</button>`;
+    };
+    const foto = list.filter(a => a.tipo === 'foto'), memo = list.filter(a => a.tipo === 'memo');
+    let h = '';
+    if (foto.length) h += '<div class="alle-griglia">' + foto.map(a =>
+      `<div class="alle-voce" ${chiave(a)}><div class="alle-mini" data-alle-vista></div>${cestino(a)}</div>`).join('') + '</div>';
+    if (memo.length) h += '<div class="alle-righe">' + memo.map(a =>
+      `<div class="alle-voce alle-riga" ${chiave(a)}>`
+      + `<span data-alle-vista><button type="button" class="alle-ply" disabled aria-label="Riascolta ${esc(allegNome(a))}">${ALL_IC.play}</button></span>`
+      + `<span class="alle-meta">${esc(allegDurata(a))}${a.turno ? ' · ' + esc(a.turno) : ''}</span>${cestino(a)}</div>`).join('') + '</div>';
+    return h;
+  };
+  /** Il <details> della sezione, o '' se il passo non ha niente da mostrare. Chiusa di suo: si apre
+   *  solo se qualcuno l'ha aperta prima (lo stato lo ricorda localStorage, come le altre sezioni). */
+  const allegatiSezioneHTML = (el, map) => {
+    const n = V.contaAllegati(map, el.id).totale;
+    if (!n) return '';
+    let salvato = null; try { salvato = localStorage.getItem('vsm.pop.sec.allegati'); } catch (e) { /* storage bloccato */ }
+    return `<details class="pop-section" data-sec="allegati"${salvato === '1' ? ' open' : ''}>`
+      + `<summary>Foto e memo (${n})</summary><div class="pop-sec-body" data-alle-body></div></details>`;
+  };
+  /** Il montaggio: lega gli eventi e va a prendere i byte, uno per voce. */
+  const allegatiMonta = (pop, el, map) => {
+    const d = pop && pop.querySelector('[data-sec="allegati"]');
+    const host = d && d.querySelector('[data-alle-body]');
+    if (!host) return;
+    allegRevoca();                       // gli object URL del disegno di prima non servono più
+    const seq = ++allegSeq;
+    host.innerHTML = allegatiHTML(el, map, seq);
+    d.addEventListener('toggle', () => {
+      try { localStorage.setItem('vsm.pop.sec.allegati', d.open ? '1' : '0'); } catch (e) { /* storage bloccato */ }
+      P.place(el);
+    });
+    const trova = (id) => Array.from(host.querySelectorAll('[data-alle]')).find(n => n.dataset.alle === id) || null;
+    const vivo = (voce) => !!voce && document.contains(voce) && voce.dataset.alleEl === el.id && voce.dataset.alleSeq === String(seq);
+    /** i tre stati dichiarati (Pitfall 6): mai una sparizione silenziosa, sempre una parola */
+    const segnaposto = (voce, testo) => {
+      const vista = voce && voce.querySelector('[data-alle-vista]');
+      if (!vista) return;
+      vista.innerHTML = `<span class="alle-manca">${esc(testo)}</span>`;
+    };
+    // il 🗑 in DUE tocchi: il primo arma questa voce, il secondo toglie. I BYTE NON SI CANCELLANO
+    // QUI: il commit sul documento è annullabile con ↶, e cancellare i byte subito renderebbe
+    // l'annulla una bugia (↶ riporterebbe un metadato che punta al vuoto). Se li porta via la
+    // spazzata degli orfani del caricamento successivo — l'ordine dichiarato di V.allegOrfani.
+    Array.from(host.querySelectorAll('[data-alle-x]')).forEach(b => b.onclick = () => {
+      const id = b.dataset.alleX;
+      const a = V.allegatiDi(el).find(x => x.id === id); if (!a) return;
+      if (!(allegArm && allegArm.elId === el.id && allegArm.id === id)) {
+        allegArm = { elId: el.id, id };
+        b.classList.add('armato');
+        UI.toast('Tocca ancora per togliere ' + allegNome(a));
+        return;
+      }
+      allegArm = null;
+      if (!V.togliAllegatoMeta(map, el.id, id)) { UI.toast('Non si è potuto togliere: il foglio ha il lucchetto o il passo ha la ✓.'); return; }
+      UI.toast(a.tipo === 'foto' ? 'Tolta. ↶ per rimetterla' : 'Tolto. ↶ per rimetterlo');
+      P.open(el.id);           // la sezione si ridisegna, e sparisce se quello era l'ultimo
+    });
+    V.allegatiDi(el).forEach(a => {
+      V.alleg.prendi(a.id).then(r => {
+        const voce = trova(a.id);
+        // i byte non sono su questo iPad: NON è un errore, è lo stato normale di un foglio
+        // importato da un'altra parte — e si dice, non si nasconde (D-14, C-2)
+        if (!r) {
+          if (vivo(voce)) segnaposto(voce, a.tipo === 'foto'
+            ? 'Questa foto è rimasta sull’iPad dove è stata scattata.'
+            : 'Questo memo è rimasto sull’iPad dove è stato registrato.');
+          return;
+        }
+        // il mime NON si prende dal documento e nemmeno alla cieca dal record: elenco chiuso in
+        // base al TIPO (V.mimeAllegato) — un allegato che si dichiara 'text/html' non deve poter
+        // far aprire nulla (T-02-13-01). E nessun window.open di un object URL, mai.
+        const mime = V.mimeAllegato(a.tipo, r.mime);
+        let url = null;
+        try { url = mime ? URL.createObjectURL(new Blob([r.buf], { type: mime })) : null; } catch (e) { url = null; }
+        if (!vivo(voce) || !url) {
+          // host stantio: si revoca SUBITO, o resta appeso senza nessuno che lo mostri (T-02-13-08)
+          if (url) { try { URL.revokeObjectURL(url); } catch (e) { /* niente */ } }
+          if (!url && vivo(voce)) segnaposto(voce, 'Questo file non si apre più.');
+          return;
+        }
+        allegUrls.push(url);
+        const vista = voce.querySelector('[data-alle-vista]');
+        if (a.tipo === 'foto') {
+          const img = document.createElement('img');
+          img.alt = 'foto del passo'; img.decoding = 'async';
+          // record presente ma illeggibile: il terzo stato, e si dice anche quello
+          img.onerror = () => segnaposto(voce, 'Questo file non si apre più.');
+          img.src = url;
+          vista.innerHTML = ''; vista.appendChild(img);
+          return;
+        }
+        const au = document.createElement('audio');
+        au.preload = 'none'; au.src = url;
+        au.onerror = () => segnaposto(voce, 'Questo file non si apre più.');
+        const ply = vista.querySelector('.alle-ply');
+        if (!ply) return;
+        ply.disabled = false;
+        au.onended = () => { ply.innerHTML = ALL_IC.play; };
+        ply.onclick = () => {
+          if (au.paused) { au.play().then(() => { ply.innerHTML = ALL_IC.pausa; }).catch(() => segnaposto(voce, 'Questo file non si apre più.')); }
+          else { au.pause(); ply.innerHTML = ALL_IC.play; }
+        };
+      });
+    });
+  };
   /** ESITO 12 della prova iPad (E12-d, 26/8): in Misura/Analizza il passo si apre in una finestra
    *  SUA, di sola lettura — non il pannello dell'editing tutto disabilitato. Dentro: il nome (o
    *  «Passo N» dalla sequenza), le attività in elenco, il resoconto delle misure (max·min·media +
@@ -264,8 +416,10 @@
       return Object.assign({}, s, { aperto });
     });
     if (secDefs.length) h += secDefs.map(s => `<details class="pop-section" data-sec="${esc(s.id)}" ${s.aperto ? 'open' : ''}><summary>${esc(s.title || '')}</summary><div class="pop-sec-body" data-sec-body></div></details>`).join('');
+    h += allegatiSezioneHTML(el, map);   // in coda: quello che si è raccolto camminando (D-15)
     UI.hideQuick();
     const pop = $('#pop'); pop.innerHTML = h; pop.classList.remove('hidden'); pop.classList.add('step'); P.place(el);
+    allegatiMonta(pop, el, map);
     if (secDefs.length) {
       const secEls = $$('.pop-section', pop);
       secDefs.forEach(s => {
@@ -458,9 +612,11 @@
       return Object.assign({}, s, { aperto });
     });
     if (secDefs.length) h += secDefs.map(s => `<details class="pop-section" data-sec="${esc(s.id)}" ${s.aperto ? 'open' : ''}><summary>${esc(s.title || '')}</summary><div class="pop-sec-body" data-sec-body></div></details>`).join('');
+    h += allegatiSezioneHTML(el, map);   // in coda: quello che si è raccolto camminando (D-15)
     h += minis; // i pannellini del passo: posizionati sopra il contenuto dal CSS, nascosti finché un tondo li chiama
     UI.hideQuick(); // il pop-up contiene le stesse azioni della barra rapida
     const pop = $('#pop'); pop.innerHTML = h; pop.classList.remove('hidden'); pop.classList.toggle('step', isBox); P.place(el);
+    allegatiMonta(pop, el, map);
     // le sezioni si riempiono DOPO aver messo l'HTML nel DOM (render(host) chiede un host vero) —
     // e P.place si richiama alla fine, perche' SOLO ora si conosce l'altezza vera del pannello
     // (rapporto dom R2: «dopo l'ultimo riempimento»).

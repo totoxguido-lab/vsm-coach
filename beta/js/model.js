@@ -1609,6 +1609,39 @@ window.VSM = window.VSM || {};
    *
    *  `buf` si salva come ArrayBuffer con il `mime` accanto, non come Blob (WebKit ha avuto bug sui
    *  Blob dentro IndexedDB): il Blob si ricostruisce alla lettura, in UI. */
+  /** Quanto diventa grande una foto ridotta (F1-1C, D-13, 02-RESEARCH.md §Pattern 6). PURA, e sta
+   *  QUI e non accanto al canvas per la stessa ragione di V.allegOrfani: in Node si prova, sul
+   *  vetro no. Una moltiplicazione sbagliata qui non la vedrebbe nessuno — la foto entrerebbe lo
+   *  stesso, solo grande dieci volte, e una camminata riempirebbe l'iPad.
+   *  Tre regole, tutte e tre provate: `k` non supera MAI 1 (una foto piccola non si ingrandisce:
+   *  si guadagnerebbero pixel finti e si perderebbe spazio), nessun lato scende sotto 1 (un canvas
+   *  0xN non disegna niente e `toBlob` darebbe null, cioe' la foto sparirebbe in silenzio), e
+   *  misure che non sono numeri veri ritornano `null` invece di un canvas NaN. */
+  V.misuraRidotta = (w, h, latoMax) => {
+    const n = (x) => (typeof x === 'number' && isFinite(x) && x > 0) ? x : null;
+    const lw = n(w), lh = n(h), max = n(latoMax);
+    if (!lw || !lh || !max) return null;
+    const k = Math.min(1, max / Math.max(lw, lh));
+    return { w: Math.max(1, Math.round(lw * k)), h: Math.max(1, Math.round(lh * k)) };
+  };
+  /** In che CONTENITORE si registra un memo vocale (F1-1C, D-12, 02-RESEARCH.md §Pattern 7).
+   *  Si sceglie a runtime, mai a colpo sicuro: Safari 14.3→18.3 registrava solo audio/mp4 (AAC),
+   *  dalla 18.4 anche webm/opus. E `isTypeSupported` NON esisteva su Safari 14.x — chiamarla lì
+   *  avrebbe lanciato, e il memo non sarebbe partito affatto su un iPad vecchio, in reparto, senza
+   *  che nessuno capisse perché: la guardia `typeof … === 'function'` è quella riga lì.
+   *  `audio/mp4` è la PRIMA scelta anche dove webm è disponibile: è il formato che qualunque
+   *  strumento di trascrizione futuro legge senza conversione, ed è quello che D-12 chiama
+   *  «formato accessibile» (predisposto scalabile, senza costruire niente di quel futuro adesso).
+   *  Stringa vuota = «scegli tu», che è quello che MediaRecorder fa col suo default.
+   *  Sta nel modello, e non accanto al bottone, perché così una prova può metterle in mano un
+   *  browser finto e guardare che cosa sceglie (stessa ragione di V.allegOrfani). */
+  V.mimeMemo = () => {
+    const MR = (typeof window !== 'undefined' && window) ? window.MediaRecorder : null;
+    const ok = (t) => !!MR && typeof MR.isTypeSupported === 'function' && !!MR.isTypeSupported(t);
+    return ok('audio/mp4') ? 'audio/mp4'
+      : ok('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus'
+        : '';
+  };
   V.alleg = {
     /** Scrive i byte e ritorna il META da passare a V.allegaMeta — ma NON lo scrive nel documento:
      *  le due meta' restano separate. null = non scritto (nessun database, dati incompleti, quota). */
@@ -2355,6 +2388,82 @@ window.VSM = window.VSM || {};
     const scelti = (elId == null) ? els : els.filter(e => e && e.id === elId);
     scelti.forEach(el => V.allegatiDi(el).forEach(a => { out[a.tipo]++; out.totale++; }));
     return out;
+  };
+  /** Il `mime` con cui si ricostruisce il Blob di un allegato — e la ragione per cui NON si prende
+   *  quello scritto nel documento (F1-1C, minaccia T-02-13-01). Un file JSON confezionato puo'
+   *  dichiarare `mime: 'text/html'` o `image/svg+xml` su una sua foto: se il pannello costruisse il
+   *  Blob con quello, un allegato diventerebbe una pagina che esegue. Qui il TIPO comanda — e' un
+   *  elenco chiuso (V.ALLEGATI_TIPI) — e il formato dichiarato passa solo se e' davvero uno dei
+   *  formati di quel tipo. Altrimenti si ripiega su quello di casa: una foto resta un'immagine e un
+   *  memo resta audio, qualunque cosa dica il file.
+   *  Il ripiego NON e' una bugia: i byte sono quelli che sono, e se non si aprono la UI lo dice
+   *  («Questo file non si apre piu'»). La bugia sarebbe fidarsi della parola del file.
+   *  `null` = tipo fuori dall'elenco: non si disegna niente, non si apre niente. */
+  const MIME_ALLEGATI = {
+    foto: { ok: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'], casa: 'image/jpeg' },
+    memo: { ok: ['audio/mp4', 'audio/webm', 'audio/mpeg', 'audio/ogg', 'audio/aac', 'audio/wav'], casa: 'audio/mp4' },
+  };
+  V.mimeAllegato = (tipo, mime) => {
+    const regola = MIME_ALLEGATI[tipo];
+    if (!regola || !V.ALLEGATI_TIPI.includes(tipo)) return null;
+    const m = (typeof mime === 'string') ? mime.split(';')[0].trim().toLowerCase() : '';
+    return regola.ok.includes(m) ? m : regola.casa;
+  };
+  /** «3 foto e 1 memo»: l'enumerazione che entra nelle conferme distruttive (D-15, UI-SPEC
+   *  §Copywriting). I NUMERI li da' V.contaAllegati; qui ci sono le parole, coi loro singolari —
+   *  e stanno accanto ai numeri, e non nel pannello, per la stessa ragione di V.allegOrfani: cosi'
+   *  una prova in Node le legge. Le FRASI intere («Su questo passo ci sono …: spariscono anche
+   *  loro.») restano dove vive la copy, cioe' nella UI: qui c'e' solo l'elenco.
+   *  Stringa vuota quando non c'e' niente da elencare: la frase non nasce affatto. */
+  V.fraseAllegati = (conta) => {
+    const c = conta || {};
+    const pezzi = [];
+    const n = (x) => (typeof x === 'number' && isFinite(x) && x > 0) ? Math.round(x) : 0;
+    const f = n(c.foto), m = n(c.memo);
+    // «foto» e «memo» sono invariabili in italiano: il singolare vive nel VERBO della frase che le
+    // ospita («ci sono» / «c'è»), e quello lo mette la UI insieme al resto della copy
+    if (f) pezzi.push(f + ' foto');
+    if (m) pezzi.push(m + ' memo');
+    return pezzi.join(' e ');
+  };
+  /** Gli allegati che il DOCUMENTO ricorda e di cui su questo iPad NON ci sono i byte (D-14,
+   *  Pitfall 6). E' il gemello speculare di V.allegOrfani qui sotto, e le due funzioni guardano
+   *  nella stessa scatola da due lati opposti — per questo stanno vicine:
+   *  - V.allegOrfani: byte senza metadato → si CANCELLANO (rumore innocuo);
+   *  - V.allegSenzaByte: metadato senza byte → NON si tocca niente, si MOSTRA un segnaposto.
+   *  Confonderle sarebbe la perdita silenziosa che C-2 vieta: sono proprio gli allegati di un
+   *  foglio importato da un altro iPad, cioe' l'informazione che D-14 esiste per non buttare via.
+   *  PURA, e incapace di lanciare su qualunque cosa le si dia. */
+  V.allegSenzaByte = (idsInDocumento, idsInDatabase) => {
+    const ci = new Set((Array.isArray(idsInDatabase) ? idsInDatabase : []).filter(x => typeof x === 'string' && x));
+    const visti = new Set(), fuori = [];
+    (Array.isArray(idsInDocumento) ? idsInDocumento : []).forEach(id => {
+      if (typeof id !== 'string' || !id || ci.has(id) || visti.has(id)) return;
+      visti.add(id); fuori.push(id);
+    });
+    return fuori;
+  };
+  /** Quanti allegati di queste mappe sono rimasti sull'iPad dove sono stati presi. La usa il toast
+   *  dopo un import (D-14): senza, i segnaposti comparirebbero nei pannelli e nessuno saprebbe
+   *  perche'. Legge lo store una mappa alla volta dall'indice `mapId` (V.alleg.perMappa), e la
+   *  decisione la prende V.allegSenzaByte, che e' pura e provata. Non lancia mai: al peggio conta 0.
+   *  Ritorna una promessa di NUMERO, non di elenco: chi chiama deve dire quanti, non quali.
+   *  Si chiede id per id con `prendi` e non in blocco con `perMappa` per una ragione precisa: un
+   *  record che ESISTE ma non ha i byte dentro (mezza scrittura, transazione interrotta) risponde
+   *  `null` a `prendi` ma la sua chiave comparirebbe lo stesso in `perMappa`. Il conto deve dire
+   *  quello che il pannello mostrera', non quello che lo store ricorda di avere. */
+  V.allegatiMancanti = (mapIds) => {
+    const ids = (Array.isArray(mapIds) ? mapIds : []).filter(x => typeof x === 'string' && x);
+    if (!ids.length) return Promise.resolve(0);
+    const nelDoc = [];
+    ids.forEach(id => {
+      const map = (V.doc && V.doc.maps) ? V.doc.maps[id] : null;
+      ((map && Array.isArray(map.elements)) ? map.elements : []).forEach(el => V.allegatiDi(el).forEach(a => nelDoc.push(a.id)));
+    });
+    if (!nelDoc.length) return Promise.resolve(0);
+    return Promise.all(nelDoc.map(id => V.alleg.prendi(id).then(r => (r ? id : null)).catch(() => null)))
+      .then(esiti => V.allegSenzaByte(nelDoc, esiti.filter(Boolean)).length)
+      .catch(() => 0);
   };
   /** Gli id dei byte rimasti SENZA metadato (F1-1C, 02-RESEARCH.md §Pitfall 10 punto 2): quello che
    *  il piano 02-11 dovra' spazzare dallo store al `V.load` successivo.

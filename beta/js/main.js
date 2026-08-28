@@ -57,6 +57,22 @@
     return n === 1 ? 'Un cronometro rimasto aperto è stato chiuso.' : (n + ' cronometri rimasti aperti sono stati chiusi.');
   }
 
+  /** Gli allegati di un foglio appena importato di cui su QUESTO iPad non ci sono i byte (F1-1C,
+   *  D-14, 02-RESEARCH.md §Pitfall 6). Nel pannello del passo compariranno come segnaposti
+   *  dichiarati; senza questa riga nessuno saprebbe perché, e «tre foto diventate riquadri vuoti»
+   *  è esattamente la sparizione silenziosa che C-2 vieta.
+   *  Il conto vero lo fa V.allegatiMancanti, che apre il database: qui c'è solo la frase, e arriva
+   *  DOPO il toast dell'import perché quella è la risposta alla domanda che nasce guardandolo. */
+  function notaAllegatiAltrove(mapIds) {
+    if (!mapIds || !mapIds.length || !V.allegatiMancanti) return;
+    V.allegatiMancanti(mapIds).then(n => {
+      if (!n) return;
+      setTimeout(() => UI.toast(n === 1
+        ? '1 allegato è rimasto sull’iPad dove è stato preso: qui resta il segnaposto.'
+        : n + ' allegati sono rimasti sull’iPad dove sono stati presi: qui restano i segnaposti.'), 2400);
+    }).catch(() => { /* il conto non riuscito non deve rovinare un import andato bene */ });
+  }
+
   function bindHeader() {
     // il titolo non si scrive piu' inline: il blocco in barra apre il pop-up con tutti i dati (e la modifica)
     $('#map-head').onclick = () => { if (V.pop.current === '__title__') V.pop.close(); else V.pop.openTitle(); };
@@ -193,7 +209,7 @@
     const CLOSE_ON = ['legend', 'guide', 'maps', 'help', 'settings', 'coach', 'delete', 'reset', 'exit', 'giri', 'lock', 'info', 'misura', 'attach', 'projects'];
     $$('#menu [data-m]').forEach(b => b.onclick = () => { if (CLOSE_ON.includes(b.dataset.m)) menu.classList.add('hidden'); menuAction(b.dataset.m); });
     UI.loadExample = () => { UI.toggleGuide(false); menuAction('example'); };
-    $('#file-open').addEventListener('change', (e) => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => { try { const res = V.importMaps(JSON.parse(r.result)); I.restoreView(); const cron = notaCronometriChiusi(res.note); UI.toast(res.count + ' mappe importate' + (res.note && res.note.includes('v2') ? ' (convertito dalla 0.9)' : '') + '.' + (cron ? ' ' + cron : '')); } catch (err) { UI.toast('File non valido: ' + err.message); } }; r.readAsText(f); e.target.value = ''; });
+    $('#file-open').addEventListener('change', (e) => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => { try { const prima = new Set(Object.keys(V.doc.maps)); const res = V.importMaps(JSON.parse(r.result)); I.restoreView(); const cron = notaCronometriChiusi(res.note); UI.toast(res.count + ' mappe importate' + (res.note && res.note.includes('v2') ? ' (convertito dalla 0.9)' : '') + '.' + (cron ? ' ' + cron : '')); notaAllegatiAltrove(Object.keys(V.doc.maps).filter(k => !prima.has(k))); } catch (err) { UI.toast('File non valido: ' + err.message); } }; r.readAsText(f); e.target.value = ''; });
   }
   function menuAction(a) {
     const map = V.map();
@@ -272,7 +288,23 @@
         V.azzeraSpazio().then(() => location.reload()).catch(() => location.reload());
         break;
       }
-      case 'delete': { const nFigli = Object.values(V.doc.maps).filter(o => o.parentId === map.id).length; const codaFigli = nFigli ? (nFigli === 1 ? '\n\nIl suo sotto-foglio non si perde: si riappende più in alto.' : `\n\nI suoi ${nFigli} sotto-fogli non si perdono: si riappendono più in alto.`) : ''; if (confirm(`Eliminare la mappa "${map.title || 'senza titolo'}"? Non si può annullare.${codaFigli}`)) { const r = deleteMapAsked(map); if (r.ok) { I.restoreView(); V.saveNow(); UI.toast(r.withPair ? 'Attuale e Ideale eliminati.' : 'Mappa eliminata.'); } } break; }
+      // Eliminare un foglio: la domanda la fa una finestra DELL'APP, non il pop-up del browser
+      // (rilievo 2 del cancello 1B), e se sul foglio ci sono foto o memo lo dice prima — «spariscono
+      // anche loro» (F1-1C, D-15, UI-SPEC §Copywriting). I numeri vengono da V.contaAllegati, che
+      // legge i metadati dal documento: la domanda si risponde senza aprire un database.
+      case 'delete': {
+        const nFigli = Object.values(V.doc.maps).filter(o => o.parentId === map.id).length;
+        const codaFigli = nFigli ? (nFigli === 1 ? '\n\nIl suo sotto-foglio non si perde: si riappende più in alto.' : `\n\nI suoi ${nFigli} sotto-fogli non si perdono: si riappendono più in alto.`) : '';
+        const alleg = V.contaAllegati(map);
+        const codaAlleg = alleg.totale ? ('\n\nSu questa mappa ci sono ' + V.fraseAllegati(alleg) + ': spariscono anche loro.') : '';
+        const elimina = () => { const r = deleteMapAsked(map); if (r.ok) { I.restoreView(); V.saveNow(); UI.toast(r.withPair ? 'Attuale e Ideale eliminati.' : 'Mappa eliminata.'); } };
+        UI.chiediConferma({
+          titolo: 'Eliminare la mappa?',
+          testo: `«${map.title || 'senza titolo'}» — non si può annullare.${codaFigli}${codaAlleg}`,
+          conferma: 'Elimina lo stesso',
+        }, elimina);
+        break;
+      }
       case 'exit': { // nell'app Android chiude davvero; nel browser/PWA la scheda non si puo' chiudere da codice
         const cap = window.Capacitor;
         if (cap && cap.Plugins && cap.Plugins.App && cap.Plugins.App.exitApp) { cap.Plugins.App.exitApp(); break; }

@@ -860,6 +860,34 @@
     if (!('ontouchstart' in window)) { try { campo.focus(); campo.select(); } catch (e) { /* niente */ } }
   };
 
+  /** Una CONFERMA prima di una cosa che non si annulla, con le parole di chi la sta per fare
+   *  (F1-1C, D-15, UI-SPEC §Copywriting «conferme distruttive»). Gemella di UI.chiediValore, stessa
+   *  finestra riusata e stesso patto sul callback: Esc vale Annulla e il gestore appeso muore con
+   *  la finestra — una finestra sola, un callback stantio eliminerebbe la cosa sbagliata.
+   *  Esiste perché una domanda dell'app non può essere un pop-up del browser: è il rilievo 2 del
+   *  cancello 1B («rendilo coerente con lo stile del canvas e delle finestre»), e una conferma che
+   *  parla di foto e memo è esattamente il posto dove le parole contano. */
+  let confermaSi = null;
+  UI.chiediConferma = (opts, onSi) => {
+    const o = opts || {};
+    let d = $('#dlg-conferma');
+    if (!d) {
+      d = document.createElement('dialog'); d.id = 'dlg-conferma'; d.setAttribute('aria-labelledby', 'conferma-head');
+      d.innerHTML = '<div class="d-head" id="conferma-head"></div><div class="d-body"><p id="conferma-testo"></p></div>'
+        + '<div class="d-foot"><button class="btn" id="conferma-no">Annulla</button><button class="btn danger" id="conferma-si"></button></div>';
+      document.body.appendChild(d);
+      d.addEventListener('cancel', () => { confermaSi = null; });
+      $('#conferma-no', d).onclick = () => { confermaSi = null; d.close(); };
+      $('#conferma-si', d).onclick = () => { const f = confermaSi; confermaSi = null; d.close(); if (f) f(); };
+    }
+    $('#conferma-head', d).textContent = o.titolo || '';
+    // textContent, non innerHTML: qui dentro finiscono titoli di fogli scritti da una persona
+    $('#conferma-testo', d).textContent = o.testo || '';
+    $('#conferma-si', d).textContent = o.conferma || 'Elimina lo stesso';
+    confermaSi = typeof onSi === 'function' ? onSi : null;
+    if (!d.open) d.showModal();
+  };
+
   UI.renderMaps = () => {
     const list = $('#maplist'); const mia = V.map();
     // la libreria è la libreria DI QUESTO progetto: gli altri si raggiungono dalla cartina
@@ -912,7 +940,13 @@
   const misWakeOff = () => { try { if (misWL) misWL.release(); } catch (e) { /* niente */ } misWL = null; };
   // al RIENTRO nell'app il cronometro torna visibile in primo piano, con l'avviso aggiornato
   // (decisione Gt 26/8, stazione 12-A/B): non solo il Wake Lock — anche la barra si ridisegna
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && misAttiva()) { misWake(); UI.renderMisCtl(); } });
+  // e alla USCITA il microfono si spegne (T-02-13-03): un memo in corso si chiude e si salva, il
+  // flusso si rilascia. Un microfono lasciato acceso mentre l'app è in secondo piano è il pallino
+  // rosso di iOS che resta su, cioe' l'app che sembra registrare l'ambiente (D-12 dice il contrario)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') { try { UI.memoChiudi(); } catch (e) { /* niente */ } return; }
+    if (misAttiva()) { misWake(); UI.renderMisCtl(); }
+  });
   // oltre l'ora la barra scrive h:mm:ss (C18): la logica vive in V.fmtCrono, pura e provata
   const misMMSS = (sec) => V.fmtCrono(sec);
   // icone della barra del giro: SVG puliti, stessi tratti delle icone della palette — niente
@@ -929,8 +963,220 @@
     // gli altri. MAI l'emoji ⚠️ — su iOS cambia forma, porta il suo colore e non prende currentColor,
     // quindi lo stato «segnato» (icona bianca su ambra) non si vedrebbe. Il punto e' un cerchio
     // pieno e non un tratto di lunghezza zero, che con stroke-linecap non tutti i browser disegnano.
-    warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.6 1.9 20.4h20.2z"/><path d="M12 9.2v4.9"/><circle cx="12" cy="17.4" r="1.15" fill="currentColor" stroke="none"/></svg>'
+    warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.6 1.9 20.4h20.2z"/><path d="M12 9.2v4.9"/><circle cx="12" cy="17.4" r="1.15" fill="currentColor" stroke="none"/></svg>',
+    // 📷 e 🎤 (F1-1C, D-12, D-13): stessa mano del ⚠ — tratto 2.2, currentColor, nessun
+    // riempimento. Valgono qui le stesse ragioni dell'emoji vietata: su iOS cambia forma, porta il
+    // suo colore e NON prende currentColor, quindi l'icona bianca del microfono in registrazione
+    // (su fondo rosso) non si vedrebbe affatto.
+    foto: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.1 8.5h3.5l1.5-2.3h7.8l1.5 2.3h3.5v10.3H3.1z"/><circle cx="12" cy="13.5" r="3.3"/></svg>',
+    mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2.7" width="6" height="11" rx="3"/><path d="M5.4 11.7a6.6 6.6 0 0 0 13.2 0"/><path d="M12 18.3v3"/></svg>'
   };
+  /* ---------- 📷 e 🎤: quello che si RACCOGLIE camminando (F1-1C, D-12, D-13, UI-SPEC §3) ------
+   * Due capacità che non hanno un precedente nel repository — la fotocamera e il microfono — e che
+   * nessuna prova in Node può esercitare: qui non esistono né l'una né l'altro. Quello che il
+   * codice può garantire da solo è l'ORDINE (prima i byte, poi il metadato), il conto della
+   * riduzione (V.misuraRidotta, provato nel modello) e che il microfono si spenga; il resto lo dice
+   * il vetro dell'iPad, stazioni 3, 4 e 5 della checklist. */
+
+  /** Il passo a cui un allegato preso in barra si aggancia: quello che la barra sta NOMINANDO.
+   *  In fase 'box' è il passo che sta correndo; durante l'attesa è quello verso cui si sta andando
+   *  («attesa → Accettazione»), che è il nome scritto in barra in quel momento — la foto va dove
+   *  l'occhio di chi la scatta la sta già mettendo, non su un passo che non si legge da nessuna
+   *  parte. `null` = non c'è niente in corso, e allora non si allega niente: un allegato appeso al
+   *  giro fermo finirebbe addosso al passo successivo, che nessuno ha fotografato. */
+  const passoDellaBarra = (map) => {
+    const s = V.measureState(map); if (!s || !s.phase || !s.t0) return null;
+    const el = V.byId(s.stepId, map);
+    return (el && el.type === 'box') ? el : null;
+  };
+  /** «al passo 3» quando il passo ha un numero nella catena, «al passo «Accettazione»» quando non
+   *  ce l'ha: il numero è quello che si legge sul foglio, e «al passo Passo 3» non è italiano. */
+  const doveDire = (el, map) => {
+    const n = V.stepNumbers(map).get(el.id);
+    return n ? ('passo ' + n) : ('passo «' + V.nomePasso(el, map) + '»');
+  };
+  /** L'ORDINE DICHIARATO, in un posto solo per la foto e per il memo (commento di V.allegOrfani,
+   *  piano 02-10): PRIMA i byte, POI — e solo se i byte ci sono davvero — il metadato nel
+   *  documento, che è il commit annullabile con ↶. Invertirlo produrrebbe un metadato che punta al
+   *  vuoto, cioè perdita vera; così il peggio che può restare sono byte senza metadato, rumore
+   *  innocuo che la spazzata degli orfani porta via al caricamento successivo (piano 02-11).
+   *  Per la stessa ragione, quando il commit del metadato viene rifiutato (lucchetto del foglio, ✓
+   *  del passo, fase cambiata sotto) i byte NON si cancellano qui a mano: se ne occupa la spazzata,
+   *  che è la via unica e provata. Ritorna una promessa di true/false. */
+  const allegaAlPasso = (mapId, elId, dati, esito) => V.alleg.metti(mapId, elId, dati).then(meta => {
+    if (!meta) { UI.toast(esito.pieno); return false; }
+    // la guardia DOPO l'attesa, come misWake: fra la richiesta e la risposta il foglio può essere
+    // stato chiuso o cancellato, e il passo può essere sparito sotto il cronometro
+    const map = (V.doc && V.doc.maps) ? V.doc.maps[mapId] : null;
+    const el = map && V.byId(elId, map);
+    if (!map || !el) { UI.toast(esito.sparito); return false; }
+    if (!V.allegaMeta(map, elId, meta)) { UI.toast(esito.rifiutato); return false; }
+    UI.toast(esito.ok(el, map));
+    return true;
+  });
+
+  /* ---------- 📷 la FOTO (D-13) ----------
+   * Nessun mirino nostro, nessun getUserMedia: un <input type="file" capture="environment">, che
+   * non chiede permessi persistenti e non è colpito dal bug WebKit 215884. Il cronometro non si
+   * ferma e non si azzera — da qui non parte nessuna pausa, nessuno stop, nessun abort. */
+  const FOTO_LATO = 1600, FOTO_Q = 0.7;
+  /** object URL → <img> → canvas → toBlob('image/jpeg'). Questa via passa dal decoder NATIVO di
+   *  Safari, quindi converte anche l'HEIC e applica l'orientamento EXIF senza nessuna libreria:
+   *  heic2any, exif-js e simili sono vietati (C-5) e qui non servirebbero comunque.
+   *  Si riduce SEMPRE, mai un byte grezzo: da ~2-3 MB a ~150-300 kB. Il conto delle misure lo fa
+   *  V.misuraRidotta, che è pura e provata in Node — qui restano solo le cose che un browser sa
+   *  fare e Node no. */
+  const riduciFoto = (file) => new Promise((res, rej) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);                       // riuscita: l'object URL ha finito il suo lavoro
+      const m = V.misuraRidotta(img.naturalWidth || img.width, img.naturalHeight || img.height, FOTO_LATO);
+      if (!m) { rej(new Error('immagine senza misure')); return; }
+      const c = document.createElement('canvas'); c.width = m.w; c.height = m.h;
+      const ctx = c.getContext && c.getContext('2d');
+      if (!ctx) { rej(new Error('canvas non disponibile')); return; }
+      ctx.drawImage(img, 0, 0, m.w, m.h);
+      c.toBlob(b => b ? res({ blob: b, w: m.w, h: m.h }) : rej(new Error('canvas vuoto')), 'image/jpeg', FOTO_Q);
+    };
+    // anche qui, e non in un ramo condiviso: un object URL non revocato è memoria che non torna
+    // finché la pagina vive, e la via dell'errore è quella che si percorre col file storto
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('immagine illeggibile')); };
+    img.src = url;
+  });
+  const FOTO_ESITO = {
+    // le parole di Gt (UI-SPEC §Copywriting): la cosa che conta è che le misure siano al sicuro
+    pieno: 'Non sono riuscito a salvare la foto: sull’iPad non c’è più spazio. Libera spazio e riprova — le misure sono al sicuro.',
+    sparito: 'Il passo non c’è più: la foto non aveva dove attaccarsi.',
+    rifiutato: 'La foto non si è potuta attaccare: il foglio ha il lucchetto o il passo ha la ✓.',
+    ok: (el, map) => 'Foto aggiunta al ' + doveDire(el, map) + '.'
+  };
+  /** Il gesto intero, dal tocco al toast. Sta in UI.* e non dentro il gestore del bottone perché a
+   *  giro fermo la foto si aggiunge dal pannello del passo (D-13, seconda metà): un giorno lo
+   *  chiamerà anche quello, e due copie del percorso «riduci, scrivi i byte, scrivi il metadato»
+   *  finirebbero per non essere più d'accordo. */
+  UI.scattaFoto = (map) => {
+    const el = passoDellaBarra(map);
+    if (!el) { UI.toast('La foto si aggancia al passo che il giro sta misurando: qui non c’è niente in corso.'); return; }
+    const mapId = map.id, elId = el.id;
+    // Pitfall 7: su iOS il rientro dalla fotocamera in una PWA installata è storicamente instabile
+    // (bug WebKit 206219: schermata bianca, pagina ricaricata). Il GIRO sopravvive comunque per
+    // costruzione — map.measure sta nel documento e t0 è l'orologio di parete — ma il salvataggio
+    // è a coda: si scrive SUBITO, prima di lasciare la pagina, così un ricaricamento al rientro non
+    // si porta via gli ultimi 400 ms. Non è una pausa: V.saveNow non tocca il cronometro.
+    V.saveNow();
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = 'image/*';
+    inp.setAttribute('capture', 'environment');       // la fotocamera POSTERIORE: si fotografa il reparto
+    // fuori vista ma DENTRO il documento: su Safari il click su un input staccato dal DOM non apre nulla
+    inp.style.position = 'fixed'; inp.style.left = '-9999px'; inp.style.width = '1px'; inp.style.height = '1px';
+    inp.setAttribute('aria-hidden', 'true'); inp.tabIndex = -1;
+    document.body.appendChild(inp);
+    // il value si azzera come fa #file-open (js/main.js): senza, riscattare la STESSA foto non
+    // emette un secondo `change` e il tocco sembra non fare niente
+    const via = () => { try { inp.value = ''; } catch (e) { /* niente */ } inp.remove(); };
+    inp.addEventListener('change', () => {
+      const f = inp.files && inp.files[0];
+      via();
+      if (!f) return;
+      riduciFoto(f)
+        .then(r => r.blob.arrayBuffer().then(buf => ({ buf, w: r.w, h: r.h })))
+        .then(r => allegaAlPasso(mapId, elId, { tipo: 'foto', mime: 'image/jpeg', buf: r.buf, extra: { w: r.w, h: r.h } }, FOTO_ESITO))
+        .catch(() => UI.toast('Questa foto non si è aperta: riprova a scattarla.'));
+    });
+    inp.click();
+  };
+
+  /* ---------- 🎤 il MEMO VOCALE (D-12) ----------
+   * Un memo DELL'OSSERVATORE, non una registrazione d'ambiente: si avvia con un tocco, si ferma
+   * con un altro, e il microfono si spegne davvero. Il permesso si chiede al primo uso di ogni
+   * sessione — su iOS non sopravvive alla chiusura della PWA (WebKit 215884) e pre-chiederlo
+   * all'avvio infastidirebbe senza guadagno (Pitfall 8). */
+  let memoRec = null;        // il MediaRecorder mentre gira
+  let memoStream = null;     // il flusso del microfono: si spegne SEMPRE a fine registrazione
+  let memoT0 = 0;            // l'istante d'inizio, dall'orologio di parete come il cronometro
+  let memoSpento = false;    // permesso negato o API assente: il bottone si spegne DICENDO perché
+  let memoVoluto = false;    // la guardia dopo l'attesa: il tocco può essere stato ritirato
+  let memoDove = null;       // { mapId, elId }: il passo a cui il memo si aggancerà
+  /** Lo spegnimento vero. Senza, il pallino rosso di iOS resta acceso, la batteria si consuma e in
+   *  reparto sembra che l'app stia registrando l'ambiente — l'esatto contrario di quello che D-12
+   *  promette (T-02-13-03, stazione 5 della checklist iPad). */
+  const memoSpegniFlusso = (st) => { try { if (st) st.getTracks().forEach(t => t.stop()); } catch (e) { /* niente */ } };
+  /** Mai un bottone vivo che non fa niente: negato il permesso, il comando si spegne e il toast
+   *  dice perché — e resta la nota dettata con la tastiera di iOS, che non chiede permessi. */
+  const memoNegato = () => {
+    memoSpento = true; memoVoluto = false;
+    UI.toast('Il microfono non è disponibile: puoi dettare la nota con la tastiera.');
+    UI.renderMisCtl();
+  };
+  const MEMO_ESITO = (sec) => ({
+    pieno: 'Non sono riuscito a salvare il memo: sull’iPad non c’è più spazio. Libera spazio e riprova — le misure sono al sicuro.',
+    sparito: 'Il passo non c’è più: il memo non aveva dove attaccarsi.',
+    rifiutato: 'Il memo non si è potuto attaccare: il foglio ha il lucchetto o il passo ha la ✓.',
+    ok: (el, map) => 'Memo di ' + sec + (sec === 1 ? ' secondo' : ' secondi') + ' aggiunto al ' + doveDire(el, map) + '.'
+  });
+  /** I secondi da mostrare sotto il punto che pulsa: dall'orologio di parete, mai da un contatore
+   *  incrementato a mano — la stessa regola del cronometro del giro. */
+  UI.memoSecondi = () => (memoRec && memoT0) ? Math.max(0, Math.round((Date.now() - memoT0) / 1000)) : 0;
+  const memoAvvia = (map) => {
+    const el = passoDellaBarra(map);
+    if (!el) { UI.toast('Il memo si aggancia al passo che il giro sta misurando: qui non c’è niente in corso.'); return; }
+    const md = navigator.mediaDevices;
+    if (!md || typeof md.getUserMedia !== 'function' || typeof MediaRecorder === 'undefined') { memoNegato(); return; }
+    memoVoluto = true; memoDove = { mapId: map.id, elId: el.id };
+    // il permesso si chiede SUBITO, senza schermata di preparazione: è il gesto stesso a chiederlo
+    md.getUserMedia({ audio: true }).then(stream => {
+      // la guardia DOPO l'attesa, come misWake (il Codex P2 del Wake Lock): il giro può essere
+      // finito, o il tocco ritirato, mentre il permesso era in volo — in quel caso si rilascia il
+      // flusso e non si registra niente. Un flusso orfano è il microfono acceso per sempre.
+      if (!memoVoluto || !V.measureActiveMap()) { memoSpegniFlusso(stream); memoVoluto = false; memoDove = null; return; }
+      const mime = V.mimeMemo();       // audio/mp4 per primo, con la guardia di Safari 14.x
+      let rec = null;
+      try { rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream); }
+      catch (e) { memoSpegniFlusso(stream); memoNegato(); return; }
+      const pezzi = [];
+      rec.ondataavailable = (e) => { if (e.data && e.data.size) pezzi.push(e.data); };
+      rec.onstop = () => {
+        // PRIMA COSA, sempre: il microfono si spegne. Poi si pensa a salvare.
+        memoSpegniFlusso(memoStream);
+        memoStream = null; memoRec = null;
+        const sec = Math.max(1, Math.round((Date.now() - memoT0) / 1000));
+        memoT0 = 0; memoVoluto = false;
+        const dove = memoDove; memoDove = null;
+        UI.renderMisCtl();
+        if (!pezzi.length || !dove) { UI.toast('Il memo non ha registrato niente: riprova.'); return; }
+        // il mime VERO scelto dal registratore, non quello che gli avevamo chiesto: se il browser
+        // ha ripiegato su un altro contenitore, i byte vanno riletti con quello
+        const suo = (rec.mimeType || mime || 'audio/mp4').split(';')[0].trim();
+        new Blob(pezzi, { type: suo }).arrayBuffer()
+          .then(buf => allegaAlPasso(dove.mapId, dove.elId, { tipo: 'memo', mime: suo, buf, extra: { dur: sec } }, MEMO_ESITO(sec)))
+          .catch(() => UI.toast('Il memo non si è potuto salvare: riprova.'));
+      };
+      memoStream = stream; memoRec = rec; memoT0 = Date.now();
+      try { rec.start(); }
+      catch (e) { memoSpegniFlusso(stream); memoStream = null; memoRec = null; memoT0 = 0; memoDove = null; memoNegato(); return; }
+      UI.renderMisCtl();
+    }).catch(() => { memoVoluto = false; memoDove = null; memoNegato(); });
+  };
+  const memoFerma = () => {
+    memoVoluto = false;
+    if (!memoRec) return;
+    // se `stop` lancia, il flusso resterebbe aperto: si spegne a mano, che è la cosa che non si
+    // può saltare in nessun ramo
+    try { memoRec.stop(); }
+    catch (e) { memoSpegniFlusso(memoStream); memoStream = null; memoRec = null; memoT0 = 0; memoDove = null; UI.renderMisCtl(); }
+  };
+  /** Il tocco sul 🎤: uno avvia, l'altro ferma. Niente pausa, niente stop, niente abort del giro. */
+  UI.memoTocca = (map) => { if (memoSpento) return; if (memoRec) memoFerma(); else memoAvvia(map); };
+  /** Il microfono si spegne anche quando il giro finisce o la pagina sparisce dalla vista: quello
+   *  che è già stato registrato si SALVA (fermare il registratore scrive), il flusso si chiude.
+   *  Lasciarlo aperto oltre il giro sarebbe la registrazione d'ambiente che D-12 non è. */
+  UI.memoChiudi = () => {
+    memoVoluto = false;
+    if (memoRec) { memoFerma(); return; }
+    memoSpegniFlusso(memoStream); memoStream = null; memoDove = null;
+  };
+  UI.memoInCorso = () => !!memoRec;
   /* ---------- la NOTA VELOCE del ⚠ (F1-1C, D-10, UI-SPEC §3) ----------
    * Secondo tocco sul ⚠: un campo grande, dettabile col microfono della TASTIERA di iOS — nessun
    * permesso, nessuna API, nessuna registrazione (il memo vocale vero e' un altro comando, D-12).
@@ -1035,7 +1281,12 @@
    *  da un posto solo, così non può esserci una via che chiude in silenzio. Si chiama DOPO la
    *  chiusura, mai prima: measureStop registra il passo che stava correndo, e quella misura — col
    *  suo ⚠ — deve essere nell'elenco. */
-  const fineGiro = (map) => { try { UI.resocontoGiro(map); } catch (e) { /* il resoconto non deve mai mangiarsi la chiusura del giro */ } };
+  const fineGiro = (map) => {
+    // il microfono si spegne col giro (T-02-13-03): quello che era in registrazione si salva, il
+    // flusso si chiude. Prima del resoconto, perché il resoconto è una finestra e può fermarsi lì.
+    try { UI.memoChiudi(); } catch (e) { /* niente */ }
+    try { UI.resocontoGiro(map); } catch (e) { /* il resoconto non deve mai mangiarsi la chiusura del giro */ }
+  };
   /** La schermata di ANALISI delle misurazioni di un passo (esito 12, E12-d): tutte le
    *  statistiche del livello «Tempi e variabilità» (F1) — istogramma, sparkline, elenco delle
    *  misure con riclassificazione, nota e correzione manuale (🔢) — in una finestra dedicata,
@@ -1214,6 +1465,16 @@
       // sopravvive a un ricaricamento della pagina, e al lap si spegne da solo perche' il modello
       // azzera `diverso` — qui non c'e' una riga che lo spenga (se servisse, il modello sarebbe rotto).
       + (altrove ? '' : `<button id="mis-diverso" class="mis-btn diverso${segnato ? ' armato' : ''}" aria-label="${segnato ? 'Segnato: tocca per scrivere cosa' : 'Segna: qui è andata diversa'}" title="${segnato ? 'Segnato: tocca per scrivere cosa è successo (il giro non si ferma)' : 'Segna: qui è andata diversa — il giro non si ferma'}">${MIS_IC.warn}</button>`)
+      // 📷 (D-13): seconda posizione del gruppo che raccoglie. Nessun colore a riposo e nessuno
+      // stato acceso: la foto è un gesto istantaneo, non una modalità. La classe `mis-ultimo`
+      // porta lo stacco di 14px e sta sull'ULTIMO del gruppo, non sul primo — col ⚠ da solo i due
+      // coincidevano, da due comandi in poi no.
+      + (altrove ? '' : `<button id="mis-foto" class="mis-btn" aria-label="Scatta una foto di questo passo" title="Scatta una foto di questo passo (il giro non si ferma)">${MIS_IC.foto}</button>`)
+      // 🎤 (D-12): terza e ultima posizione del gruppo che raccoglie, quindi è lui a portare lo
+      // stacco di 14px. In registrazione diventa rosso con l'icona bianca, il punto che pulsa e i
+      // secondi sotto; negato il permesso resta lì SPENTO, che è meglio di un bottone vivo che non
+      // fa niente — e il perché l'ha già detto il toast.
+      + (altrove ? '' : `<button id="mis-memo" class="mis-btn mis-ultimo${memoRec ? ' rec' : ''}"${memoSpento ? ' disabled' : ''} aria-label="${memoRec ? 'Ferma il memo vocale' : 'Registra un memo vocale'}" title="${memoSpento ? 'Il microfono non è disponibile: puoi dettare la nota con la tastiera' : (memoRec ? 'Ferma il memo e salvalo su questo passo' : 'Registra un memo vocale (il giro non si ferma)')}">${MIS_IC.mic}${memoRec ? `<span class="mis-rec"><span class="mis-rec-pt"></span><span class="mis-rec-sec" id="mis-rec-sec">${misMMSS(UI.memoSecondi())}</span></span>` : ''}</button>`)
       + `<button id="mis-pausa" class="mis-btn" aria-label="${inPausa ? 'Riprendi il conteggio' : 'Pausa dell’osservatore'}" title="${inPausa ? 'Riprendi il conteggio' : 'Pausa dell\u2019osservatore: il tempo NON finisce nel dato'}">${inPausa ? MIS_IC.play : MIS_IC.pause}</button>`
       + `<div class="mis-info${altrove ? ' altrove' : ''}"${altrove ? ' role="button" tabindex="0" title="Apri il foglio che sta misurando"' : ''}><span class="mis-tempo${inPausa ? ' pausa' : ''}" id="mis-tempo">${misMMSS(V.measureElapsed(m))}</span><span class="mis-nome">${esc(che)}${s.turno ? ' \u00B7 ' + esc(s.turno) : ''}</span></div>`
       + (altrove ? '' : `<button id="mis-avanti" class="mis-btn mis-fine" aria-label="${s.phase === 'attesa' ? 'Comincia il prossimo passo' : 'Passo finito'}" title="${s.phase === 'attesa' ? 'Comincia il prossimo passo' : 'Passo finito: chiude il passo, l\u2019attesa corre da sola'}">${s.phase === 'attesa' ? MIS_IC.next : MIS_IC.lap}</button>`)
@@ -1231,6 +1492,13 @@
       UI.renderMisCtl();
       UI.toastAction('Segnato: qui è andata diversa.', 'Scrivi cosa', () => UI.notaVeloce(m));
     };
+    // 📷 (D-13): apre la fotocamera e basta. Nessuna chiamata a pausa, stop o abort — il giro non
+    // si ferma e non si azzera, ed è tutto il punto del gesto.
+    const ft = $('#mis-foto', bar);
+    if (ft) ft.onclick = () => { misTrashArm = null; misStopArm = null; UI.scattaFoto(m); };
+    // 🎤 (D-12): un tocco avvia, un altro ferma. Anche qui nessuna pausa, nessuno stop, nessun abort.
+    const mo = $('#mis-memo', bar);
+    if (mo) mo.onclick = () => { misTrashArm = null; misStopArm = null; UI.memoTocca(m); };
     $('#mis-pausa', bar).onclick = () => { misTrashArm = null; if (V.measurePaused(m)) V.measureResume(m); else V.measurePause(m); UI.renderMisCtl(); };
     const av = $('#mis-avanti', bar); if (av) av.onclick = () => { misTrashArm = null; UI.misAdvance(); };
     // il CESTINO (esito 12-bis, caso 1): primo tocco arma (da opaco a colorato), secondo elimina
@@ -1253,6 +1521,9 @@
       const t = $('#mis-tempo'); const mm = V.measureActiveMap();
       // quando la misura scavalca la soglia dell'avviso la barra si ridisegna intera (compare il
       // cartello «aperta da un pezzo»); altrimenti si aggiorna solo il numero
+      // i secondi del memo camminano insieme al cronometro, dallo stesso battito: un secondo
+      // intervallo per un numero che sta a due centimetri dall'altro sarebbe due orologi
+      const rs = $('#mis-rec-sec'); if (rs) rs.textContent = misMMSS(UI.memoSecondi());
       if (t && mm && (V.measureElapsed(mm) > VECCHIA) === bar.classList.contains('vecchia')) t.textContent = misMMSS(V.measureElapsed(mm));
       else UI.renderMisCtl();
     }, 1000);
