@@ -57,6 +57,22 @@
     return n === 1 ? 'Un cronometro rimasto aperto è stato chiuso.' : (n + ' cronometri rimasti aperti sono stati chiusi.');
   }
 
+  /** Gli allegati di un foglio appena importato di cui su QUESTO iPad non ci sono i byte (F1-1C,
+   *  D-14, 02-RESEARCH.md §Pitfall 6). Nel pannello del passo compariranno come segnaposti
+   *  dichiarati; senza questa riga nessuno saprebbe perché, e «tre foto diventate riquadri vuoti»
+   *  è esattamente la sparizione silenziosa che C-2 vieta.
+   *  Il conto vero lo fa V.allegatiMancanti, che apre il database: qui c'è solo la frase, e arriva
+   *  DOPO il toast dell'import perché quella è la risposta alla domanda che nasce guardandolo. */
+  function notaAllegatiAltrove(mapIds) {
+    if (!mapIds || !mapIds.length || !V.allegatiMancanti) return;
+    V.allegatiMancanti(mapIds).then(n => {
+      if (!n) return;
+      setTimeout(() => UI.toast(n === 1
+        ? '1 allegato è rimasto sull’iPad dove è stato preso: qui resta il segnaposto.'
+        : n + ' allegati sono rimasti sull’iPad dove sono stati presi: qui restano i segnaposti.'), 2400);
+    }).catch(() => { /* il conto non riuscito non deve rovinare un import andato bene */ });
+  }
+
   function bindHeader() {
     // il titolo non si scrive piu' inline: il blocco in barra apre il pop-up con tutti i dati (e la modifica)
     $('#map-head').onclick = () => { if (V.pop.current === '__title__') V.pop.close(); else V.pop.openTitle(); };
@@ -123,7 +139,10 @@
       V.setValidated(m, !m.validated);
       UI.toast(m.validated ? 'Ideale validato \u{1F512}: per modificarlo riapri il lucchetto.' : 'Lucchetto aperto \u{1F513}: l’Ideale si può modificare.');
     };
-    $('#btn-undo').onclick = () => V.undo(); $('#btn-redo').onclick = () => V.redo();
+    // Le frecce rispondono SEMPRE (cancello 1B, rilievo 4 — «Grigia sì, ma che dica perché»):
+    // quando non c'è da lavorare non succede niente in silenzio, si dice il perché.
+    const freccia = (verso, fa) => () => { const m = V.motivoAnnulla(verso); if (m) UI.toast(m); else fa(); };
+    $('#btn-undo').onclick = freccia('undo', () => V.undo()); $('#btn-redo').onclick = freccia('redo', () => V.redo());
     $('#drawer-close').onclick = UI.closeDrawer;
     ['coach', 'plan'].forEach(t => $('#tab-' + t).onclick = () => UI.showTab(t));
     // il bottone «Mappe» in barra non c'e' piu' (feedback iPad 25/8): la libreria vive in ⋯ → «Le tue mappe»
@@ -190,7 +209,7 @@
     const CLOSE_ON = ['legend', 'guide', 'maps', 'help', 'settings', 'coach', 'delete', 'reset', 'exit', 'giri', 'lock', 'info', 'misura', 'attach', 'projects'];
     $$('#menu [data-m]').forEach(b => b.onclick = () => { if (CLOSE_ON.includes(b.dataset.m)) menu.classList.add('hidden'); menuAction(b.dataset.m); });
     UI.loadExample = () => { UI.toggleGuide(false); menuAction('example'); };
-    $('#file-open').addEventListener('change', (e) => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => { try { const res = V.importMaps(JSON.parse(r.result)); I.restoreView(); const cron = notaCronometriChiusi(res.note); UI.toast(res.count + ' mappe importate' + (res.note && res.note.includes('v2') ? ' (convertito dalla 0.9)' : '') + '.' + (cron ? ' ' + cron : '')); } catch (err) { UI.toast('File non valido: ' + err.message); } }; r.readAsText(f); e.target.value = ''; });
+    $('#file-open').addEventListener('change', (e) => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => { try { const prima = new Set(Object.keys(V.doc.maps)); const res = V.importMaps(JSON.parse(r.result)); I.restoreView(); const cron = notaCronometriChiusi(res.note); UI.toast(res.count + ' mappe importate' + (res.note && res.note.includes('v2') ? ' (convertito dalla 0.9)' : '') + '.' + (cron ? ' ' + cron : '')); notaAllegatiAltrove(Object.keys(V.doc.maps).filter(k => !prima.has(k))); } catch (err) { UI.toast('File non valido: ' + err.message); } }; r.readAsText(f); e.target.value = ''; });
   }
   function menuAction(a) {
     const map = V.map();
@@ -211,6 +230,19 @@
       case 'info': {
         const m2 = V.map(); const M = V.metrics(m2);
         const at = V.lastSaved(); const salvato = at ? new Date(at).toLocaleString('it-CH') : '—';
+        // Lo spazio (piano 02-11): sono le due righe che Gt legge sull'iPad alla stazione 6 della
+        // checklist. Parole di reparto, non di database: «tenuto da parte», non «quota» ne'
+        // «origine». Sono anche l'unico modo di sciogliere l'assunzione A3 della ricerca — le
+        // fonti si contraddicono su che cosa serva a Safari per concedere la persistenza, quindi
+        // l'esito si guarda invece di darlo per noto.
+        const p = V.storage.persistente;
+        const tenuto = p === true ? 'sì' : p === false ? 'no — il sistema può liberarlo se gli serve posto' : 'non richiesto';
+        const misura = (n) => (typeof n === 'number' && isFinite(n) && n >= 0)
+          ? (n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' kB') : '?';
+        const st = V.storage.stima;
+        const usato = (st && typeof st.usage === 'number')
+          ? misura(st.usage) + (typeof st.quota === 'number' ? ' su ' + misura(st.quota) + ' disponibili' : '')
+          : 'non disponibile';
         // niente contenuti della mappa: solo come e' fatta e da dove viene la build
         const info = [
           'VSM Coach ' + V.versionLabel(),
@@ -219,7 +251,9 @@
           'browser: ' + navigator.userAgent,
           'mappa attiva: ' + V.kindLabel(m2) + (m2.validated ? ' 🔒' : '') + ' · ' + M.boxes + ' box, ' + M.deltas + ' delta, ' + M.requests + ' vie, ' + m2.strokes.length + ' tratti',
           'mappe in libreria: ' + Object.keys(V.doc.maps).length,
-          'ultimo salvataggio: ' + salvato
+          'ultimo salvataggio: ' + salvato,
+          'spazio tenuto da parte: ' + tenuto,
+          'spazio usato: ' + usato
         ].join('\n');
         const copia = () => { try { navigator.clipboard.writeText(info); UI.toast('Dati per la diagnosi copiati.'); } catch (e) { alert(info); } };
         copia();
@@ -254,7 +288,23 @@
         V.azzeraSpazio().then(() => location.reload()).catch(() => location.reload());
         break;
       }
-      case 'delete': { const nFigli = Object.values(V.doc.maps).filter(o => o.parentId === map.id).length; const codaFigli = nFigli ? (nFigli === 1 ? '\n\nIl suo sotto-foglio non si perde: si riappende più in alto.' : `\n\nI suoi ${nFigli} sotto-fogli non si perdono: si riappendono più in alto.`) : ''; if (confirm(`Eliminare la mappa "${map.title || 'senza titolo'}"? Non si può annullare.${codaFigli}`)) { const r = deleteMapAsked(map); if (r.ok) { I.restoreView(); V.saveNow(); UI.toast(r.withPair ? 'Attuale e Ideale eliminati.' : 'Mappa eliminata.'); } } break; }
+      // Eliminare un foglio: la domanda la fa una finestra DELL'APP, non il pop-up del browser
+      // (rilievo 2 del cancello 1B), e se sul foglio ci sono foto o memo lo dice prima — «spariscono
+      // anche loro» (F1-1C, D-15, UI-SPEC §Copywriting). I numeri vengono da V.contaAllegati, che
+      // legge i metadati dal documento: la domanda si risponde senza aprire un database.
+      case 'delete': {
+        const nFigli = Object.values(V.doc.maps).filter(o => o.parentId === map.id).length;
+        const codaFigli = nFigli ? (nFigli === 1 ? '\n\nIl suo sotto-foglio non si perde: si riappende più in alto.' : `\n\nI suoi ${nFigli} sotto-fogli non si perdono: si riappendono più in alto.`) : '';
+        const alleg = V.contaAllegati(map);
+        const codaAlleg = alleg.totale ? ('\n\nSu questa mappa ci sono ' + V.fraseAllegati(alleg) + ': spariscono anche loro.') : '';
+        const elimina = () => { const r = deleteMapAsked(map); if (r.ok) { I.restoreView(); V.saveNow(); UI.toast(r.withPair ? 'Attuale e Ideale eliminati.' : 'Mappa eliminata.'); } };
+        UI.chiediConferma({
+          titolo: 'Eliminare la mappa?',
+          testo: `«${map.title || 'senza titolo'}» — non si può annullare.${codaFigli}${codaAlleg}`,
+          conferma: 'Elimina lo stesso',
+        }, elimina);
+        break;
+      }
       case 'exit': { // nell'app Android chiude davvero; nel browser/PWA la scheda non si puo' chiudere da codice
         const cap = window.Capacitor;
         if (cap && cap.Plugins && cap.Plugins.App && cap.Plugins.App.exitApp) { cap.Plugins.App.exitApp(); break; }

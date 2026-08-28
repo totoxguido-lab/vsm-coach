@@ -19,6 +19,17 @@
    *  di casa; l'impostazione vsm.timefmt='unita' riporta all'unita' del foglio. */
   const tMis = (sec, map) => V.timeFmt() === 'crono' ? V.fmtMisura(sec) : inUnita(sec, map);
   const TONO = { stabile: 'ok', moderata: 'warn', alta: 'alert' };
+  /** il segnetto della provenienza (1B, D-08): davanti al testo del badge, e in NESSUN altro posto.
+   *  Vive qui, dentro la stringa `text`, perche' quella e' l'unica via che alimenta insieme il
+   *  disegno (R.badgeSVG) e il ritaglio (R.badgeExtent → contentBox → export SVG e stampa A3):
+   *  scriverlo altrove vorrebbe dire due vie, e prima o poi due risposte diverse. */
+  const SEGNO_ORIGINE = '≈ ';
+  /** Le due parole dell'origine ASSENTE (UI-SPEC §2). Nel modello non c'e' etichetta per la chiave
+   *  che non c'e' — e' una scelta del 02-05: «non dichiarata» e' uno stato, non una quinta voce.
+   *  A schermo pero' una parola serve, e dev'essere la STESSA ovunque: vive qui, accanto a chi la
+   *  usa per primo, e il pannello del passo (popover.js) la chiede a questo oggetto invece di
+   *  tenerne una copia sua. Due copie, prima o poi, dicono due cose diverse. */
+  T.FONTE_MUTA = { corta: 'origine?', piena: 'Origine non dichiarata' };
   const CLS_COLORE = { normale: '#1f4e79', particolare: '#b98900', eccezionale: '#c8321e' };
   const CLS_CICLO = { normale: 'particolare', particolare: 'eccezionale', eccezionale: 'normale' };
 
@@ -27,12 +38,20 @@
   T.badgeDi = (el, map) => {
     if (!el || (el.type !== 'box' && el.type !== 'delta')) return null;
     // solo le misure DI QUESTO giro (esito 13): le ereditate sono storia, non badge
-    const st = A.obsStats(V.obsDelGiro(el, map));
+    const obs = V.obsDelGiro(el, map);
+    const st = A.obsStats(obs);
     if (!st.n) return null;
     const classe = A.variabilita(st.cv);
-    // niente «~» davanti (esito 12: illeggibile e non aggiunge nulla — la media resta una media)
+    // Davanti al numero c'e' UN solo segno possibile, e a due condizioni diverse da quelle del «~»
+    // tolto all'esito 12. Quel «~» stava davanti a ogni media, sempre: non diceva niente che «media»
+    // non dicesse gia', e si leggeva male. Questo e' il segnetto della provenienza (1B, D-08):
+    // compare SOLO se almeno una misura di questo giro non e' stata vista di persona, e allora dice
+    // una cosa che nessun altro segno sul foglio dice. Anche l'origine NON DICHIARATA lo fa
+    // comparire: «nessuno l'ha detto» non e' «osservato», e ripiegare sarebbe la bugia che il 1B
+    // esiste per impedire (D-07). Il tono non cambia: il segnetto non ha un colore suo.
+    const nonVisto = obs.some(o => o.fonte !== 'osservato');
     return {
-      text: tMis(st.mean, map) + (classe ? ' · ' + classe : ' (' + st.n + ')'),
+      text: (nonVisto ? SEGNO_ORIGINE : '') + tMis(st.mean, map) + (classe ? ' · ' + classe : ' (' + st.n + ')'),
       tone: TONO[classe]
     };
   };
@@ -136,14 +155,26 @@
       // data-obs-* portano l'indice nella lista sana COMPLETA (V.obsOf): e' quello che
       // V.setObs/posObs capiscono — con la storia davanti gli indici filtrati mentirebbero
       h += '<div class="tmp-obs-list">' + righe.map(({ o, i }) => {
-        const dettagli = [o.turno].filter(Boolean).join(' · ');
+        // il «chi o dove» dell'origine si legge in riga accanto al turno: un dettaglio scritto e
+        // poi nascosto dietro un tocco e' un dettaglio che nessuno rilegge piu'
+        const dettagli = [o.turno, o.fonteNota].filter(Boolean).join(' · ');
+        // L'ORIGINE, con le parole di Gt (D-06): la corta sul bottone, la piena nel title. Le
+        // etichette si leggono dal modello (V.FONTE_CORTA / V.FONTE_LABEL) e non si riscrivono
+        // qui: un posto solo. La chiave assente non e' un buco da riempire — e' «origine?».
+        const fCorta = V.FONTE_CORTA[o.fonte] || T.FONTE_MUTA.corta;
+        const fPiena = V.FONTE_LABEL[o.fonte] || T.FONTE_MUTA.piena;
         return `<div class="tmp-obs"><b>${esc(tMis(o.s, map))}</b>`
           + (dettagli ? `<span class="k">${esc(dettagli)}</span>` : '')
           + `<button class="btn small tmp-cls" data-obs-cls="${i}" style="color:${CLS_COLORE[o.cls] || CLS_COLORE.normale}"${perche || ' title="Tocca per riclassificare (normale → particolare → eccezionale). Nessuna misura viene esclusa dai conti: è solo una marcatura."'}>${esc(o.cls)}</button>`
+          + `<button class="btn small tmp-fonte" data-obs-fonte="${i}" aria-expanded="false"${perche || ` title="${esc(fPiena)} — tocca per dire da dove viene questo numero"`}>${esc(fCorta)}</button>`
           + `<button class="btn small ghost" data-obs-val="${i}"${perche || ' title="Correggi il valore di questa misura a mano"'}>🔢</button>`
           + `<button class="btn small ghost" data-obs-nota="${i}"${perche || ` title="${o.nota ? esc(o.nota) : 'Aggiungi una nota a questa misura'}"`}>${o.nota ? '📝' : '✎'}</button>`
           + (o.nota ? `<div class="tmp-nota k">${esc(o.nota)}</div>` : '')
-          + '</div>';
+          + '</div>'
+          // la fascia delle quattro voci si apre QUI, sotto la riga, e solo quando la si chiede:
+          // costruirla per ogni misura e tenerla nascosta vorrebbe dire quattro bottoni in piu'
+          // per riga anche quando nessuno li guarda (T.mount la riempie a tocco)
+          + `<div class="tmp-fonte-box" data-fonte-box="${i}"></div>`;
       }).join('') + '</div>';
       h += `<p class="hint tmp-soglie">Variabilità dal coefficiente di variazione: sotto ${fmt(A.CV_SOGLIE.stabile * 100)}% stabile, sotto ${fmt(A.CV_SOGLIE.moderata * 100)}% moderata, oltre alta. Soglie provvisorie: vanno validate sulle vostre misure.</p>`;
     } else {
@@ -160,6 +191,41 @@
       h += '<p class="hint">La storia del passo sui giri precedenti: si legge, non entra nei conti di questo giro.</p>';
     }
     return h;
+  };
+
+  /** La fascia delle quattro voci dell'origine, che si apre SOTTO la riga della misura (D-06, D-21).
+   *  Stampo di `kindPicker` (popover.js): `role="radiogroup"`, un `aria-checked` per pastiglia, le
+   *  44px dell'idioma `.picker .pick`. Le parole sono quelle del modello — qui non se ne scrive
+   *  nessuna nuova. `i` e' l'indice nella lista sana COMPLETA (V.obsOf), lo stesso che porta
+   *  `data-obs-fonte`: e' quello che V.setObs/posObs capiscono.
+   *  Toccare la pastiglia GIA' scelta toglie l'origine: e' la via per tornare a «non dichiarata»
+   *  senza un quinto bottone che dica «nessuna» — e il title lo dice, invece di lasciarlo indovinare.
+   *  Pura, come il resto del file: si prova in Node. */
+  T.fonteFasciaHTML = (o, i) => {
+    const cur = o && o.fonte;
+    const pick = (f) => {
+      const on = f === cur;
+      const eti = V.FONTE_LABEL[f] || f;
+      return `<button type="button" class="pick ${on ? 'on' : ''}" data-fonte-v="${esc(f)}" role="radio" aria-checked="${on}" aria-label="Origine: ${esc(eti)}" title="${esc(on ? eti + ' — tocca di nuovo per togliere l\'origine' : eti)}"><span>${esc(eti)}</span></button>`;
+    };
+    return `<div class="picker fonti" role="radiogroup" aria-label="Da dove viene questo numero">${V.FONTI.map(pick).join('')}</div>`
+      + `<div class="field"><label for="tmp-fonte-nota-${esc(i)}">Chi o dove (facoltativo)`
+      + `<button type="button" class="hintdot" data-hintdot aria-label="Spiegazione">ⓘ</button>`
+      + `<span class="hintpop hidden">Meglio il ruolo o le iniziali, non il nome.</span></label>`
+      + `<input id="tmp-fonte-nota-${esc(i)}" type="text" data-fonte-nota="${esc(i)}" value="${esc((o && o.fonteNota) || '')}" placeholder="es. la caposala, il turno di notte" autocomplete="off"></div>`
+      + `<div class="actions"><button type="button" class="btn small ghost" data-fonte-x aria-label="Chiudi le origini" title="Chiudi">✕</button></div>`;
+  };
+
+  /** Il valore corretto a mano, letto dal campo della finestrella: virgola o punto (in reparto si
+   *  scrive «1,5»), mai negativo, mai NaN — e restituito in SECONDI, l'unita' in cui il modello
+   *  tiene le misure. `null` vuol dire «non e' un numero»: chi chiama non scrive niente.
+   *  Sta qui, pura, e non dentro il gestore del clic: murata in una chiusura DOM nessuna prova in
+   *  Node poteva arrivarci, e la lettura di un numero scritto a mano e' proprio la cosa che si
+   *  sbaglia in silenzio (era gia' cosi' col prompt nativo — mai provata). */
+  T.leggiValore = (testo, map) => {
+    const v = parseFloat(String(testo == null ? '' : testo).trim().replace(',', '.'));
+    if (!isFinite(v) || v < 0) return null;
+    return v * V.unitSeconds(map.unit);
   };
 
   V.layers.register({
@@ -183,6 +249,30 @@
    *  scritture (V.setObs), un solo posto. */
   T.mount = (host, el, map) => {
           const vivo = () => V.byId(el.id, map) || el;
+          // quale riga ha la fascia dell'origine aperta: vive fuori da disegna() perche' ogni
+          // scrittura ridisegna la sezione, e la fascia non deve richiudersi sotto le dita
+          let fonteAperta = null;
+          const apriFonte = (i) => {
+            const box = host.querySelector('[data-fonte-box="' + i + '"]');
+            const o = box && V.obsOf(vivo())[i];
+            if (!o) { fonteAperta = null; return; }
+            box.innerHTML = T.fonteFasciaHTML(o, i);
+            const b = host.querySelector('[data-obs-fonte="' + i + '"]'); if (b) b.setAttribute('aria-expanded', 'true');
+            // un tocco = scritto: nessun bottone «Salva» (D-06), e la ↶ riporta indietro perche'
+            // V.setObs fa un commit normale (D-21). La stessa pastiglia toccata due volte toglie
+            // l'origine e si torna a «non dichiarata».
+            box.querySelectorAll('[data-fonte-v]').forEach(p => p.onclick = () => {
+              const scelta = p.dataset.fonteV;
+              const ora = V.obsOf(vivo())[i]; if (!ora) return;
+              if (V.setObs(map, el.id, i, { fonte: ora.fonte === scelta ? null : scelta })) disegna();
+            });
+            // il «chi o dove» si scrive al change (a campo lasciato): una voce di annulla per
+            // frase, non una per lettera
+            const nota = box.querySelector('[data-fonte-nota]');
+            if (nota) nota.onchange = () => { if (V.setObs(map, el.id, i, { fonteNota: nota.value })) disegna(); };
+            const x = box.querySelector('[data-fonte-x]');
+            if (x) x.onclick = () => { fonteAperta = null; disegna(); };
+          };
           const disegna = () => {
             host.innerHTML = T.sectionHTML(vivo(), map);
             host.querySelectorAll('[data-obs-cls]').forEach(b => b.onclick = () => {
@@ -190,22 +280,42 @@
               if (V.setObs(map, el.id, i, { cls: CLS_CICLO[o.cls] || 'particolare' })) disegna();
             });
             // il valore si corregge a mano (decisione Gt 26/8: flessibilita' — si puo' anche
-            // scartare e rimisurare da solo, ma OGNI misura resta modificabile a posteriori);
-            // il prompt() nativo e' la via che Gt ha provato e tenuto (S4-a)
+            // scartare e rimisurare da solo, ma OGNI misura resta modificabile a posteriori).
+            // Dal 27/8 lo chiede una FINESTRA DELL'APP (UI.chiediValore), non il pop-up del
+            // browser: rilievo 2 del cancello 1B — «rendilo coerente con lo stile del canvas e
+            // delle finestre». Erano gli ultimi due prompt() nativi rimasti.
             host.querySelectorAll('[data-obs-val]').forEach(b => b.onclick = () => {
               const i = +b.dataset.obsVal; const o = V.obsOf(vivo())[i]; if (!o) return;
-              const t = prompt('Nuovo valore in ' + map.unit + ' (adesso: ' + fmt(V.toUnit(o.s, map.unit)) + '):', fmt(V.toUnit(o.s, map.unit)));
-              if (t == null) return;   // annullato
-              const v = parseFloat(String(t).trim().replace(',', '.'));
-              if (!isFinite(v) || v < 0) return;
-              if (V.setObs(map, el.id, i, { s: v * V.unitSeconds(map.unit) })) disegna();
+              const adesso = fmt(V.toUnit(o.s, map.unit));
+              V.ui.chiediValore({
+                titolo: '\u{1F522} Correggi il valore',
+                spiega: 'Adesso: ' + adesso + ' ' + map.unit + '.',
+                etichetta: 'Nuovo valore in ' + map.unit,
+                valore: adesso,
+                numerico: true,
+              }, (testo) => {
+                const sec = T.leggiValore(testo, map);
+                if (sec == null) return;   // non e' un numero: non si scrive niente
+                if (V.setObs(map, el.id, i, { s: sec })) disegna();
+              });
             });
             host.querySelectorAll('[data-obs-nota]').forEach(b => b.onclick = () => {
               const i = +b.dataset.obsNota; const o = V.obsOf(vivo())[i]; if (!o) return;
-              const t = prompt('Nota su questa misura (vuoto = nessuna nota):', o.nota || '');
-              if (t == null) return;   // annullato
-              if (V.setObs(map, el.id, i, { nota: t })) disegna();
+              V.ui.chiediValore({
+                titolo: '\u{1F4DD} Nota su questa misura',
+                spiega: 'Vuoto = nessuna nota.',
+                etichetta: 'Nota',
+                valore: o.nota || '',
+              }, (testo) => { if (V.setObs(map, el.id, i, { nota: testo })) disegna(); });
             });
+            // l'origine: il bottone-parola apre la fascia sotto la sua riga, e la richiude se era
+            // gia' aperta (come la ✕). Una sola fascia aperta per volta: la sezione resta corta.
+            host.querySelectorAll('[data-obs-fonte]').forEach(b => b.onclick = () => {
+              const i = +b.dataset.obsFonte;
+              fonteAperta = (fonteAperta === i) ? null : i;   // stessa parola due volte: si richiude
+              disegna();   // una fascia aperta per volta: ridisegnare la chiude dov'era
+            });
+            if (fonteAperta != null) apriFonte(fonteAperta);
           };
           disegna();
   };

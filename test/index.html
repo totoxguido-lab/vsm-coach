@@ -10,8 +10,15 @@
      L'hash sha256 in script-src apre UNA porta sola, cucita sul contenuto esatto del loader qui
      sotto (js/manifest.js → document.write dei moduli): un payload iniettato da un JSON non può
      avere questo hash, quindi la regola di sopra resta vera. Se il loader cambia anche di un
-     carattere, l'hash non torna più e la pagina resta bianca — test/build.test.js lo controlla. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-UM11sE/aSI91/puMNQK3QURTOmwqVkRIFalW3amJkuQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https:; object-src 'none'; base-uri 'none'; form-action 'none'">
+     carattere, l'hash non torna più e la pagina resta bianca — test/build.test.js lo controlla.
+     La direttiva media-src qui sotto è l'UNICA aggiunta dagli allegati (F1-1C, D-12): un memo
+     vocale si riascolta da un object URL, e senza questa riga l'audio ricadrebbe su default-src
+     'self' e il tag <audio> resterebbe muto. img-src aveva già blob: (di lì passano le miniature
+     delle foto) e script-src NON si tocca — allargarlo per far vedere un blob sarebbe la porta
+     spalancata che test/build.test.js sorveglia. La stessa direttiva vive in build.py, che
+     riscrive la CSP del file distribuito: cambiarne una sola delle due farebbe funzionare l'audio
+     in sviluppo e non nel dist, o viceversa. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-UM11sE/aSI91/puMNQK3QURTOmwqVkRIFalW3amJkuQ='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src 'self' https:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">

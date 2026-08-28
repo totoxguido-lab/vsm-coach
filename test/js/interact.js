@@ -753,8 +753,26 @@
   };
 
   // ---------- eliminazione / duplicazione ----------
-  I.deleteSelection = () => {
+  I.deleteSelection = (opts) => {
     const map = V.map(); const ids = new Set(I.selection); if (!ids.size) return;
+    // Gli allegati non spariscono in silenzio (F1-1C, D-15, C-2): se sul passo che si sta per
+    // eliminare ci sono foto o memo, si dice PRIMA quanti sono e si chiede il permesso. I numeri
+    // li da' V.contaAllegati, che legge i metadati dal documento ed e' sincrona apposta — con i
+    // byte in IndexedDB e basta, questa domanda avrebbe dovuto aprire un database e il passo si
+    // sarebbe cancellato con dentro le foto di un giro prima che la risposta arrivasse.
+    if (!(opts && opts.confermato) && V.ui && V.ui.chiediConferma) {
+      const c = { totale: 0 };
+      V.ALLEGATI_TIPI.forEach(t => { c[t] = 0; });
+      ids.forEach(id => { const q = V.contaAllegati(map, id); V.ALLEGATI_TIPI.forEach(t => { c[t] += q[t]; }); c.totale += q.totale; });
+      if (c.totale) {
+        V.ui.chiediConferma({
+          titolo: ids.size === 1 ? 'Eliminare questo passo?' : 'Eliminare questi passi?',
+          testo: (ids.size === 1 ? 'Su questo passo ci sono ' : 'Su questi passi ci sono ') + V.fraseAllegati(c) + ': spariscono anche loro.',
+          conferma: 'Elimina lo stesso',
+        }, () => I.deleteSelection({ confermato: true }));
+        return;
+      }
+    }
     const ops = [];
     map.elements.forEach(el => { if (ids.has(el.id)) ops.push({ t: 'remove', el: clone(el) }); });
     // connettori appesi a elementi rimossi

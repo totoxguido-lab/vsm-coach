@@ -76,6 +76,34 @@ window.VSM = window.VSM || {};
    *  famiglia». Il significato non cambia: è sempre un problema di processo. */
   V.STORM_SHAPES = ['nuvola', 'cerchio', 'quadrato', 'triangolo'];
   V.shapeOf = (el) => { const f = el && el.props && el.props.shape; return V.STORM_SHAPES.includes(f) ? f : 'nuvola'; };
+  /** L'ORIGINE di un numero (F1-1B, D-06): quattro voci dichiarate, dettate da Gt il 27/8/2026.
+   *  Le CHIAVI (`osservato`… ) sono nomi interni e non compaiono mai a schermo: a schermo si leggono
+   *  sempre e solo le etichette qui sotto — la piena nel pannello e nel menu, la corta sul bottone
+   *  in riga. Un posto solo: nessuna vista riscrive queste parole per conto suo.
+   *  La chiave ASSENTE e' uno stato legittimo e dichiarato — «origine non dichiarata» — e non
+   *  significa «osservato»: l'app non dichiara mai un'origine che nessuno ha detto (D-07). */
+  V.FONTI = ['osservato', 'dichiarato', 'documento', 'stima'];
+  V.FONTE_LABEL = {
+    osservato: 'osservato direttamente',
+    dichiarato: 'osservato da altri',
+    documento: 'documento',
+    stima: 'presunto'
+  };
+  V.FONTE_CORTA = { osservato: 'diretto', dichiarato: 'da altri', documento: 'documento', stima: 'presunto' };
+  /** La QUINTA voce, interna: 'calcolato'. La scrive solo «Calcola i tempi» (V.applyTimes) sulla
+   *  terna Hi/Lo/Avg che ha riscritto lui — non e' una cosa che una persona sceglie, quindi NON
+   *  entra in V.FONTI e non compare mai nel menu delle quattro voci di Gt; nel pannello la riga
+   *  corrispondente e' di sola lettura (UI-SPEC §2). Vale solo per props.fonteDati: un'osservazione
+   *  non si calcola, si osserva. */
+  const FONTI_DATI = V.FONTI.concat(['calcolato']);
+  /** I due TIPI di allegato (F1-1C, D-12): una foto scattata in reparto e un memo vocale
+   *  dell'osservatore. E' un elenco CHIUSO, ed e' l'elenco che decide come una cosa si mostra —
+   *  mai il `mime`, che in un file confezionato puo' dichiarare qualunque cosa (minaccia
+   *  T-02-10-01: `mime:'text/html'` aperto come pagina). Fuori elenco la riga cade: un allegato
+   *  di cui non si sa che forma abbia non si sa nemmeno come disegnarlo.
+   *  Nel DOCUMENTO stanno solo i METADATI (id, tipo, mime, dimensione, istante, giro): i byte
+   *  vivono in IndexedDB e non entrano mai in V.doc, che si serializza a ogni salvataggio (D-14). */
+  V.ALLEGATI_TIPI = ['foto', 'memo'];
   V.BAD_WORDS = /\b(a volte|alle volte|talvolta|dipende|forse|magari|può darsi|puo darsi|qualche volta|di solito|in genere|se capita|se serve|se possibile)\b/i;
 
   // ---------- tipi di elemento: default e spiegazioni (dal libro, parole nostre) ----------
@@ -155,7 +183,11 @@ window.VSM = window.VSM || {};
    *  link/lockTo/attachedTo riferimenti, tint/intent/shape/summary/override hanno gia' la loro guardia. */
   const PROPS_TESTO = ['title', 'label', 'text', 'note', 'to', 'hands', 'owner', 'role', 'what', 'qty',
     'days', 'meters', 'from', 'name', 'color', 'who', 'gateIn', 'gateOut', 'hi', 'lo', 'avg', 'cc',
-    'priority', 'muda', 'rule', 'kind', 'mood', 'icon', 'channel', 'style'];
+    'priority', 'muda', 'rule', 'kind', 'mood', 'icon', 'channel', 'style', 'fonteDatiNota'];
+  /** I campi di testo del MAP BRIEF dentro la scheda `prep` (F1-1A, D-01). Il reparto non e' fra
+   *  loro: sta in map.unitName (UI-SPEC §1). `vitali` non e' qui perche' e' una lista, non testo. */
+  const PREP_BRIEF_TESTO = ['domanda', 'famiglia', 'esclusioni', 'inizio', 'fine', 'turnoBrief',
+    'finestra', 'sponsor', 'ruoli', 'revisione'];
   /** Regola generale: le chiavi che questa versione non conosce si conservano intatte — un documento
    *  scritto da una beta più nuova non perde niente. Vale anche DENTRO gli oggetti conosciuti che si
    *  normalizzano campo per campo (le `obs` del Task 3): si parte dall'oggetto originale e si
@@ -181,6 +213,26 @@ window.VSM = window.VSM || {};
     ['prep', 'validation', 'data', 'analysis', 'futureCheck', 'closure'].forEach(k => {
       if (m[k] != null && (typeof m[k] !== 'object' || Array.isArray(m[k]))) m[k] = clone(V.newMap()[k]);
     });
+    // I campi del MAP BRIEF (F1-1A) sono testo libero come il resto della scheda: si parte
+    // dall'oggetto ORIGINALE e si correggono i soli campi noti — le chiavi che questa versione
+    // non conosce sopravvivono (regola A5, commento qui sopra).
+    if (m.prep && typeof m.prep === 'object' && !Array.isArray(m.prep)) {
+      PREP_BRIEF_TESTO.forEach(k => testo(m.prep, k));
+      // Gli INDICATORI VITALI (D-04) sono una lista dentro una scheda: stesso stampo di m.plan
+      // (riga sopra) e stessa ragione — `vitali` arrivato come stringa farebbe morire chiunque ci
+      // iteri sopra (scheda del Brief, conteggio, salute della mappa). Con una differenza: qui la
+      // lista si garantisce ANCHE quando manca. m.plan riceve il suo [] dal default di V.newMap
+      // perche' e' una chiave di primo livello (Object.assign(V.newMap(), m) in load/replaceDoc);
+      // una chiave annidata dentro `prep` no — la scheda del file vince intera, e un documento
+      // 0.91 arriverebbe senza `vitali`, cioe' con un undefined su cui il primo .forEach muore.
+      m.prep.vitali = Array.isArray(m.prep.vitali) ? m.prep.vitali.filter(r => r && typeof r === 'object' && !Array.isArray(r)) : [];
+      m.prep.vitali.forEach(r => {
+        if (typeof r.id !== 'string' || !r.id) r.id = uid();
+        r.nome = (r.nome == null) ? '' : String(r.nome);
+        // solo `true` e' vero: un «si» arrivato da un file non accende un interruttore
+        r.bilanciamento = r.bilanciamento === true;
+      });
+    }
     // Campi del foglio: `!== undefined`, NON `!= null` — un null arrivato da un file e' «presente e
     // sbagliato» (Object.assign(V.newMap(), m) nel replaceDoc non lo correggerebbe: il null della
     // mappa sovrascriverebbe il default). Si corregge qui, non si conserva.
@@ -237,6 +289,16 @@ window.VSM = window.VSM || {};
         // da solo alle misure di oggi (la sola visibilita' del campo non e' una conferma). Quello
         // GIA' scritto sulle osservazioni e' un dato preso: resta.
         if (s.turno !== undefined) delete s.turno;
+        // stessa sorte per «chi osserva» (F1-1C, D-11): e' della sessione viva come il turno, e un
+        // «inf. MR» di ieri non deve firmare le misure di domani (minaccia T-02-09-03). E per il ⚠
+        // pendente (D-10), che e' per definizione del passo che stava correndo: quel passo, alla
+        // riapertura, non sta correndo piu'. Quello GIA' scritto sulle osservazioni resta: e' un
+        // dato preso, e qui non si perde niente — si toglie solo cio' che era in sospeso.
+        if (s.chi !== undefined) delete s.chi;
+        if (s.diverso !== undefined) delete s.diverso;
+        // e la NOTA VELOCE pendente di quel ⚠ (piano 02-12): senza il suo passo che corre non ha
+        // piu' una misura a cui appartenere, e riattaccata domani direbbe di un altro passo.
+        if (s.nota !== undefined) delete s.nota;
         // pause dell'osservatore (stazione 3, indurite dal finding P1 di Codex): numeri veri E
         // coerenti con t0 e con l'orologio, o via — un pausedAt prima dell'inizio (o nel futuro)
         // e un pausedTot piu' lungo dell'intera durata avrebbero prodotto misure a ZERO in
@@ -332,6 +394,10 @@ window.VSM = window.VSM || {};
       // la firma dei tempi (esito 13): stringa (un id di mappa) o niente — senza, i tempi sono
       // del foglio (default sicuro per i documenti scritti prima della firma)
       if (p.tempiGiro !== undefined && typeof p.tempiGiro !== 'string') delete p.tempiGiro;
+      // l'origine della TERNA Hi/Lo/Avg (F1-1B): un campo solo per i tre numeri, che si scrivono
+      // insieme nel pannello. Elenco dichiarato piu' la quinta voce interna 'calcolato'; fuori
+      // elenco si cancella la chiave, come per la fonte dell'osservazione.
+      if (p.fonteDati !== undefined && !FONTI_DATI.includes(p.fonteDati)) delete p.fonteDati;
       // l'intento e' un segno dichiarato in legenda, non testo libero: fuori elenco si torna a «chiede»
       if (p.intent != null && !V.INTENTS.some(x => x.id === p.intent)) delete p.intent;
       // la tinta finisce dentro un attributo di stile del disegno: solo un numero la puo' scrivere,
@@ -366,9 +432,48 @@ window.VSM = window.VSM || {};
           if (x.nota !== undefined && (typeof x.nota !== 'string' || !x.nota)) delete x.nota;
           // il turno del giro (F1): testo libero come la nota — non-stringa o vuoto, via
           if (x.turno !== undefined && (typeof x.turno !== 'string' || !x.turno)) delete x.turno;
+          // l'ORIGINE della misura (F1-1B): elenco dichiarato, e fuori elenco si CANCELLA la chiave
+          // — la forma di p.intent, non quella di cls. Ripiegare su 'osservato' farebbe dire alla
+          // mappa che qualcuno ha visto di persona una cosa che nessuno ha visto: e' esattamente
+          // la bugia che il 1B esiste per impedire (D-06/D-07). Assente = origine non dichiarata.
+          if (x.fonte !== undefined && !V.FONTI.includes(x.fonte)) delete x.fonte;
+          // chi o dove: testo libero come la nota — non-stringa o vuoto, via
+          if (x.fonteNota !== undefined && (typeof x.fonteNota !== 'string' || !x.fonteNota)) delete x.fonteNota;
+          // il ⚠ «qui e' andata diversa» (F1-1C, D-10) e' BINARIO: solo `true` e' vero. Un 1, un
+          // «si» o un oggetto arrivati da un file non accendono il segno — la forma di
+          // prep.vitali[].bilanciamento. La chiave assente e' lo stato normale, non un difetto.
+          if (x.diverso !== undefined && x.diverso !== true) delete x.diverso;
+          // chi ha preso la misura (D-11): testo libero come la nota — non-stringa o vuoto, via
+          if (x.chi !== undefined && (typeof x.chi !== 'string' || !x.chi)) delete x.chi;
           return x;
         }).filter(Boolean);
         if (o.length) p.obs = o; else delete p.obs;
+      }
+      // gli ALLEGATI del passo (F1-1C, D-12/D-14): SOLO i metadati, mai i byte — il documento si
+      // serializza a ogni salvataggio, e una foto la' dentro finirebbe nell'export JSON e in una PR
+      // (minaccia T-02-10-05). Stesso stampo delle obs qui sopra: si parte dall'oggetto ORIGINALE e
+      // si correggono i soli campi noti, cosi' le chiavi che non conosciamo — una beta piu' nuova,
+      // domani la trascrizione di un memo — sopravvivono (regola A5).
+      // La riga CADE solo per il `tipo` fuori elenco: e' il tipo, non il `mime`, a decidere come
+      // una cosa si mostra (T-02-10-01), e di un allegato senza tipo la UI non saprebbe che fare.
+      // Tutto il resto si ripara sul posto: l'`id` mancante se ne fa dare uno (senza chiave i byte
+      // non si ritroverebbero mai), gli altri campi fuori tipo perdono la loro chiave e basta —
+      // buttare la riga per un `size` scritto male vorrebbe dire dimenticare che quella foto esiste,
+      // che e' proprio la perdita silenziosa che C-2 vieta.
+      if (p.allegati !== undefined) {
+        const nonNeg = (v) => { const n = num(v); return (n != null && n >= 0) ? n : undefined; };
+        const parola = (v) => (typeof v === 'string' && v.trim()) ? v : undefined;
+        const A = (Array.isArray(p.allegati) ? p.allegati : []).map(x => {
+          if (!x || typeof x !== 'object' || Array.isArray(x)) return null;
+          if (!V.ALLEGATI_TIPI.includes(x.tipo)) return null;
+          x.id = parola(x.id) || uid();
+          ['mime', 'giro'].forEach(k => { if (x[k] !== undefined && parola(x[k]) === undefined) delete x[k]; });
+          // size/at/w/h/dur: numeri finiti non negativi, o la chiave se ne va. Un `w` negativo o un
+          // `dur: Infinity` finirebbero in un attributo del disegno o in una barra di riproduzione.
+          ['size', 'at', 'w', 'h', 'dur'].forEach(k => { if (x[k] !== undefined) { const n = nonNeg(x[k]); if (n === undefined) delete x[k]; else x[k] = n; } });
+          return x;
+        }).filter(Boolean);
+        if (A.length) p.allegati = A; else delete p.allegati;
       }
       if (p.override && typeof p.override === 'object') {
         const o = {};
@@ -400,6 +505,15 @@ window.VSM = window.VSM || {};
         });
       });
     }
+    // Gli ALLEGATI non hanno bisogno di niente qui, ed e' una scelta di schema, non una svista
+    // (02-RESEARCH.md §Pitfall 10 punto 5 chiedeva una rimappa di `stepId`): i metadati vivono
+    // DENTRO `el.props.allegati`, quindi l'id del passo non e' duplicato da nessuna parte e
+    // rinominare l'elemento se li porta dietro da solo. Se un giorno il metadato tornasse a
+    // portare uno `stepId`, la rimappa qui sopra diventerebbe obbligatoria anche per lui — e le
+    // due prove di test/allegati.test.js (§Rimappa degli id: l'id marcio e la collisione fra due
+    // passi) sono li' per accorgersene invece di scoprirlo su un foglio vero.
+    // L'unico riferimento degli allegati che NON e' locale al passo e' `giro`, che e' un id di
+    // FOGLIO: quello segue le mappe in V.importMaps, con lo stesso ext() di props.obs[].giro.
     // Anelli di legami: due elementi legati l'uno all'altro si disegnerebbero a vicenda senza fine.
     // Il legame che chiude l'anello viene sciolto, l'elemento resta dov'e' disegnato.
     // Fra i «genitori» contano anche i CAPI di una freccia: una freccia sta dove la mettono gli
@@ -497,7 +611,15 @@ window.VSM = window.VSM || {};
     verOf: null, verName: 'mappa iniziale', validated: false, tint: Math.floor(Math.random() * 360),
     unit: 'minuti', samples: '', scope: '', ideal: '', requestor: '',
     elements: [], strokes: [], plan: [],
-    prep: { observable: false, frequent: false, worthy: false, drawer: '', owner: '', physicians: false, stable: false, staffing: false },
+    // La scheda di PREPARAZIONE e' anche il MAP BRIEF (F1-1A, D-01): i campi del Brief si
+    // aggiungono qui, tutti con default vuoto — cosi' un file 0.91 li riceve da
+    // Object.assign(V.newMap(), m) senza una migrazione dedicata. Nessuno e' obbligatorio: il
+    // Brief documenta, non blocca (D-02). Il reparto NON e' qui: vive in map.unitName e non si
+    // chiede due volte (UI-SPEC §1) — V.briefStato lo conta dove sta.
+    prep: {
+      observable: false, frequent: false, worthy: false, drawer: '', owner: '', physicians: false, stable: false, staffing: false,
+      domanda: '', famiglia: '', esclusioni: '', inizio: '', fine: '', turnoBrief: '', finestra: '', sponsor: '', ruoli: '', revisione: '', vitali: []
+    },
     validation: { walked: false, walkedBy: '', walkedDate: '', prepared: false, validatedBy: '', validatedDate: '', corrections: '' },
     data: { tool: false, boundariesAgreed: false, feedback: false, notes: '' },
     analysis: { goodEnough: '', questions: {} },
@@ -730,10 +852,25 @@ window.VSM = window.VSM || {};
     if ((cur === 'misura' || cur === 'analizza') && ['disegna', 'valida'].includes(fase)) return { ok: false, reason: 'nuovo-giro' };
     return (FASE_AVANTI[cur] || []).includes(fase) ? { ok: true } : { ok: false, reason: 'fase' };
   };
+  /** Un livello che dichiara `phaseMin: X` e' il livello che NASCE con la fase X: prima non e'
+   *  nemmeno ammesso (V.layers.ammesso), e quando la fase arriva e' l'unica cosa nuova che quella
+   *  fase ha da mostrare. Finche' nessuno lo accendeva, la fase arrivava e il foglio restava
+   *  identico: in Misura i badge dei tempi — e con loro il segnetto ≈ della provenienza (D-08, il
+   *  criterio d'uscita F1-U1) — non si sono mai visti sul foglio di chi misura, perche' vivono
+   *  tutti dentro V.layers.active. Si accende SOLO la chiave mai decisa (`undefined`): chi lo
+   *  spegne dal menu resta con lui spento, e riattraversare la fase non gli scavalca la scelta.
+   *  Generico apposta: model.js non conosce gli id dei livelli (li registra chi li scrive). */
+  const accendiLivelliDellaFase = (map, fase) => {
+    const L = map && map.layers;
+    if (!L || typeof L !== 'object') return;
+    Object.keys(V.LAYER_PHASE_MIN).forEach(k => {
+      if (V.LAYER_PHASE_MIN[k] === fase && L[k] === undefined) L[k] = true;
+    });
+  };
   V.setPhase = (map, fase) => {
     const g = V.canSetPhase(map, fase);
     if (!g.ok) return g;
-    map.phase = fase; map.updated = Date.now(); bump(map); V.save();
+    map.phase = fase; accendiLivelliDellaFase(map, fase); map.updated = Date.now(); bump(map); V.save();
     emit({ label: 'fase', mapId: map.id, ops: [] });
     return { ok: true };
   };
@@ -800,6 +937,15 @@ window.VSM = window.VSM || {};
    *  un'osservazione, quindi si comporta come il resto del contenuto. */
   const classeProp = (type, key) => {
     if (key === 'obs') return 'osservazioni';
+    // `allegati` e' classe OSSERVAZIONI, non contenuto — una parola, e senza di lei la cattura
+    // durante il giro (D-13) NON funziona: il ripiego dichiarato «contenuto» due righe piu' sotto
+    // in fase `misura` passa SOLO per i tipi annotazione (MISURA_LIBERI, riga ~1000), quindi
+    // toccare 📷 su un passo mentre si cammina verrebbe rifiutato dalla porta delle fasi e a
+    // schermo «non succederebbe niente» (02-RESEARCH.md §Pitfall 5). E' un allegato preso
+    // camminando: sta sull'asse delle osservazioni insieme a `obs`, non su quello del disegno.
+    // Chi passasse di qui per semplificare e la togliesse romperebbe D-13 senza vedere un rosso
+    // fuori da test/allegati.test.js: la prima prova di quel file esiste apposta.
+    if (key === 'allegati') return 'osservazioni';
     if (ANNOT_UNIVERSALI.includes(key)) return 'annotazioni';
     if (ANNOT_TESTO_TIPI.includes(type) && ['text', 'note', 'summary'].includes(key)) return 'annotazioni';
     if (STRUTTURA_PROPS.includes(key)) return 'struttura';
@@ -966,6 +1112,27 @@ window.VSM = window.VSM || {};
   V.undo = () => { let e; while ((e = undoStack.pop())) { const map = V.doc.maps[e.mapId]; if (!map) continue; const bloc = e.ops.map(op => V.allowed(op, map, { classe: e.classe })).find(g => !g.ok); if (bloc) { const msg = V.DENIED_MSG[bloc.reason]; if (msg) V.ui && V.ui.toast && V.ui.toast(msg); undoStack.push(e); return false; } if (V.doc.activeMapId !== e.mapId) V.switchMap(e.mapId); e.ops.forEach(op => applyOp(op, map)); bump(map); redoStack.push(e); V.save(); emit({ undo: true, label: e.label }); return true; } return false; };
   V.redo = () => { let e; while ((e = redoStack.pop())) { const map = V.doc.maps[e.mapId]; if (!map) continue; const bloc = e.redo.map(op => V.allowed(op, map, { classe: e.classe })).find(g => !g.ok); if (bloc) { const msg = V.DENIED_MSG[bloc.reason]; if (msg) V.ui && V.ui.toast && V.ui.toast(msg); redoStack.push(e); return false; } if (V.doc.activeMapId !== e.mapId) V.switchMap(e.mapId); e.redo.forEach(op => applyOp(op, map)); bump(map); undoStack.push(e); V.save(); emit({ redo: true, label: e.label }); return true; } return false; };
   V.canUndo = () => undoStack.length > 0; V.canRedo = () => redoStack.length > 0;
+  /** PERCHE' la freccia non ha niente da fare (cancello 1B, rilievo 4 — «Grigia si', ma che dica
+   *  perche'», decisione di Gt del 27/8). Le due frecce restano toccabili: il tocco a vuoto
+   *  risponde invece di non succedere niente.
+   *  Ritorna null quando c'e' da lavorare, altrimenti la frase da dire. Due frasi per la ↶ perche'
+   *  ci sono due situazioni diverse, e dirle uguali sarebbe una mezza bugia:
+   *  - foglio senza modifiche: non c'e' niente, e basta;
+   *  - misure prese in questo giro: la pila e' vuota lo stesso, ma NON perche' non sia successo
+   *    niente — le misure del cronometro sono commit silenziosi, deliberatamente non annullabili
+   *    (quella scelta resta in piedi). Allora si dice anche dove si tolgono davvero: il 🗑 della
+   *    barra del giro. Corta, perche' la regola di Gt e' che le spiegazioni stanno dietro un «?».
+   *  Pura rispetto al documento: legge la pila e il foglio, non scrive niente. */
+  V.motivoAnnulla = (verso, map) => {
+    if (verso === 'redo' ? V.canRedo() : V.canUndo()) return null;
+    if (verso === 'redo') return 'Niente da rifare: non hai annullato niente.';
+    const m = map || V.map();
+    const misurato = !!(m && ['misura', 'analizza'].includes(m.phase)
+      && (m.elements || []).some(e => V.obsDelGiro(e, m).length));
+    return misurato
+      ? 'Niente da annullare: le misure del cronometro non passano da qui. Si tolgono col \u{1F5D1} della barra del giro.'
+      : 'Niente da annullare: su questo foglio non c’è ancora una modifica da disfare.';
+  };
 
   // ---------- mappe: crea, cambia, elimina ----------
   /** le nuvole si alzano quanto serve al loro testo (stesse costanti del disegno): senza, il testo sforava */
@@ -1276,6 +1443,16 @@ window.VSM = window.VSM || {};
   const CHANNEL = (typeof self !== 'undefined' && self.VSM_CHANNEL) || 'sviluppo';
   const SUFFIX = CHANNEL === 'stabile' ? '' : CHANNEL;
   const DB = 'vsm-coach' + (SUFFIX ? '-' + SUFFIX : ''), STORE = 'kv';
+  /** lo store dei BYTE degli allegati (foto e memo, piano 02-11): sta nello STESSO database del
+   *  documento, in un cassetto a parte. Il nome vive qui accanto a DB e STORE, non scritto a mano
+   *  dentro le query: un refuso in una sola di loro sarebbe un cassetto fantasma. */
+  const ALLEG = 'allegati';
+  /** La versione del database. Alzarla e' l'operazione piu' pericolosa dell'app: `onupgradeneeded`
+   *  riparte su OGNI installazione esistente, e se sbaglia l'apertura fallisce, il documento finisce
+   *  nel ripiego localStorage da 5 MB e nessuno se ne accorge finche' una mappa grande non smette di
+   *  salvarsi. Chi la alzera' di nuovo: le prove dell'aggiornamento si scrivono PRIMA della riga
+   *  (test/allegati.test.js, sezione del piano 02-11). */
+  const DB_VER = 2;
   const LS_DOC = 'vsm.doc' + (SUFFIX ? '.' + SUFFIX : '');
   /** «questo spazio e' stato svuotato apposta»: sopravvive all'azzeramento, e impedisce che la
    *  prima apertura successiva ricopi il documento dallo spazio di origine (v. V.load) */
@@ -1284,7 +1461,36 @@ window.VSM = window.VSM || {};
   /** dove questa installazione tiene le mappe: serve alla schermata di diagnosi e alle prove */
   V.storage = () => ({ canale: CHANNEL, db: DB, chiave: LS_DOC });
   let idb = null;
-  function openIdb() { return new Promise((res) => { if (!('indexedDB' in window)) return res(null); const r = indexedDB.open(DB, 1); r.onupgradeneeded = () => r.result.createObjectStore(STORE); r.onsuccess = () => res(r.result); r.onerror = () => res(null); }); }
+  /** IDEMPOTENTE, e non e' un vezzo (02-RESEARCH.md §Pitfall 1): `createObjectStore` su uno store
+   *  che esiste gia' lancia ConstraintError, la transazione di aggiornamento aborta, l'apertura
+   *  fallisce e da quel momento TUTTE le mappe vivono in localStorage — in silenzio, con la sola
+   *  spia gialla del salvataggio a dirlo. Quindi ogni store si crea solo se manca: da 0 (installazione
+   *  nuova) ne nascono due, da 1 (chi aveva gia' l'app) nasce solo `allegati` e `kv` non si tocca.
+   *  Nessuna migrazione di dati: il documento resta dov'e' e com'e' (nota di Gt del 26/8).
+   *  `onblocked`: se un'altra scheda tiene ancora aperta la versione vecchia l'aggiornamento non
+   *  parte — senza questa riga la promessa non si risolverebbe MAI e l'app resterebbe muta all'avvio
+   *  invece di aprirsi col ripiego. */
+  function openIdb() {
+    return new Promise((res) => {
+      if (!('indexedDB' in window)) return res(null);
+      const r = indexedDB.open(DB, DB_VER);
+      r.onupgradeneeded = () => {
+        const db = r.result;
+        if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
+        if (!db.objectStoreNames.contains(ALLEG)) {
+          // keyPath 'id': la chiave sta DENTRO il record, ed e' lo stesso id che il documento porta
+          // in props.allegati[].id — le due meta' si ritrovano da li'. Gli indici servono a chiedere
+          // «di questa mappa» e «di questo passo» senza scorrere tutto lo store.
+          const s = db.createObjectStore(ALLEG, { keyPath: 'id' });
+          s.createIndex('mapId', 'mapId', { unique: false });
+          s.createIndex('stepId', 'stepId', { unique: false });
+        }
+      };
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => res(null);
+      r.onblocked = () => res(null);
+    });
+  }
   function idbGet(k) { return new Promise((res) => { if (!idb) return res(undefined); const tx = idb.transaction(STORE, 'readonly'); const rq = tx.objectStore(STORE).get(k); rq.onsuccess = () => res(rq.result); rq.onerror = () => res(undefined); }); }
   // onabort oltre a onerror: una transazione interrotta (quota esaurita, scheda chiusa a meta') non
   // emette onerror, e senza questo la promessa restava appesa per sempre — il salvataggio spariva in
@@ -1301,6 +1507,14 @@ window.VSM = window.VSM || {};
    *  nulla. 'ok' = scritto su IndexedDB; 'fallback' = solo su localStorage (spia gialla, si
    *  ritenta IndexedDB da sola); 'failed' = non scritto da nessuna parte (spia rossa). */
   V.storage.state = 'ok';
+  /** Lo spazio TENUTO DA PARTE (02-RESEARCH.md §Pitfall 9): WebKit cancella i dati di un'origine
+   *  che non riceve interazione da sette giorni, e lo sfratto e' totale — mappe E allegati insieme.
+   *  `true` = il sistema ha accettato di tenerli da parte; `false` = ha detto di no; `null` = non
+   *  gliel'abbiamo ancora chiesto, che NON e' un rifiuto e non va raccontato come tale.
+   *  Le fonti si contraddicono su che cosa serva a Safari per concederlo: l'esito si GUARDA nella
+   *  riga di diagnosi sull'iPad (assunzione A3 della ricerca), non si assume qui. */
+  V.storage.persistente = null;
+  V.storage.stima = null;
   const setStato = (s) => {
     if (V.storage.state === s) return;
     V.storage.state = s;
@@ -1377,20 +1591,213 @@ window.VSM = window.VSM || {};
   V.saveIdle = () => chain;
   /** quando il documento e' stato scritto l'ultima volta (per la schermata di diagnosi) */
   V.lastSaved = () => { try { return JSON.parse(localStorage.getItem(LS_DOC + '.meta') || '{}').at || null; } catch (e) { return null; } };
+
+  /** ---------- gli ALLEGATI: i BYTE nello store `allegati` (F1-1C, D-12/D-14, piano 02-11) --------
+   *  L'ALTRA meta' del sottosistema. I metadati — id, tipo, mime, dimensione, istante, giro — stanno
+   *  nel documento e ci arrivano da V.allegaMeta (piano 02-10); qui stanno SOLO i byte, e nessuna di
+   *  queste cinque funzioni tocca V.doc. L'ordine fra le due meta' lo decide chi chiama, ed e'
+   *  dichiarato nel commento di V.allegOrfani: prima il commit sul documento (annullabile), poi —
+   *  al V.load successivo — la spazzata dei byte. Al contrario si perderebbero dati veri.
+   *
+   *  La forma e' quella di idbSet, riga per riga, e le due cose che copia sono le due che contano:
+   *  1) la promessa NON LANCIA MAI (risolve null/false/0), col try/catch attorno alla transazione —
+   *     `idb.transaction` lancia da sola se lo store non c'e' (un'installazione mai aggiornata);
+   *  2) `onabort` ACCANTO a `onerror`. Una transazione interrotta — quota esaurita, scheda chiusa a
+   *     meta' — non emette onerror: senza onabort la promessa resterebbe appesa PER SEMPRE e la foto
+   *     sparirebbe in silenzio. E' il bug vero raccontato dal commento di idbSet qui sopra, e sui
+   *     byte di una camminata in reparto costerebbe piu' caro.
+   *
+   *  `buf` si salva come ArrayBuffer con il `mime` accanto, non come Blob (WebKit ha avuto bug sui
+   *  Blob dentro IndexedDB): il Blob si ricostruisce alla lettura, in UI. */
+  /** Quanto diventa grande una foto ridotta (F1-1C, D-13, 02-RESEARCH.md §Pattern 6). PURA, e sta
+   *  QUI e non accanto al canvas per la stessa ragione di V.allegOrfani: in Node si prova, sul
+   *  vetro no. Una moltiplicazione sbagliata qui non la vedrebbe nessuno — la foto entrerebbe lo
+   *  stesso, solo grande dieci volte, e una camminata riempirebbe l'iPad.
+   *  Tre regole, tutte e tre provate: `k` non supera MAI 1 (una foto piccola non si ingrandisce:
+   *  si guadagnerebbero pixel finti e si perderebbe spazio), nessun lato scende sotto 1 (un canvas
+   *  0xN non disegna niente e `toBlob` darebbe null, cioe' la foto sparirebbe in silenzio), e
+   *  misure che non sono numeri veri ritornano `null` invece di un canvas NaN. */
+  V.misuraRidotta = (w, h, latoMax) => {
+    const n = (x) => (typeof x === 'number' && isFinite(x) && x > 0) ? x : null;
+    const lw = n(w), lh = n(h), max = n(latoMax);
+    if (!lw || !lh || !max) return null;
+    const k = Math.min(1, max / Math.max(lw, lh));
+    return { w: Math.max(1, Math.round(lw * k)), h: Math.max(1, Math.round(lh * k)) };
+  };
+  /** In che CONTENITORE si registra un memo vocale (F1-1C, D-12, 02-RESEARCH.md §Pattern 7).
+   *  Si sceglie a runtime, mai a colpo sicuro: Safari 14.3→18.3 registrava solo audio/mp4 (AAC),
+   *  dalla 18.4 anche webm/opus. E `isTypeSupported` NON esisteva su Safari 14.x — chiamarla lì
+   *  avrebbe lanciato, e il memo non sarebbe partito affatto su un iPad vecchio, in reparto, senza
+   *  che nessuno capisse perché: la guardia `typeof … === 'function'` è quella riga lì.
+   *  `audio/mp4` è la PRIMA scelta anche dove webm è disponibile: è il formato che qualunque
+   *  strumento di trascrizione futuro legge senza conversione, ed è quello che D-12 chiama
+   *  «formato accessibile» (predisposto scalabile, senza costruire niente di quel futuro adesso).
+   *  Stringa vuota = «scegli tu», che è quello che MediaRecorder fa col suo default.
+   *  Sta nel modello, e non accanto al bottone, perché così una prova può metterle in mano un
+   *  browser finto e guardare che cosa sceglie (stessa ragione di V.allegOrfani). */
+  V.mimeMemo = () => {
+    const MR = (typeof window !== 'undefined' && window) ? window.MediaRecorder : null;
+    const ok = (t) => !!MR && typeof MR.isTypeSupported === 'function' && !!MR.isTypeSupported(t);
+    return ok('audio/mp4') ? 'audio/mp4'
+      : ok('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus'
+        : '';
+  };
+  V.alleg = {
+    /** Scrive i byte e ritorna il META da passare a V.allegaMeta — ma NON lo scrive nel documento:
+     *  le due meta' restano separate. null = non scritto (nessun database, dati incompleti, quota). */
+    metti: (mapId, elId, dati) => new Promise((res) => {
+      if (!idb) return res(null);
+      if (!dati || typeof dati !== 'object' || Array.isArray(dati)) return res(null);
+      const giro = (typeof mapId === 'string' && mapId.trim()) ? mapId.trim() : null;
+      if (!giro) return res(null);          // senza il giro non si saprebbe piu' di quale camminata sono
+      const passo = (typeof elId === 'string' && elId.trim()) ? elId.trim() : null;
+      if (!V.ALLEGATI_TIPI.includes(dati.tipo)) return res(null);   // elenco chiuso, come nel documento
+      const mime = (typeof dati.mime === 'string' && dati.mime.trim()) ? dati.mime.trim() : null;
+      if (!mime) return res(null);          // senza mime non si saprebbe come rileggerli
+      const buf = dati.buf;
+      if (!buf || typeof buf !== 'object' || typeof buf.byteLength !== 'number') return res(null);
+      const extra = (dati.extra && typeof dati.extra === 'object' && !Array.isArray(dati.extra)) ? dati.extra : {};
+      // l'id lo genera il modello (uid, lo stesso generatore degli elementi) con l'istante davanti:
+      // e' la CHIAVE dei byte, e due allegati che se la scambiassero vorrebbe dire una foto scritta
+      // sopra un'altra — cioe' perdita silenziosa
+      const meta = Object.assign({}, extra, {
+        id: 'al' + Date.now().toString(36) + uid(),
+        tipo: dati.tipo, mime, size: buf.byteLength, at: Date.now(),
+      });
+      const record = Object.assign({}, meta, { mapId: giro, stepId: passo, buf });
+      try {
+        const tx = idb.transaction(ALLEG, 'readwrite');
+        tx.objectStore(ALLEG).put(record);
+        tx.oncomplete = () => res(meta);
+        tx.onerror = () => res(null);
+        tx.onabort = () => res(null);
+      } catch (e) { res(null); }
+    }),
+    /** I byte di un id. `null` NON e' un errore: e' lo stato «non su questo dispositivo» di un
+     *  foglio importato da un altro iPad (Pitfall 6), e la UI lo disegna come segnaposto. */
+    prendi: (id) => new Promise((res) => {
+      const chiave = (typeof id === 'string' && id.trim()) ? id.trim() : null;
+      if (!idb || !chiave) return res(null);
+      try {
+        const tx = idb.transaction(ALLEG, 'readonly');
+        const rq = tx.objectStore(ALLEG).get(chiave);
+        rq.onsuccess = () => { const v = rq.result; res((v && v.buf) ? { mime: v.mime, buf: v.buf } : null); };
+        rq.onerror = () => res(null);
+        tx.onabort = () => res(null);
+      } catch (e) { res(null); }
+    }),
+    /** true = c'era e non c'e' piu'; false = non c'era niente da togliere (non e' un errore) */
+    togli: (id) => new Promise((res) => {
+      const chiave = (typeof id === 'string' && id.trim()) ? id.trim() : null;
+      if (!idb || !chiave) return res(false);
+      try {
+        const tx = idb.transaction(ALLEG, 'readwrite');
+        const os = tx.objectStore(ALLEG);
+        let cera = false;
+        const rq = os.get(chiave);
+        rq.onsuccess = () => { if (rq.result) { cera = true; os.delete(chiave); } };
+        rq.onerror = () => { };
+        tx.oncomplete = () => res(cera);
+        tx.onerror = () => res(false);
+        tx.onabort = () => res(false);
+      } catch (e) { res(false); }
+    }),
+    /** gli id dei byte di una mappa, dall'indice `mapId`: chiedere «di questa mappa» senza scorrere
+     *  tutto lo store — serve all'eliminazione di un foglio e alla galleria del pannello */
+    perMappa: (mapId) => new Promise((res) => {
+      const giro = (typeof mapId === 'string' && mapId.trim()) ? mapId.trim() : null;
+      if (!idb || !giro) return res([]);
+      try {
+        const tx = idb.transaction(ALLEG, 'readonly');
+        const rq = tx.objectStore(ALLEG).index('mapId').getAllKeys(giro);
+        rq.onsuccess = () => res(Array.isArray(rq.result) ? rq.result : []);
+        rq.onerror = () => res([]);
+        tx.onabort = () => res([]);
+      } catch (e) { res([]); }
+    }),
+    /** La spazzata: riceve gli id VIVI (quelli che il documento ricorda) e cancella i byte che non
+     *  compaiono da nessuna parte. Chi decide che cosa cancellare NON e' questa funzione: e'
+     *  V.allegOrfani, che e' pura e provata in Node senza database (Pitfall 3). Qui si obbedisce e
+     *  si conta. Il verso non si inverte mai: un metadato senza byte non e' un orfano. */
+    spazza: (idsVivi) => new Promise((res) => {
+      if (!idb) return res(0);
+      try {
+        const tx = idb.transaction(ALLEG, 'readwrite');
+        const os = tx.objectStore(ALLEG);
+        let quanti = 0;
+        const rq = os.getAllKeys();
+        rq.onsuccess = () => {
+          const fuori = V.allegOrfani(idsVivi, rq.result);
+          quanti = fuori.length;
+          fuori.forEach(k => os.delete(k));
+        };
+        rq.onerror = () => { };
+        tx.oncomplete = () => res(quanti);
+        tx.onerror = () => res(0);
+        tx.onabort = () => res(0);
+      } catch (e) { res(0); }
+    }),
+  };
+  /** Gli id degli allegati VIVI: quelli che almeno un passo di almeno una mappa ricorda. Si legge
+   *  dal documento gia' caricato e riparato — mai prima, o si spazzerebbero i byte di mappe che non
+   *  sono ancora state lette. */
+  const idsAllegatiVivi = () => {
+    const out = [];
+    const maps = (V.doc && V.doc.maps) || {};
+    Object.keys(maps).forEach(k => {
+      const m = maps[k];
+      ((m && Array.isArray(m.elements)) ? m.elements : []).forEach(el => V.allegatiDi(el).forEach(a => out.push(a.id)));
+    });
+    return out;
+  };
+  /** La spazzata al caricamento (Pitfall 10 punto 2), col suo silenzio deliberato: un guasto qui NON
+   *  deve poter impedire l'apertura del foglio. Una pulizia mancata e' rumore innocuo che si rifa' il
+   *  giro dopo; un caricamento fermo sarebbe il lavoro di ieri irraggiungibile. */
+  async function spazzaAllegatiOrfani() {
+    try { await V.alleg.spazza(idsAllegatiVivi()); } catch (e) { /* si riprova al prossimo avvio */ }
+  }
+  /** Chiede al sistema di tenere da parte i dati (Pitfall 9). Una volta sola, all'apertura, e senza
+   *  attese: niente dialoghi, niente `await`, se non si ottiene pazienza. L'esito finisce nella riga
+   *  di diagnosi, che e' l'unico modo di sapere davvero come si comporta l'iPad di Gt. */
+  let spazioChiesto = false;
+  function chiediSpazio() {
+    if (spazioChiesto) return;
+    spazioChiesto = true;
+    try {
+      if (typeof navigator === 'undefined' || !navigator || !navigator.storage) return;
+      const st = navigator.storage;
+      if (typeof st.persist === 'function') {
+        Promise.resolve(st.persist()).then((ok) => { V.storage.persistente = !!ok; }, () => { V.storage.persistente = false; });
+      }
+      if (typeof st.estimate === 'function') {
+        Promise.resolve(st.estimate()).then((s) => { if (s && typeof s === 'object') V.storage.stima = { usage: s.usage, quota: s.quota }; }, () => { });
+      }
+    } catch (e) { /* un'API che lancia non deve fermare il caricamento */ }
+  }
   /** copia una tantum del documento dallo spazio dell'app principale (serve alla beta la prima volta:
    *  senza, aprirla avrebbe mostrato una libreria vuota). L'originale non viene toccato. */
   async function travasoDaOrigine() {
+    /** l'altro posto in cui l'app di origine puo' aver lasciato il documento: il suo ripiego */
+    const daRipiego = () => { try { return localStorage.getItem('vsm.doc'); } catch (e) { return null; } };
     try {
       const vecchio = await new Promise((res) => {
         if (!('indexedDB' in window)) return res(null);
-        const r = indexedDB.open('vsm-coach', 1);
+        // SENZA numero di versione: apre alla versione corrente, qualunque sia (02-RESEARCH.md
+        // §Pitfall 2). Con la versione cablata a 1, il giorno in cui la stabile passa alla 2
+        // questa riga prende un VersionError, il travaso risponde «niente da copiare» e la beta
+        // si apre con la libreria VUOTA — proprio il caso per cui il travaso esiste.
+        const r = indexedDB.open('vsm-coach');
         r.onupgradeneeded = () => { try { r.transaction.abort(); } catch (e) { } res(null); }; // non esisteva: niente da copiare
         r.onsuccess = () => res(r.result); r.onerror = () => res(null);
+        r.onblocked = () => res(null);   // la stabile aperta in un'altra scheda: non si resta appesi
       });
-      if (!vecchio) { try { return localStorage.getItem('vsm.doc'); } catch (e) { return null; } }
+      if (!vecchio) return daRipiego();
+      // lo store si legge solo se c'e': senza questa guardia la transazione lancia NotFoundError,
+      // il travaso risponde null e si perde anche quello che l'origine aveva scritto nel ripiego
+      if (!vecchio.objectStoreNames.contains(STORE)) { try { vecchio.close(); } catch (e) { } return daRipiego(); }
       const s = await new Promise((res) => { try { const tx = vecchio.transaction(STORE, 'readonly'); const rq = tx.objectStore(STORE).get('doc'); rq.onsuccess = () => res(rq.result); rq.onerror = () => res(null); } catch (e) { res(null); } });
       try { vecchio.close(); } catch (e) { }
-      return s || null;
+      return s || daRipiego();
     } catch (e) { return null; }
   }
   /** Migrazione una tantum, in un posto solo (spec fondamenta A8): fino alla versione 3 di oggi.
@@ -1488,6 +1895,10 @@ window.VSM = window.VSM || {};
     // riscritto subito: altrimenti resta valido solo finche' la scheda e' aperta e alla riapertura
     // successiva cambia di nuovo — era il caso dello sfondo che si ricolorava a ogni avvio
     if (JSON.stringify(V.doc) !== s) V.saveNow();
+    // I byte degli allegati, DOPO che il documento e' stato letto e riparato (piano 02-11): prima
+    // non si saprebbe quali id sono vivi, e si cancellerebbero le foto di mappe non ancora lette.
+    await spazzaAllegatiOrfani();
+    chiediSpazio();
     return V.doc;
   };
   /** una mappa salvata prima che il foglio diventasse grande resta della sua misura: spostarle gli elementi sarebbe peggio */
@@ -1688,6 +2099,11 @@ window.VSM = window.VSM || {};
         nm.elements.forEach(el => {
           if (el.props && el.props.link) el.props.link = ext(el.props.link);
           if (el.props && Array.isArray(el.props.obs)) el.props.obs.forEach(o => { if (o && o.giro != null) o.giro = ext(o.giro); });
+          // stessa cura per gli allegati (F1-1C, D-12): `allegati[].giro` e' un riferimento a un
+          // FOGLIO come obs[].giro, non a un elemento — senza ext() una foto importata resterebbe
+          // appesa all'id della mappa di CASA, cioe' direbbe di essere stata scattata in un giro
+          // che non e' il suo (minaccia T-02-10-03, dal lato delle mappe invece che degli elementi)
+          if (el.props && Array.isArray(el.props.allegati)) el.props.allegati.forEach(o => { if (o && o.giro != null) o.giro = ext(o.giro); });
         });
         return nm;
       });
@@ -1898,6 +2314,183 @@ window.VSM = window.VSM || {};
    *  giro assente (migrate 0.9, scritte prima del timbro) o uguale al foglio. */
   V.obsDelGiro = (el, map) => V.obsOf(el).filter(o => !o.giro || o.giro === (map && map.id));
   V.timesDelGiro = (el, map) => V.obsDelGiro(el, map).map(o => o.s);
+  /** Il nome LEGGIBILE di cio' che e' stato misurato. Per un passo e' quello che il modello gia'
+   *  usa dappertutto (V.nomePasso: titolo, o «Passo N» dalla sequenza della catena). Per un'ATTESA
+   *  un titolo non c'e' quasi mai, e V.nomePasso da sola direbbe «passo senza nome»: chi rilegge il
+   *  resoconto non saprebbe di quale attesa si parla. Si dice allora dal passo che la precede —
+   *  l'attesa E' per definizione il tempo fra la fine di quel passo e l'inizio del successivo. */
+  const nomeMisurato = (el, map) => {
+    if (!el) return '—';
+    if (el.type !== 'delta') return V.nomePasso(el, map);
+    const t = String((el.props && el.props.title) || '').trim();
+    if (t) return t;
+    const conn = V.byId(el.props && el.props.attachedTo, map);
+    const from = (conn && conn.from) ? V.byId(conn.from.el, map) : null;
+    return from ? 'attesa dopo «' + V.nomePasso(from, map) + '»' : 'attesa';
+  };
+  /** L'elenco di FINE GIRO (F1-1C, D-16): le osservazioni di QUESTO giro che chi camminava ha
+   *  segnato col ⚠ «qui e' andata diversa», su passi (box) E attese (delta), nell'ordine in cui
+   *  sono state prese. E' la sorgente del resoconto di fine giro (piano 02-12): la parte pura sta
+   *  qui, il dialogo sta la'. Il gesto «crea il problema sul foglio» NON vive in questa funzione —
+   *  decide Gt che cosa promuovere (D-16), e promuovere e' una scrittura.
+   *  PURA: nessun DOM, nessuna scrittura, nessuna eccezione su un foglio vuoto, senza elementi o
+   *  senza cronometro. Non e' scrupolo: se lancia, il dialogo di fine giro non si apre e il giro
+   *  appena camminato non lo rilegge nessuno (minaccia T-02-09-05).
+   *  Le righe sono COPIE — `{ elId, tipo, label, s, at, i, nota? }` — e `i` e' l'indice nella lista
+   *  SANA (V.obsOf), cioe' quello che V.setObs e posObs capiscono: dalla riga si riscrive la nota
+   *  senza correzioni a valle.
+   *  Si attraversano TUTTI gli elementi che hanno osservazioni, non solo box e delta: se un file
+   *  confezionato ne portasse addosso a un altro tipo, l'elenco lo direbbe invece di nasconderlo.
+   *  L'ordine e' quello della sparkline (T.sparklineSVG): per `at` crescente, con le misure senza
+   *  istante davanti nell'ordine loro — l'ordine dell'array da solo mentirebbe su un documento
+   *  riordinato da fuori. */
+  V.diversiDelGiro = (map) => {
+    if (!map || !Array.isArray(map.elements)) return [];
+    const righe = [];
+    map.elements.forEach(el => {
+      V.obsOf(el).forEach((o, i) => {
+        if (o.diverso !== true) return;                       // il segno e' binario: solo `true`
+        if (o.giro && o.giro !== map.id) return;              // stesso criterio di V.obsDelGiro: la storia non e' di oggi
+        const r = { elId: el.id, tipo: el.type, label: nomeMisurato(el, map), s: o.s, i,
+          at: (typeof o.at === 'number' && isFinite(o.at)) ? o.at : null };
+        if (typeof o.nota === 'string' && o.nota) r.nota = o.nota;
+        righe.push({ r, k: righe.length });
+      });
+    });
+    return righe.sort((a, b) => {
+      const aa = (a.r.at == null) ? -Infinity : a.r.at, bb = (b.r.at == null) ? -Infinity : b.r.at;
+      return aa === bb ? a.k - b.k : aa - bb;
+    }).map(x => x.r);
+  };
+  /** Gli allegati SANI di un elemento (F1-1C, D-12): il lettore che il pannello, il conteggio e
+   *  domani la galleria usano — mai `null`, mai una stringa, mai un'eccezione. Gemello esatto di
+   *  V.obsOf: sanitizeMap ripara gia' i campi noti a ogni ingresso, questo filtro e' la SECONDA
+   *  rete per chi scrive nel documento in memoria senza passare di la'.
+   *  Sana = un oggetto vero, con un `id` (senza, i byte non si ritroverebbero mai) e un `tipo`
+   *  dell'elenco chiuso (senza, la UI non saprebbe che cosa disegnare). */
+  V.allegatiDi = (el) => (el && Array.isArray(el.props && el.props.allegati))
+    ? el.props.allegati.filter(a => a && typeof a === 'object' && !Array.isArray(a)
+      && typeof a.id === 'string' && a.id.trim() && V.ALLEGATI_TIPI.includes(a.tipo)) : [];
+  /** «Su questo passo ci sono 3 foto e 1 memo: spariscono anche loro.» (D-15) — QUI escono solo i
+   *  numeri; la frase la compone la UI (UI-SPEC §Copywriting), perche' il singolare e il plurale
+   *  sono cose da schermo, non da modello.
+   *  Con `elId` conta un elemento solo (si elimina un passo); senza, tutta la mappa (si elimina il
+   *  foglio). E' il motivo numero uno per cui i metadati stanno nel DOCUMENTO e non solo in
+   *  IndexedDB: la domanda di conferma si risponde in modo sincrono, senza aprire un database.
+   *  PURA e incapace di lanciare, su qualunque cosa le si dia — map nullo, `elements` fuori tipo,
+   *  un documento non ancora sanato. Non e' scrupolo: se lanciasse, il dialogo «spariscono anche
+   *  loro» non si aprirebbe e il passo si cancellerebbe in silenzio con dentro le foto di un giro. */
+  V.contaAllegati = (map, elId) => {
+    const out = {};
+    V.ALLEGATI_TIPI.forEach(t => { out[t] = 0; });   // dall'elenco, non a mano: una voce nuova si conta da sola
+    out.totale = 0;
+    const els = (map && Array.isArray(map.elements)) ? map.elements : [];
+    const scelti = (elId == null) ? els : els.filter(e => e && e.id === elId);
+    scelti.forEach(el => V.allegatiDi(el).forEach(a => { out[a.tipo]++; out.totale++; }));
+    return out;
+  };
+  /** Il `mime` con cui si ricostruisce il Blob di un allegato — e la ragione per cui NON si prende
+   *  quello scritto nel documento (F1-1C, minaccia T-02-13-01). Un file JSON confezionato puo'
+   *  dichiarare `mime: 'text/html'` o `image/svg+xml` su una sua foto: se il pannello costruisse il
+   *  Blob con quello, un allegato diventerebbe una pagina che esegue. Qui il TIPO comanda — e' un
+   *  elenco chiuso (V.ALLEGATI_TIPI) — e il formato dichiarato passa solo se e' davvero uno dei
+   *  formati di quel tipo. Altrimenti si ripiega su quello di casa: una foto resta un'immagine e un
+   *  memo resta audio, qualunque cosa dica il file.
+   *  Il ripiego NON e' una bugia: i byte sono quelli che sono, e se non si aprono la UI lo dice
+   *  («Questo file non si apre piu'»). La bugia sarebbe fidarsi della parola del file.
+   *  `null` = tipo fuori dall'elenco: non si disegna niente, non si apre niente. */
+  const MIME_ALLEGATI = {
+    foto: { ok: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'], casa: 'image/jpeg' },
+    memo: { ok: ['audio/mp4', 'audio/webm', 'audio/mpeg', 'audio/ogg', 'audio/aac', 'audio/wav'], casa: 'audio/mp4' },
+  };
+  V.mimeAllegato = (tipo, mime) => {
+    const regola = MIME_ALLEGATI[tipo];
+    if (!regola || !V.ALLEGATI_TIPI.includes(tipo)) return null;
+    const m = (typeof mime === 'string') ? mime.split(';')[0].trim().toLowerCase() : '';
+    return regola.ok.includes(m) ? m : regola.casa;
+  };
+  /** «3 foto e 1 memo»: l'enumerazione che entra nelle conferme distruttive (D-15, UI-SPEC
+   *  §Copywriting). I NUMERI li da' V.contaAllegati; qui ci sono le parole, coi loro singolari —
+   *  e stanno accanto ai numeri, e non nel pannello, per la stessa ragione di V.allegOrfani: cosi'
+   *  una prova in Node le legge. Le FRASI intere («Su questo passo ci sono …: spariscono anche
+   *  loro.») restano dove vive la copy, cioe' nella UI: qui c'e' solo l'elenco.
+   *  Stringa vuota quando non c'e' niente da elencare: la frase non nasce affatto. */
+  V.fraseAllegati = (conta) => {
+    const c = conta || {};
+    const pezzi = [];
+    const n = (x) => (typeof x === 'number' && isFinite(x) && x > 0) ? Math.round(x) : 0;
+    const f = n(c.foto), m = n(c.memo);
+    // «foto» e «memo» sono invariabili in italiano: il singolare vive nel VERBO della frase che le
+    // ospita («ci sono» / «c'è»), e quello lo mette la UI insieme al resto della copy
+    if (f) pezzi.push(f + ' foto');
+    if (m) pezzi.push(m + ' memo');
+    return pezzi.join(' e ');
+  };
+  /** Gli allegati che il DOCUMENTO ricorda e di cui su questo iPad NON ci sono i byte (D-14,
+   *  Pitfall 6). E' il gemello speculare di V.allegOrfani qui sotto, e le due funzioni guardano
+   *  nella stessa scatola da due lati opposti — per questo stanno vicine:
+   *  - V.allegOrfani: byte senza metadato → si CANCELLANO (rumore innocuo);
+   *  - V.allegSenzaByte: metadato senza byte → NON si tocca niente, si MOSTRA un segnaposto.
+   *  Confonderle sarebbe la perdita silenziosa che C-2 vieta: sono proprio gli allegati di un
+   *  foglio importato da un altro iPad, cioe' l'informazione che D-14 esiste per non buttare via.
+   *  PURA, e incapace di lanciare su qualunque cosa le si dia. */
+  V.allegSenzaByte = (idsInDocumento, idsInDatabase) => {
+    const ci = new Set((Array.isArray(idsInDatabase) ? idsInDatabase : []).filter(x => typeof x === 'string' && x));
+    const visti = new Set(), fuori = [];
+    (Array.isArray(idsInDocumento) ? idsInDocumento : []).forEach(id => {
+      if (typeof id !== 'string' || !id || ci.has(id) || visti.has(id)) return;
+      visti.add(id); fuori.push(id);
+    });
+    return fuori;
+  };
+  /** Quanti allegati di queste mappe sono rimasti sull'iPad dove sono stati presi. La usa il toast
+   *  dopo un import (D-14): senza, i segnaposti comparirebbero nei pannelli e nessuno saprebbe
+   *  perche'. Legge lo store una mappa alla volta dall'indice `mapId` (V.alleg.perMappa), e la
+   *  decisione la prende V.allegSenzaByte, che e' pura e provata. Non lancia mai: al peggio conta 0.
+   *  Ritorna una promessa di NUMERO, non di elenco: chi chiama deve dire quanti, non quali.
+   *  Si chiede id per id con `prendi` e non in blocco con `perMappa` per una ragione precisa: un
+   *  record che ESISTE ma non ha i byte dentro (mezza scrittura, transazione interrotta) risponde
+   *  `null` a `prendi` ma la sua chiave comparirebbe lo stesso in `perMappa`. Il conto deve dire
+   *  quello che il pannello mostrera', non quello che lo store ricorda di avere. */
+  V.allegatiMancanti = (mapIds) => {
+    const ids = (Array.isArray(mapIds) ? mapIds : []).filter(x => typeof x === 'string' && x);
+    if (!ids.length) return Promise.resolve(0);
+    const nelDoc = [];
+    ids.forEach(id => {
+      const map = (V.doc && V.doc.maps) ? V.doc.maps[id] : null;
+      ((map && Array.isArray(map.elements)) ? map.elements : []).forEach(el => V.allegatiDi(el).forEach(a => nelDoc.push(a.id)));
+    });
+    if (!nelDoc.length) return Promise.resolve(0);
+    return Promise.all(nelDoc.map(id => V.alleg.prendi(id).then(r => (r ? id : null)).catch(() => null)))
+      .then(esiti => V.allegSenzaByte(nelDoc, esiti.filter(Boolean)).length)
+      .catch(() => 0);
+  };
+  /** Gli id dei byte rimasti SENZA metadato (F1-1C, 02-RESEARCH.md §Pitfall 10 punto 2): quello che
+   *  il piano 02-11 dovra' spazzare dallo store al `V.load` successivo.
+   *  PURA per costruzione — due liste in ingresso, gli id da cancellare in uscita, nessun I/O,
+   *  nessuna mutazione degli array ricevuti. Sta qui, e non accanto al database, proprio per questo:
+   *  cosi' si prova in Node, dove IndexedDB non esiste (Pitfall 3) — l'harness non lo apre, e una
+   *  spazzata provata «a occhio chiuso» sarebbe una cancellazione di dati mai verificata.
+   *  Il verso conta: si spazza SOLO nella direzione database → documento. Un metadato senza byte
+   *  NON e' un orfano e non si tocca: e' lo stato normale «l'allegato non e' su questo dispositivo»
+   *  di un foglio importato da un altro iPad, e cancellarlo sarebbe la perdita silenziosa che
+   *  Pitfall 6 e C-2 vietano. Byte senza metadato e' rumore innocuo; metadato senza byte e' storia.
+   *
+   *  ORDINE DICHIARATO DELLE CANCELLAZIONI — il piano 02-11 lo deve rispettare, ed e' l'unico
+   *  ordine sicuro: PRIMA il commit sul documento (annullabile con ↶, vedi V.togliAllegatoMeta),
+   *  POI — e solo al V.load successivo, non subito dopo la 🗑 — la spazzata dei byte. Al contrario,
+   *  cancellare i byte subito renderebbe l'annulla una bugia: ↶ riporterebbe un metadato che punta
+   *  al vuoto. E se l'app muore in mezzo restano byte senza metadato, che si spazzano il giro dopo;
+   *  l'ordine inverso lascerebbe metadati senza byte, cioe' perdita vera. */
+  V.allegOrfani = (idsInDocumento, idsInDatabase) => {
+    const tenuti = new Set((Array.isArray(idsInDocumento) ? idsInDocumento : []).filter(x => typeof x === 'string' && x));
+    const visti = new Set(), fuori = [];
+    (Array.isArray(idsInDatabase) ? idsInDatabase : []).forEach(id => {
+      if (typeof id !== 'string' || !id || tenuti.has(id) || visti.has(id)) return;
+      visti.add(id); fuori.push(id);
+    });
+    return fuori;
+  };
   /** I tempi scritti (Hi/Lo/Avg) portano la FIRMA del foglio che li ha scritti (props.tempiGiro,
    *  esito 13): sul giro nuovo, clonati, sono EREDITATI — si mostrano attenuati con «giro prec.»
    *  finche' questo giro non li riscrive (calcola i tempi, o modifica a mano). Senza firma
@@ -1910,6 +2503,28 @@ window.VSM = window.VSM || {};
     const t = (times || []).filter(x => typeof x === 'number' && isFinite(x) && x >= 0);
     if (!t.length) return { hi: null, lo: null, avg: null, n: 0 };
     return { hi: Math.max.apply(null, t), lo: Math.min.apply(null, t), avg: t.reduce((a, b) => a + b, 0) / t.length, n: t.length };
+  };
+  /** L'origine EFFETTIVA della terna Hi/Lo/Avg (F1-1B), come la legge chi la deve mostrare: una
+   *  delle quattro voci, 'calcolato', oppure undefined = «origine non dichiarata».
+   *  Quella dichiarata da una PERSONA vale l'ultimo valore e non si mette in discussione (D-21).
+   *  'calcolato' invece e' una dichiarazione della macchina, e la macchina puo' ricontrollarla:
+   *  vale finche' i tre numeri sono ancora quelli che «Calcola i tempi» scriverebbe dalle misure
+   *  di questo giro. Se qualcuno ne riscrive uno a mano dal pannello, la terna non e' piu'
+   *  calcolata e la marca decade DA SOLA — nessuno deve ricordarsi di toglierla, e l'app non
+   *  finisce a dichiarare «calcolato» un numero che si e' inventato una persona.
+   *  I tempi EREDITATI da un giro precedente (tempiGiro di un altro foglio) non si possono
+   *  ricontrollare da qui: erano calcolati e restano tali, il fantasma «(giro prec.)» lo dice gia'.
+   *  Pura: nessuna scrittura, si prova in Node. */
+  V.fonteDatiDi = (el, map) => {
+    const f = el && el.props && el.props.fonteDati;
+    if (!FONTI_DATI.includes(f)) return undefined;
+    if (f !== 'calcolato') return f;
+    if (V.tempiEreditati(el, map)) return 'calcolato';
+    const s = V.timeStats(V.timesDelGiro(el, map));
+    if (!s.n) return undefined;
+    const u = map && map.unit;
+    const uguale = (k, v) => String(el.props[k] == null ? '' : el.props[k]) === fmt(V.toUnit(v, u));
+    return (uguale('hi', s.hi) && uguale('lo', s.lo) && uguale('avg', s.avg)) ? 'calcolato' : undefined;
   };
   /** Che cosa c'è da scrivere, prima di scriverlo: un elenco di passi e attese con quante misure
    *  hanno, i conti già nell'unità del foglio, se avevano tempi scritti a mano (non si sovrascrive in
@@ -1940,8 +2555,11 @@ window.VSM = window.VSM || {};
     rep.forEach(r => {
       if (r.validated) { validati++; return; }
       // la FIRMA (tempiGiro, esito 13): questi numeri sono di questo giro — sul clone del
-      // prossimo giro si mostreranno come ereditati finche' quello non li riscrive
-      ops.push({ t: 'props', id: r.id, after: { hi: fmt(r.stats.hi), lo: fmt(r.stats.lo), avg: fmt(r.stats.avg), tempiGiro: map.id } });
+      // prossimo giro si mostreranno come ereditati finche' quello non li riscrive.
+      // fonteDati:'calcolato' (F1-1B): chi calcola dichiara da se' l'origine della terna, nello
+      // STESSO commit — nessun commit in piu', nessuna classe diversa, e niente da chiedere a
+      // nessuno. E' la quinta voce interna (FONTI_DATI): non compare nel menu delle quattro.
+      ops.push({ t: 'props', id: r.id, after: { hi: fmt(r.stats.hi), lo: fmt(r.stats.lo), avg: fmt(r.stats.avg), tempiGiro: map.id, fonteDati: 'calcolato' } });
     });
     if (!ops.length) return { ok: false, written: 0, validati };
     // classe:'osservazioni' (interpretazione 6): artefatto della misura, non un gesto di chi disegna —
@@ -2010,8 +2628,28 @@ window.VSM = window.VSM || {};
     const ok = V.commit({ t: 'meta', after: { measure: s } }, 'cronometro', { map, silent: true });
     return ok ? s : null;
   };
-  /** Ogni fase nuova del giro riparte pulita: le pause appartengono alla misura chiusa. */
-  const senzaPause = (s) => { const d = Object.assign({}, s); delete d.pausedAt; delete d.pausedTot; return d; };
+  /** Ogni fase nuova del giro riparte pulita: le pause appartengono alla misura chiusa, e il ⚠
+   *  «qui e' andata diversa» (F1-1C, D-10) appartiene al PASSO che l'ha meritato. Si chiamava
+   *  senzaPause: adesso il nome dice la regola intera, perche' i due campi muoiono per lo stesso
+   *  motivo — sono del segmento di misura appena finito, non della sessione. Dal piano 02-12 muore
+   *  qui anche la NOTA VELOCE pendente (`nota`): e' la nota di quel ⚠, e senza il suo segno
+   *  finirebbe addosso alla misura successiva, che nessuno ha segnato.
+   *  ATTENZIONE, e' il punto in cui e' facile sbagliare: `turno` e `chi` vanno nella direzione
+   *  OPPOSTA (sono della sessione e sopravvivono al lap, vedi chiudi()/measureAbort/measureStart).
+   *  Un `diverso` che sopravvivesse qui marcherebbe come «diversi» passi che nessuno ha segnato. */
+  const faseNuova = (s) => { const d = Object.assign({}, s); delete d.pausedAt; delete d.pausedTot; delete d.diverso; delete d.nota; return d; };
+  /** Le chiavi della SESSIONE di misura: dichiarate una volta nel dialogo d'ingresso, viaggiano su
+   *  ogni misura finche' la sessione vive — il turno (F1) e chi osserva (F1-1C, D-11). Sopravvivono
+   *  al lap, alla misura eliminata e all'avvio successivo; muoiono con «chiudi il giro».
+   *  ELENCO UNICO, e non e' pedanteria: i posti che ricostruiscono lo stato del cronometro sono
+   *  cinque, e la volta scorsa che erano cinque ternari copiati uno se n'era dimenticato — il ramo
+   *  di chiusura naturale del giro perdeva il turno (rilievo Kimi #1 di F1, GRAVE, sfuggito anche
+   *  al round Codex). Aggiungere una chiave di sessione adesso vuol dire toccare una riga sola. */
+  const dellaSessione = (s) => {
+    const d = {};
+    ['turno', 'chi'].forEach(k => { if (s && typeof s[k] === 'string' && s[k]) d[k] = s[k]; });
+    return d;
+  };
   V.measureState = (map) => (map && map.measure) || null;
   /** Secondi VERI della misura in corso: dall'orologio di parete (t0), al netto delle pause
    *  dell'osservatore (esito stazione 3 + ricerca 25/8: la pausa di CHI misura — una telefonata —
@@ -2088,13 +2726,76 @@ window.VSM = window.VSM || {};
     // niente. La barriera sta qui, nel modello: ogni chiamante riceve lo stesso no.
     if (prec && prec.phase && prec.t0) return { ko: 'in-corso' };
     const s = { mode, giro: (prec && prec.giro) || 1, stepId, phase: 'box', t0: now, fromId: null, connId: null };
-    // il turno e' della SESSIONE di misura (F1, Task 4): dichiarato a giro pronto o in corso,
-    // sopravvive agli avvii successivi finche' la sessione vive — sempre visibile nel campo del
-    // dialogo Misura, mai un'eredita' silenziosa. Muore con «chiudi il giro» (measureStop).
-    if (prec && typeof prec.turno === 'string' && prec.turno) s.turno = prec.turno;
+    // turno e chi osservano sono della SESSIONE di misura (F1 Task 4, F1-1C D-11): dichiarati a
+    // giro pronto o in corso, sopravvivono agli avvii successivi finche' la sessione vive — sempre
+    // visibili nei campi del dialogo Misura, mai un'eredita' silenziosa. Muoiono con «chiudi il
+    // giro» (measureStop). Il ⚠ no: e' del passo, e uno stato fresco nasce senza.
+    Object.assign(s, dellaSessione(prec));
     return setMeasure(map, s);
   };
-  V.measureStop = (map) => setMeasure(map, null);
+  /** «Chiudi il giro». Chiudere e' sempre lecito, ma NON e' mai stato «butta via quello che sta
+   *  correndo»: per quello ci sono due comandi che lo dicono a chiare lettere (il 🗑 della barra,
+   *  V.measureAbort, e «scarta», V.measureDiscard). Finche' questa chiudeva e basta, il ⏹ era un
+   *  terzo modo di perdere una misura, muto — e nella prova a mano del 27/8 se ne sono perse tre
+   *  di fila: chi misurava vedeva il contatore del passo fermo a 1× dopo aver cronometrato due
+   *  volte. Perdita silenziosa di dati, il primo rilievo di review dichiarato in AGENTS.md.
+   *  Adesso: un PASSO che sta correndo si registra come lo registrerebbe «passo finito» (stesso
+   *  addTime, nessuna via di scrittura nuova). Un'ATTESA no, e non per pigrizia: l'attesa e' per
+   *  definizione il tempo fra la fine di un passo e l'INIZIO del successivo — chiudendo il giro
+   *  quel passo non comincia mai, e scriverla vorrebbe dire inventarle una fine. Non si scrive, ma
+   *  non si tace: il ritorno dice quanti secondi sono rimasti fuori, cosi' la barra puo' dirlo.
+   *  Ritorna null se non correva niente; { scritta, elId, seconds } o { scritta:false, persa, seconds }. */
+  V.measureStop = (map, now = Date.now()) => {
+    const esito = registraCorrente(map, now);
+    setMeasure(map, null);
+    return esito;
+  };
+  /** La REGOLA di che cosa succede alla misura che sta correndo quando qualcosa la interrompe.
+   *  Vive in un posto solo perche' i modi di interrompere sono due (il ⏹ della barra e, dal 27/8,
+   *  il tocco su un altro passo per rimisurarlo) e devono rispondere allo stesso modo: se
+   *  divergessero, uno dei due tornerebbe a essere un modo muto di perdere una misura.
+   *  Non chiude e non apre niente: scrive (o dichiara di non aver potuto), e basta. */
+  const registraCorrente = (map, now) => {
+    const s = V.measureState(map);
+    if (!s || !s.phase || !s.t0) return null;
+    const sec = misuraNetta(s, now);
+    if (s.phase === 'attesa') return { scritta: false, persa: 'attesa', seconds: sec };
+    const passo = V.byId(s.stepId, map);
+    // il passo cancellato sotto il cronometro, il foglio col lucchetto, la ✓ del passo:
+    // addTime dice di no e il giro si chiude lo stesso — chiudere non si nega mai
+    if (!passo || passo.type !== 'box') return { scritta: false, persa: 'passo', seconds: sec };
+    if (map.validated || !addTime(map, s.stepId, sec)) return { scritta: false, persa: 'rifiutata', seconds: sec };
+    return { scritta: true, elId: s.stepId, seconds: sec };
+  };
+  /** «Misura di nuovo quel passo» (decisione di Gt, 27/8 — rilievo 3 del cancello 1B). Toccare
+   *  l'orologio di un passo mentre il giro corre su un altro rispondeva «C'e' un passo in corso:
+   *  chiudilo prima di sceglierne un altro»: una frase fuorviante, perche' chi tocca non voleva
+   *  sceglierne un altro — voleva rimisurare QUELLO. Adesso il cronometro si riapre li', e la
+   *  misura nuova si accoda alle sue (addTime appende: il modello lo reggeva gia').
+   *  Due guardie, e sono la sostanza:
+   *  - si rimisura solo un passo GIA' MISURATO IN QUESTO GIRO (V.obsDelGiro, esito 13): su un
+   *    passo mai misurato il tocco vorrebbe dire «salta la sequenza», che e' un'altra cosa e ha
+   *    gia' la sua via (il giro, i bivi, measureJump). Le misure clonate dal giro precedente non
+   *    contano: sono storia, non misure di oggi.
+   *  - quello che stava correndo NON si perde: passa da registraCorrente, la stessa regola del ⏹.
+   *  Ritorna { ok, elId, prima } dove `prima` e' l'esito di cio' che correva (null se niente),
+   *  oppure { ko } — 'mai-misurato', 'fuori-fase', 'chiuso'. */
+  V.measureRimisura = (map, stepId, now = Date.now()) => {
+    const el = V.byId(stepId, map);
+    if (!el || el.type !== 'box' || el.props.validated) return { ko: 'chiuso' };
+    if (map.validated) return { ko: 'chiuso' };
+    if (!['misura', 'analizza'].includes(map.phase)) return { ko: 'fuori-fase' };
+    if (!V.obsDelGiro(el, map).length) return { ko: 'mai-misurato' };
+    const s = V.measureState(map);
+    const prima = registraCorrente(map, now);
+    // il numero del giro, il turno e chi osserva appartengono alla SESSIONE, non al lap:
+    // sopravvivono al cambio di passo esattamente come sopravvivono a measureStart
+    const dopo = Object.assign({ mode: 'singolo', giro: (s && s.giro) || 1, stepId, phase: 'box', t0: now, fromId: null, connId: null }, dellaSessione(s));
+    // 'singolo' e non 'giro': si e' usciti dalla catena per tornare su un passo gia' fatto, e da
+    // qui nessuna attesa puo' nascere per differenza — inventarne una sarebbe un numero falso.
+    // Chiuso il passo col ⏩, il giro resta PRONTO e la catena si riprende da dove si vuole.
+    return setMeasure(map, dopo) ? { ok: true, elId: stepId, prima } : { ko: 'chiuso' };
+  };
   /** Il percorso del giro lo sceglie CHI MISURA (esito Gt 25/8 sera): durante l'attesa, il tocco
    *  sul cronometro di un passo dice «il prossimo e' questo». Se dal passo precedente parte una
    *  freccia verso il passo scelto (bivio vero), l'attesa si scrive su QUELLA freccia e il passo
@@ -2118,7 +2819,7 @@ window.VSM = window.VSM || {};
       return { scelto: true, elId: stepId };
     }
     const persa = misuraNetta(s, now);
-    setMeasure(map, senzaPause(Object.assign({}, s, { phase: 'box', stepId, t0: now, fromId: null, connId: null })));
+    setMeasure(map, faseNuova(Object.assign({}, s, { phase: 'box', stepId, t0: now, fromId: null, connId: null })));
     return { fuoriOrdine: true, attesaPersa: persa, phase: 'box', elId: stepId };
   };
   /** Il turno del giro (F1): «mattina», «notte», quello che il reparto usa — dichiarato nel dialogo
@@ -2131,12 +2832,61 @@ window.VSM = window.VSM || {};
     if (t) dopo.turno = t; else delete dopo.turno;
     return setMeasure(map, dopo);
   };
+  /** «Qui e' andata diversa» (F1-1C, D-10): un tocco in barra segna il passo CHE STA CORRENDO, e il
+   *  giro non si ferma mai — l'esempio di Gt e' l'infermiere che deve correre a cercare la cartella
+   *  mentre tu cronometri l'accettazione. Il segno e' BINARIO: se quella deviazione sia un problema,
+   *  un'utilita' o niente lo decide la Phase 3, non l'app e non adesso.
+   *  Vive in map.measure come il turno (fuori dall'annulla), ma con la vita OPPOSTA: e' del passo in
+   *  corso, quindi muore al lap (faseNuova) e non c'e' negli elenchi di chi sopravvive.
+   *  Senza una misura che corre non c'e' un passo a cui il segno appartenga: null, e non si scrive
+   *  niente — un ⚠ appeso al giro fermo finirebbe addosso al passo successivo, che nessuno ha segnato.
+   *  Non tocca t0 ne' le pause: il tempo viene dall'orologio di parete e questa funzione non lo sfiora. */
+  V.measureDiverso = (map, on) => {
+    const s = V.measureState(map); if (!s || !s.phase || !s.t0) return null;
+    const dopo = Object.assign({}, s);
+    if (on === true) dopo.diverso = true;
+    // «Togli il segno» (UI-SPEC §3): se ne va anche la nota veloce che il segno aveva chiamato.
+    // Una nota senza il suo ⚠ viaggerebbe lo stesso con addTime e finirebbe addosso a una misura
+    // che nessuno ha segnato — la stessa famiglia di T-02-09-01, presa dal lato della nota.
+    else { delete dopo.diverso; delete dopo.nota; }                   // solo `true`: il segno e' binario
+    return setMeasure(map, dopo);
+  };
+  /** La NOTA VELOCE del ⚠ (F1-1C, D-10, piano 02-12): «che cosa e' andato diverso», dettata o
+   *  scritta MENTRE il passo corre — quando l'osservazione non esiste ancora, perche' nascera' solo
+   *  al lap. Sta quindi nel cronometro accanto al segno e la travasa addTime, esattamente come il
+   *  turno: e' l'unica via che tiene in piedi la porta delle fasi, la ✓ del passo e l'annulla.
+   *  Scrivere un'osservazione dalla UI, fuori da addTime/V.setObs, sarebbe la scorciatoia vietata
+   *  (T-02-12-06). Quando l'osservazione ESISTE gia' — dal resoconto di fine giro, con l'indice che
+   *  V.diversiDelGiro riporta — la nota si riscrive con V.setObs, non di qui.
+   *  Vive come il ⚠, non come il turno: e' del passo in corso e muore al lap (faseNuova), con
+   *  «scarta» (measureDiscard), col 🗑 (measureAbort) e all'ingresso successivo (sanitizeMap).
+   *  Testo vuoto o soli spazi la tolgono; senza una misura che corre non c'e' dove scriverla. */
+  V.measureNota = (map, testo) => {
+    const s = V.measureState(map); if (!s || !s.phase || !s.t0) return null;
+    const t = (typeof testo === 'string') ? testo.trim() : '';
+    const dopo = Object.assign({}, s);
+    if (t) dopo.nota = t; else delete dopo.nota;
+    return setMeasure(map, dopo);
+  };
+  /** «Chi osserva» (F1-1C, D-11): chiesto nella stessa domanda d'ingresso del giro insieme al turno,
+   *  facoltativo e saltabile. E' il RUOLO o le INIZIALI di chi guarda il processo — «caposala»,
+   *  «inf. MR» — mai il nome di chi nel processo ci passa: l'invariante privacy vale qui come
+   *  altrove, e il campo dell'interfaccia (piano 02-12) lo dice nel suo segnaposto.
+   *  Gemello esatto di V.measureTurno, sessione compresa: testo vuoto lo toglie, e senza cronometro
+   *  non c'e' dove scriverlo. Sopravvive al lap perche' e' della SESSIONE, non del passo. */
+  V.measureOsservatore = (map, testo) => {
+    const s = V.measureState(map); if (!s) return null;
+    const t = (typeof testo === 'string') ? testo.trim() : '';
+    const dopo = Object.assign({}, s);
+    if (t) dopo.chi = t; else delete dopo.chi;
+    return setMeasure(map, dopo);
+  };
   /** Butta via la misura in corso e riparte da adesso: chi cammina si accorge subito quando la misura
    *  non vale (una telefonata, un'interruzione che non c'entra) e deve poterla annullare senza
    *  perdere il giro. */
   V.measureDiscard = (map, now = Date.now()) => {
     const s = V.measureState(map); if (!s || !s.phase) return null;
-    return setMeasure(map, senzaPause(Object.assign({}, s, { t0: now })));
+    return setMeasure(map, faseNuova(Object.assign({}, s, { t0: now })));
   };
   /** ELIMINA la misura in corso (esito 12-bis, caso 1: «era il passo sbagliato»): il lap si
    *  butta SENZA scrivere niente e il giro resta pronto — numero e turno sopravvivono, il
@@ -2146,7 +2896,7 @@ window.VSM = window.VSM || {};
   V.measureAbort = (map) => {
     const s = V.measureState(map); if (!s || !s.phase || !s.t0) return null;
     const dopo = Object.assign({ mode: s.mode, giro: s.giro || 1, stepId: null, phase: null, t0: null, fromId: null, connId: null },
-      (typeof s.turno === 'string' && s.turno) ? { turno: s.turno } : {});
+      dellaSessione(s));   // turno e chi osserva restano; il ⚠ no — segnava la misura appena buttata
     // il passo abbandonato resta scritto (esito 12-ter): la barra non sparisce — mostra il
     // cronometro SOSPESO con un ▶ che riavvia da qui. measureStart costruisce uno stato fresco,
     // quindi ripartendo (da qui o da un altro passo) il sospeso muore da solo.
@@ -2159,19 +2909,37 @@ window.VSM = window.VSM || {};
    *  il resto del cronometro: chi cammina il processo non deve poter disfare una misura con ↩. */
   const addTime = (map, elId, sec) => {
     const el = V.byId(elId, map); if (!el) return false;
-    const oss = { s: sec, at: Date.now(), giro: map.id, cls: 'normale' };
+    // fonte:'osservato' (F1-1B, D-05): il cronometro E' l'osservazione diretta — chi ha in mano il
+    // tablet sta guardando il processo mentre succede. Non c'e' niente da chiedere, e una parola in
+    // piu' nello stesso oggetto letterale evita l'unica origine che l'app puo' dichiarare da sola.
+    const oss = { s: sec, at: Date.now(), giro: map.id, cls: 'normale', fonte: 'osservato' };
     // il turno dichiarato per il giro (V.measureTurno, F1) viaggia su ogni osservazione: e' un
     // attributo della misura presa, non del cronometro — e resta leggibile dopo che il giro chiude
     const t = map.measure && map.measure.turno;
     if (typeof t === 'string' && t) oss.turno = t;
+    // il ⚠ del passo in corso (F1-1C, D-10) viaggia con la misura che nasce: e' di QUESTA misura,
+    // e appena scritto muore nel cronometro (faseNuova) — la prossima non lo eredita.
+    if (map.measure && map.measure.diverso === true) oss.diverso = true;
+    // e con lui la sua NOTA VELOCE (D-10, piano 02-12): scritta mentre il passo correva, quando
+    // questa osservazione non c'era ancora. Stessa vita del ⚠ — appena travasata muore nel
+    // cronometro (faseNuova), e la misura successiva non se la ritrova addosso.
+    const nt = map.measure && map.measure.nota;
+    if (typeof nt === 'string' && nt) oss.nota = nt;
+    // chi osserva (D-11), come il turno: un attributo della misura presa, non del cronometro —
+    // resta leggibile dopo che il giro chiude, e dice a chi rilegge chi c'era col tablet in mano
+    const chi = map.measure && map.measure.chi;
+    if (typeof chi === 'string' && chi) oss.chi = chi;
     // si appende all'array ORIGINALE, non a V.obsOf: ricostruire dalla lista sana avrebbe fatto
     // sparire un'osservazione marcia alla prima misura nuova (rilievo Kimi #3, via sorella di Codex #1)
     const raw = Array.isArray(el.props.obs) ? el.props.obs : [];
     return V.commit({ t: 'props', id: elId, after: { obs: raw.concat([oss]) } }, 'misura', { map, silent: true });
   };
-  /** Cambia cls o nota di UNA osservazione (F1, interp. 6): un giudizio UMANO («questa era
-   *  un'eccezione», «c'era un'interruzione»), non il cronometro — quindi commit NORMALE, con la sua
-   *  voce di annulla. cls fuori elenco o indice fuori posto: false, niente scritto. */
+  /** Cambia cls, nota, valore o ORIGINE di UNA osservazione (F1 + F1-1B, interp. 6): un giudizio
+   *  UMANO («questa era un'eccezione», «c'era un'interruzione», «questo me l'hanno detto»), non il
+   *  cronometro — quindi commit NORMALE, con la sua voce di annulla (D-21). cls o fonte fuori
+   *  elenco, o indice fuori posto: false, niente scritto.
+   *  Con addTime e' l'UNICA via di scrittura di un'osservazione: chi vuole scrivere un'origine
+   *  passa di qui, e quindi passa dalla porta delle fasi e dalla ✓ del passo. */
   V.setObs = (map, elId, i, campi) => {
     const el = V.byId(elId, map); if (!el) return false;
     const c = campi || {};
@@ -2181,6 +2949,11 @@ window.VSM = window.VSM || {};
     // modificabile a posteriori): numeri veri non negativi, arrotondati al secondo come quelli
     // che scrive il cronometro
     if (c.s !== undefined && !(typeof c.s === 'number' && isFinite(c.s) && c.s >= 0)) return false;
+    // l'ORIGINE (F1-1B): una delle quattro voci dichiarate, oppure null / '' per TOGLIERLA e
+    // tornare a «origine non dichiarata». Fuori di li' non si scrive niente e si dice false —
+    // l'app non ripiega mai su un'origine che nessuno ha detto (D-06/D-07).
+    if (c.fonte !== undefined && c.fonte !== null && c.fonte !== '' && !V.FONTI.includes(c.fonte)) return false;
+    if (c.fonteNota !== undefined && typeof c.fonteNota !== 'string') return false;
     // Si riscrive una copia dell'array ORIGINALE, non di V.obsOf (rilievo Codex #1 di F1):
     // ricostruire da obsOf avrebbe fatto sparire in silenzio un'osservazione marcia arrivata da
     // fuori — «mai perdere dati», la sana sanitizeMap al prossimo ingresso, non una rilettura.
@@ -2193,10 +2966,66 @@ window.VSM = window.VSM || {};
       const n = Object.assign({}, o);
       if (c.cls !== undefined) n.cls = c.cls;
       if (c.nota !== undefined) { if (c.nota.trim()) n.nota = c.nota.trim(); else delete n.nota; }
+      if (c.fonte !== undefined) { if (c.fonte) n.fonte = c.fonte; else delete n.fonte; }
+      if (c.fonteNota !== undefined) { if (c.fonteNota.trim()) n.fonteNota = c.fonteNota.trim(); else delete n.fonteNota; }
       if (c.s !== undefined) n.s = Math.round(c.s);
       return n;
     });
     return V.commit({ t: 'props', id: elId, after: { obs: dopo } }, 'osservazione riletta', { map });
+  };
+  /** ---------- gli ALLEGATI: le due vie di scrittura dei METADATI (F1-1C, D-12/D-13/D-15) ----------
+   *  Qui dentro si tocca SOLO il documento: nessun accesso a IndexedDB, nessuna promessa, nessun
+   *  byte. I byte li scrive e li cancella il piano 02-11, e l'ordine fra le due meta' e' dichiarato
+   *  nel commento di V.allegOrfani — prima il documento (annullabile), poi i byte.
+   *
+   *  Commit NORMALE, non silenzioso: a differenza di addTime e dropTime — che sono gesti del
+   *  cronometro — allegare e togliere un allegato sono gesti di una persona che decide, e la 🗑
+   *  «facile» del pannello (D-15) dev'essere recuperabile con ↶ (D-21, Pitfall 10 punto 3).
+   *  Passano quindi dalla porta unica delle fasi e dalla ✓ del passo, come V.setObs. */
+  const metaAllegato = (v) => { const n = num(v); return (n != null && n >= 0) ? n : undefined; };
+  V.allegaMeta = (map, elId, meta) => {
+    if (!map || !Array.isArray(map.elements)) return false;
+    const el = V.byId(elId, map); if (!el) return false;
+    // si VALIDA prima di scrivere: dopo il commit sarebbe tardi, e mezza scrittura su una lista
+    // di allegati vorrebbe dire una riga che non ritrova i suoi byte
+    if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return false;
+    const id = (typeof meta.id === 'string' && meta.id.trim()) ? meta.id.trim() : null;
+    if (!id) return false;                                       // l'id E' la chiave dei byte nello store
+    if (!V.ALLEGATI_TIPI.includes(meta.tipo)) return false;       // elenco chiuso: decide lui come si mostra, mai il mime
+    if (typeof meta.mime !== 'string' || !meta.mime.trim()) return false;
+    // si riscrive una COPIA dell'array ORIGINALE, non di V.allegatiDi (rilievo Codex #1 di F1,
+    // stessa via di addTime e V.setObs): ricostruire dalla lista sana farebbe sparire in silenzio
+    // una riga marcia arrivata da fuori — la sana sanitizeMap al prossimo ingresso, non una rilettura
+    const raw = Array.isArray(el.props.allegati) ? el.props.allegati : [];
+    // due metadati con lo stesso id sono un doppione, non due allegati: punterebbero allo stesso
+    // record dello store, e togliendone uno l'altro resterebbe a indicare byte gia' cancellati
+    if (raw.some(a => a && typeof a === 'object' && a.id === id)) return false;
+    // dall'oggetto ORIGINALE, cosi' le chiavi che non conosciamo sopravvivono (A5), come in sanitize
+    const riga = Object.assign({}, meta, { id, mime: meta.mime.trim() });
+    ['size', 'w', 'h', 'dur'].forEach(k => { if (riga[k] !== undefined) { const n = metaAllegato(riga[k]); if (n === undefined) delete riga[k]; else riga[k] = n; } });
+    // istante e giro si timbrano qui se non arrivano gia' scritti, come fa addTime nel suo oggetto
+    // letterale: un allegato senza istante non si sa quando e' stato preso, e senza giro non si sa
+    // di quale camminata e' — due cose che dopo, a foglio chiuso, non si ricostruiscono piu'
+    const at = metaAllegato(meta.at); riga.at = (at === undefined) ? Date.now() : at;
+    if (typeof riga.giro !== 'string' || !riga.giro.trim()) riga.giro = map.id;
+    return V.commit({ t: 'props', id: elId, after: { allegati: raw.concat([riga]) } }, 'allega', { map });
+  };
+  V.togliAllegatoMeta = (map, elId, id) => {
+    if (!map || !Array.isArray(map.elements)) return false;
+    const el = V.byId(elId, map); if (!el) return false;
+    if (typeof id !== 'string' || !id.trim()) return false;
+    const raw = Array.isArray(el.props.allegati) ? el.props.allegati : null;
+    if (!raw) return false;
+    const chiave = id.trim();
+    const suo = (a) => a && typeof a === 'object' && a.id === chiave;
+    if (!raw.some(suo)) return false;                            // niente da togliere: si dice false, non si riscrive a vuoto
+    // filter sull'array ORIGINALE: le righe marce che stanno in mezzo restano dove sono — togliere
+    // un allegato non e' l'occasione per fare pulizia di dati che nessuno ha chiesto di buttare
+    const dopo = raw.filter(a => !suo(a));
+    // lista svuotata: la chiave se ne va (`undefined`), come fa l'igiene — props.allegati esiste
+    // solo quando c'e' almeno un allegato, esattamente come props.obs. L'annulla la riporta intera:
+    // op.before ha l'array di prima, e il commit sa ricordare anche un «questa chiave non c'era».
+    return V.commit({ t: 'props', id: elId, after: { allegati: dopo.length ? dopo : undefined } }, 'togli un allegato', { map });
   };
   /** L'attesa su cui scrivere la differenza: quella già appesa a questa freccia, o una nuova, messa
    *  fra i due passi. Nasce solo quando serve — misurare un passo alla volta non deve riempire il
@@ -2220,8 +3049,12 @@ window.VSM = window.VSM || {};
     const sec = misuraNetta(s, now);   // al netto delle pause dell'osservatore
     // Il giro si chiude: non punta più a niente, il numero del giro resta. Il pannello torna a
     // «comincia il giro», invece di tenere una misura appesa a un elemento che non c'è più.
+    // Elenco delle chiavi da TENERE: quello che non c'e' muore qui. Turno e chi osserva sono della
+    // sessione, non del singolo giro (F1, F1-1C) e passano da dellaSessione; il ⚠ va nella direzione
+    // opposta ed e' assente APPOSTA — e' del passo che sta chiudendo, e sopravvivere vorrebbe dire
+    // marcare «diverso» il passo dopo, che nessuno ha segnato (D-10, minaccia T-02-09-01).
     const chiudi = () => setMeasure(map, Object.assign({ mode: s.mode, giro: s.giro || 1, stepId: null, phase: null, t0: null, fromId: null, connId: null },
-      (typeof s.turno === 'string' && s.turno) ? { turno: s.turno } : {}));   // il turno e' della sessione, non del singolo giro (F1)
+      dellaSessione(s)));
     if (s.phase === 'attesa') {
       const from = V.byId(s.fromId, map), to = V.byId(s.stepId, map), conn = V.byId(s.connId, map);
       // Il passo, la freccia o il passo d'arrivo cancellati mentre l'attesa correva: il tempo misurato
@@ -2232,7 +3065,7 @@ window.VSM = window.VSM || {};
       if (!from || !to || !conn) { chiudi(); return { ko: 'sparito', cosa: !to ? 'passo' : (!conn ? 'freccia' : 'partenza') }; }
       const d = attesaDi(map, conn, from, to);
       if (d && !addTime(map, d.id, sec)) return { ko: 'validato' };
-      setMeasure(map, senzaPause(Object.assign({}, s, { phase: 'box', t0: now, fromId: null, connId: null })));
+      setMeasure(map, faseNuova(Object.assign({}, s, { phase: 'box', t0: now, fromId: null, connId: null })));
       return { elId: d ? d.id : null, seconds: sec, phase: 'box' };
     }
     // Il passo CANCELLATO e il passo VALIDATO sono due «non si può» diversi, e vanno detti diversi:
@@ -2251,15 +3084,15 @@ window.VSM = window.VSM || {};
     if (map.validated) return { ko: 'foglio' };
     // il giro resta aperto: scartare la misura o riaprire il lucchetto del passo lo decide chi misura
     if (!addTime(map, s.stepId, sec)) return { ko: 'validato' };
-    if (s.mode === 'singolo') { setMeasure(map, senzaPause(Object.assign({}, s, { phase: null, t0: null }))); return { elId: s.stepId, seconds: sec, phase: null }; }
+    if (s.mode === 'singolo') { setMeasure(map, faseNuova(Object.assign({}, s, { phase: null, t0: null }))); return { elId: s.stepId, seconds: sec, phase: null }; }
     const dopo = V.measureNext(map, s.stepId);
     // il turno resta anche qui: questo e' il ramo di chiusura NATURALE del giro — il flusso normale,
     // quello per cui il turno esiste — e perderlo proprio qui contraddiceva chiudi() e la promessa
     // del dialogo («va su ogni misura di questa sessione»). Rilievo Kimi #1 di F1, GRAVE: sfuggito
     // anche al round Codex perche' le prove coprivano solo mode 'singolo' e measureStop.
-    if (!dopo) { setMeasure(map, Object.assign({ mode: s.mode, giro: (s.giro || 1) + 1, stepId: null, phase: null, t0: null, fromId: null, connId: null }, (typeof s.turno === 'string' && s.turno) ? { turno: s.turno } : {})); return { elId: s.stepId, seconds: sec, phase: null, chiuso: true }; }
-    if (!dopo.conn) { setMeasure(map, senzaPause(Object.assign({}, s, { stepId: dopo.next.id, phase: 'box', t0: now, fromId: null, connId: null }))); return { elId: s.stepId, seconds: sec, phase: 'box' }; }
-    setMeasure(map, senzaPause(Object.assign({}, s, { phase: 'attesa', t0: now, fromId: s.stepId, connId: dopo.conn.id, stepId: dopo.next.id })));
+    if (!dopo) { setMeasure(map, Object.assign({ mode: s.mode, giro: (s.giro || 1) + 1, stepId: null, phase: null, t0: null, fromId: null, connId: null }, dellaSessione(s))); return { elId: s.stepId, seconds: sec, phase: null, chiuso: true }; }
+    if (!dopo.conn) { setMeasure(map, faseNuova(Object.assign({}, s, { stepId: dopo.next.id, phase: 'box', t0: now, fromId: null, connId: null }))); return { elId: s.stepId, seconds: sec, phase: 'box' }; }
+    setMeasure(map, faseNuova(Object.assign({}, s, { phase: 'attesa', t0: now, fromId: s.stepId, connId: dopo.conn.id, stepId: dopo.next.id })));
     return { elId: s.stepId, seconds: sec, phase: 'attesa' };
   };
   /** Indirizzo del foglio: quello del passo che lo contiene, PER INTERO. Vuoto per la radice del
@@ -2601,6 +3434,29 @@ window.VSM = window.VSM || {};
       case 9: return !!((f || map).closure.remeasureDate);
     }
     return false;
+  };
+
+  /** Il MAP BRIEF in un numero (F1-1A, D-03): quante delle TREDICI voci sono compilate.
+   *  Pura come V.phaseDone — nessun DOM, nessuna scrittura, provabile in Node.
+   *  Le tredici voci, nell'ordine: domanda · famiglia · esclusioni · inizio · fine · REPARTO ·
+   *  turno · finestra · owner · sponsor · ruoli · indicatori vitali · revisione.
+   *  Il reparto si conta DOVE VIVE (map.unitName) invece di duplicarlo in `prep`: l'intestazione
+   *  lo chiede gia', e un doppione farebbe dire al promemoria «manca» una cosa scritta due
+   *  centimetri piu' su (UI-SPEC §1). Gli indicatori vitali valgono una voce sola: piena se la
+   *  lista ha almeno una riga.
+   *  Regge map nullo, `prep` assente o fuori tipo e `vitali` che non e' una lista: la chiamano la
+   *  riga d'ingresso dell'intestazione e il promemoria del selettore fasi, che si aprono su
+   *  QUALUNQUE foglio, compreso uno appena arrivato da fuori e non ancora sanato.
+   *  Non e' una porta e non blocca niente (D-02): V.canSetPhase non la chiama e non deve. */
+  V.briefStato = (map) => {
+    const totale = 13;
+    const m = (map && typeof map === 'object') ? map : {};
+    const p = (m.prep && typeof m.prep === 'object' && !Array.isArray(m.prep)) ? m.prep : {};
+    const pieno = (v) => String(v || '').trim() !== '';
+    const testi = [p.domanda, p.famiglia, p.esclusioni, p.inizio, p.fine, m.unitName,
+      p.turnoBrief, p.finestra, p.owner, p.sponsor, p.ruoli, p.revisione];
+    const pieni = testi.filter(pieno).length + ((Array.isArray(p.vitali) && p.vitali.length) ? 1 : 0);
+    return { pieni, totale };
   };
 
   // ---------- esempio (visita ambulatoriale, numeri dalla Fig. 5.1 del libro) ----------

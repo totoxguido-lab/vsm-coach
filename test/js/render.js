@@ -256,7 +256,12 @@
               return usc.length >= 2 && usc.some(cc => cc.to && cc.to.el === el.id);
             })())
           ));
-          const nMis = V.timesOf(el).length;
+          // le misure di QUESTO giro, non tutte quelle che il passo si porta dietro (debito D2,
+          // decisione di Gt 27/8: «Conti solo il giro in corso»). Un giro nuovo clona i passi con
+          // dentro le misure del giro vecchio, e quelle sono storia: badge, resoconto, parziali e
+          // analisi passano da V.obsDelGiro dall'esito 13 in qua — l'orologio era rimasto indietro,
+          // e sullo stesso passo si leggevano due numeri diversi a due centimetri di distanza
+          const nMis = V.obsDelGiro(el, map).length;
           // orologio «stile emoticon», PIENO (esito Gt 25/8 sera): corpo solido, lancette bianche,
           // corona e nasi ai lati — grafite da fermo, verde mentre misura
           const cx2 = w - 2, corpo = attivo ? '#2e7d32' : '#2b2b2b';
