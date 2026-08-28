@@ -526,6 +526,10 @@
    * si aggiunge qui: il dialogo che dovrebbe aprire arriva col piano 02-18, e una riga che non
    * apre niente direbbe una bugia. La aggiunge quel piano, insieme al suo dialogo. */
   const briefRigaHTML = (bs) => `<button type="button" class="fase-brief" id="fase-brief-apri" title="Brief della mappa"><span>${esc(bs.pieni === bs.totale ? 'Brief: completo ✓' : !bs.pieni ? 'Brief: nessun campo compilato' : 'Brief: ' + briefConteggio(bs))}</span><span class="hintdot" aria-hidden="true">ⓘ</span></button>`;
+  /** La riga «Giro chiuso» (D8): UNA sola scrittura, la usano il selettore delle fasi e il
+   *  dialogo Misura (CR-03) — due copie della stessa spiegazione finirebbero per non essere piu'
+   *  d'accordo, e in questo commit e' gia' successo con le frasi sul giro chiuso. */
+  const faseChiusoHTML = () => '<div class="fase-chiuso" role="note"><b>Giro chiuso</b><br>Da qui è nato il giro successivo, ed è là che si raccolgono misure, foto e memo. Qui puoi ancora sistemare il layout e scrivere note: <b>non entreranno nel giro nuovo</b>, perché la sua copia è stata presa quando è nato.</div>';
   UI.renderFase = () => {
     const map = V.map(); const body = $('#fase-body'); if (!map || !body) return;
     const ICONA = { disegna: '\u270F\uFE0F', valida: '\u2705', misura: '\u23F1\uFE0F', analizza: '\u{1F4CA}' };
@@ -550,9 +554,7 @@
     // D8: se questo giro ha gia' generato il successivo, il selettore lo dice PRIMA di ogni altra
     // cosa. Non e' un avviso di cortesia: e' la riga che risponde alla domanda «perche' qui non
     // parte il cronometro», e senza di lei il no della porta arriverebbe senza un perche' visibile.
-    const chiusoRiga = V.giroChiuso(map)
-      ? '<div class="fase-chiuso" role="note"><b>Giro chiuso</b><br>Da qui è nato il giro successivo, ed è là che si raccolgono misure, foto e memo. Qui puoi ancora sistemare il layout e scrivere note: <b>non entreranno nel giro nuovo</b>, perché la sua copia è stata presa quando è nato.</div>'
-      : '';
+    const chiusoRiga = V.giroChiuso(map) ? faseChiusoHTML() : '';
     body.innerHTML = nuvola
       + chiusoRiga
       + gruppo('1 \u00B7 Pianificazione', ['disegna'])
@@ -591,10 +593,22 @@
     const ngSi = $('#fase-nuovo-giro-si', body);
     if (ngSi) ngSi.onclick = () => {
       UI._nuovoGiroConferma = false;
+      // CR-01: se il cronometro sta correndo, createVersion lo chiude e lo SCRIVE prima di
+      // clonare (decisione di Gt: si scrive e lo si dice). Il «dirlo» sta qui, nel chiamante con
+      // la conferma, e nello STESSO messaggio del giro nuovo: due toast in fila si coprirebbero
+      // a vicenda. Lo stato si cattura PRIMA della chiamata — dopo, il cronometro non c'e' piu'.
+      const correva = V.measureState(map);
+      const secCorreva = correva && correva.t0 ? V.measureElapsed(map) : 0;
+      const passoCorreva = correva && correva.stepId ? V.byId(correva.stepId, map) : null;
       const nv = V.createVersion(map);
       $('#dlg-fase').close();
       UI.openMap(nv.id);
-      UI.toast('Nuovo giro creato in Disegna: qui puoi cambiare il flusso, controllarlo sul campo e farlo validare di nuovo.');
+      let msg = 'Nuovo giro creato in Disegna: qui puoi cambiare il flusso, controllarlo sul campo e farlo validare di nuovo.';
+      if (correva && correva.phase === 'attesa') msg += ' L\u2019attesa che correva non si \u00E8 scritta (il passo dopo non \u00E8 mai cominciato): ' + secCorreva + ' secondi restano fuori.';
+      else if (correva && correva.phase === 'box') msg += (passoCorreva && !passoCorreva.props.validated)
+        ? ' La misura che correva su \u00AB' + V.nomePasso(passoCorreva, map) + '\u00BB (' + esc(V.fmtMisura(secCorreva)) + ') \u00E8 stata chiusa e scritta nel giro di prima.'
+        : ' La misura che correva non si \u00E8 potuta scrivere (il passo non c\u2019\u00E8 pi\u00F9 o ha la \u2713): ' + secCorreva + ' secondi restano fuori.';
+      UI.toast(msg);
     };
     const ngNo = $('#fase-nuovo-giro-no', body);
     if (ngNo) ngNo.onclick = () => { UI._nuovoGiroConferma = false; UI.renderFase(); };
@@ -1061,7 +1075,13 @@
     const map = (V.doc && V.doc.maps) ? V.doc.maps[mapId] : null;
     const el = map && V.byId(elId, map);
     if (!map || !el) { UI.toast(esito.sparito); return false; }
-    if (!V.allegaMeta(map, elId, meta)) { UI.toast(esito.rifiutato); return false; }
+    if (!V.allegaMeta(map, elId, meta)) {
+      // il caso di corsa: il giro si e' chiuso MENTRE la fotocamera o il registratore erano aperti
+      // (il menu versioni non chiede conferma). La causa vera e' quella, non il lucchetto — la
+      // frase e' la stessa del commit, che l'ha gia' mostrata: due volte la stessa, mai una falsa
+      UI.toast(V.giroChiuso(map) ? V.DENIED_MSG['giro-chiuso'] : esito.rifiutato);
+      return false;
+    }
     UI.toast(esito.ok(el, map));
     return true;
   });
@@ -1107,6 +1127,11 @@
    *  chiamerà anche quello, e due copie del percorso «riduci, scrivi i byte, scrivi il metadato»
    *  finirebbero per non essere più d'accordo. */
   UI.scattaFoto = (map) => {
+    // D8 (CR-04): non si apre la fotocamera se la foto non avra' dove attaccarsi — il gesto si
+    // nega PRIMA, con la stessa logica con cui measureStart rifiuta prima di far correre il
+    // tempo. Negarlo dopo vorrebbe dire far inquadrare, scattare, ridurre e scrivere i byte in
+    // IndexedDB per poi buttare il metadato: lavoro perso e byte orfani.
+    if (V.giroChiuso(map)) { UI.toast(V.DENIED_MSG['giro-chiuso']); return; }
     const el = passoDellaBarra(map);
     if (!el) { UI.toast('La foto si aggancia al passo che il giro sta misurando: qui non c’è niente in corso.'); return; }
     const mapId = map.id, elId = el.id;
@@ -1218,7 +1243,15 @@
     catch (e) { memoSpegniFlusso(memoStream); memoStream = null; memoRec = null; memoT0 = 0; memoDove = null; UI.renderMisCtl(); }
   };
   /** Il tocco sul 🎤: uno avvia, l'altro ferma. Niente pausa, niente stop, niente abort del giro. */
-  UI.memoTocca = (map) => { if (memoSpento) return; if (memoRec) memoFerma(); else memoAvvia(map); };
+  UI.memoTocca = (map) => {
+    if (memoSpento) return;
+    if (memoRec) { memoFerma(); return; }
+    // D8 (CR-04): come la foto, il memo si nega PRIMA di chiedere il permesso del microfono —
+    // un memo registrato e poi rifiutato dalla porta e' la stessa perdita, col pallino rosso di
+    // iOS acceso in piu'
+    if (V.giroChiuso(map)) { UI.toast(V.DENIED_MSG['giro-chiuso']); return; }
+    memoAvvia(map);
+  };
   /** Il microfono si spegne anche quando il giro finisce o la pagina sparisce dalla vista: quello
    *  che è già stato registrato si SALVA (fermare il registratore scrive), il flusso si chiude.
    *  Lasciarlo aperto oltre il giro sarebbe la registrazione d'ambiente che D-12 non è. */
@@ -1479,7 +1512,15 @@
           + `<button id="mis-play" class="mis-btn" aria-label="Riavvia la misura su questo passo" title="Riavvia la misura su questo passo">${MIS_IC.play}</button>`
           + `<div class="mis-info"><span class="mis-tempo pausa">${misMMSS(0)}</span><span class="mis-nome">${esc(V.nomePasso(passoSosp, mCur))} · misura eliminata</span></div>`
           + `<button id="mis-stop" class="mis-btn stop" aria-label="Chiudi il giro" title="Chiudi il giro (la barra si toglie)">${MIS_IC.stop}</button>`;
-        $('#mis-play', bar).onclick = () => { const r = V.measureStart(mCur, sSosp.sospeso, sSosp.mode || 'giro'); if (r && r.ko === 'in-corso') UI.toast('C’è già una misura in corso.'); UI.renderMisCtl(); };
+        // CR-03: ogni rifiuto porta la sua frase, e la frase nomina la causa VERA — il giro
+        // chiuso non e' il lucchetto, e il silenzio non e' una risposta
+        $('#mis-play', bar).onclick = () => {
+          const r = V.measureStart(mCur, sSosp.sospeso, sSosp.mode || 'giro');
+          if (r && r.ko === 'in-corso') UI.toast('C’è già una misura in corso.');
+          else if (r && r.ko === 'giro-chiuso') UI.toast(V.DENIED_MSG['giro-chiuso']);
+          else if (!r) UI.toast('Qui il cronometro non parte: passo validato ✓ o lucchetto chiuso.');
+          UI.renderMisCtl();
+        };
         $('#mis-stop', bar).onclick = () => { V.measureStop(mCur); UI.renderMisCtl(); fineGiro(mCur); };
         return;
       }
@@ -1588,6 +1629,9 @@
     if (!s || !s.phase) {
       const r = V.measureStart(m, id);
       if (r && r.ko === 'in-corso') UI.toast('C\u2019\u00E8 una misura in corso: chiudila (\u23E9) o chiudi il giro prima di ripartire.');
+      // CR-03: il ko va letto PRIMA del ramo «avviato» — un rifiuto non e' un avvio, e la causa
+      // vera (il giro e' finito) non e' il lucchetto che la frase sotto nomina
+      else if (r && r.ko === 'giro-chiuso') UI.toast(V.DENIED_MSG['giro-chiuso']);
       else if (r) I.hint('Cronometro avviato \u23F1 \u2014 \u23E9 quando il passo chiude: l\u2019attesa poi corre da sola, e il PROSSIMO passo lo scegli toccando il suo cronometro (\u25B6 segue il flusso).', 6000);
       else UI.toast('Qui il cronometro non parte: passo validato \u2713 o lucchetto chiuso.');
       UI.renderMisCtl(); return true;
@@ -1617,6 +1661,7 @@
       UI.renderMisCtl(); return true;
     }
     if (rim && rim.ko === 'mai-misurato') UI.toast('C\u2019\u00E8 un passo in corso: chiudilo (\u23E9) prima di cominciare questo. Un passo gi\u00E0 misurato invece si rimisura a tocco.');
+    else if (rim && rim.ko === 'giro-chiuso') UI.toast(V.DENIED_MSG['giro-chiuso']);
     else UI.toast('Qui il cronometro non parte: passo validato \u2713 o lucchetto chiuso.');
     return true;
   };
@@ -1673,6 +1718,10 @@
       return;
     }
     const s = V.measureState(map);
+    // D8 (CR-03): su un giro chiuso il cronometro non si AVVIA — la riga che dice perché e i
+    // gesti di CURA (scarta, calcola i tempi, qui sotto) restano, i bottoni di avvio no:
+    // un bottone che la porta rifiuterebbe e' un bottone morto, e i bottoni morti non si emettono
+    const chiuso = V.giroChiuso(map);
     const c = V.measureChain(map);
     const nums = V.stepNumbers(map);
     const st = (el) => V.timeStats(V.timesOf(el));
@@ -1712,8 +1761,10 @@
       } else {
         h += `<div class="mis-crono"><div class="mis-time">0:00</div>`
           + `<div class="mis-what">${s && s.giro > 1 ? 'Giro ' + s.giro + ': pronto a partire.' : 'Il giro parte dal primo passo e segue le frecce.'}</div>`
-          + `<div class="mis-acts"><button class="btn big primary" data-mis-giro>comincia il giro</button></div>`
-          + `<div class="hint">Oppure tocca ⏱ accanto a un passo qui sotto per misurare solo quello, quante volte vuoi.</div></div>`;
+          + (chiuso ? faseChiusoHTML()
+            : `<div class="mis-acts"><button class="btn big primary" data-mis-giro>comincia il giro</button></div>`
+            + `<div class="hint">Oppure tocca ⏱ accanto a un passo qui sotto per misurare solo quello, quante volte vuoi.</div>`)
+          + `</div>`;
       }
       // il turno della sessione di misura (F1): visibile appena il cronometro esiste, MAI ereditato
       // in silenzio — quello che c'e' scritto qui e' quello che finisce su ogni osservazione
@@ -1758,7 +1809,7 @@
           + (bivio ? `<span class="ps-fork" title="Il flusso si divide qui: da questo passo partono due strade" aria-label="Il flusso si divide qui: da questo passo partono due strade">⑂</span>` : '')
           + `<span class="k">${corrente ? '⏱ in corso' : (k.n ? `✓ ${esc(fmt(V.toUnit(k.avg, map.unit)))} · ${k.n} ${k.n === 1 ? 'misura' : 'misure'}` : '—')}</span>`
           + (b.props.validated ? '<span class="k" title="Passo validato: il contenuto non si modifica">✓</span>'
-            : `<button class="btn small" data-mis-solo="${b.id}" title="Misura solo questo passo">⏱</button>`)
+            : (chiuso ? '' : `<button class="btn small" data-mis-solo="${b.id}" title="Misura solo questo passo">⏱</button>`))
           + '</div>';
       }).join('') + '</div>';
       if (c.fuori.length) h += `<div class="mis-list">` + c.fuori.map(b => {
@@ -1767,7 +1818,7 @@
         const daPasso = origineRamo.get(String(nums.get(b.id) || ''));
         return `<div class="mis-row fuori"><b>${esc(nomePasso(b, nums))}</b>`
           + `<span class="k">${daPasso ? `si stacca dal passo ${esc(daPasso)}` : 'fuori dalla catena'}${k.n ? ` · ${k.n} misure` : ''}</span>`
-          + `<button class="btn small" data-mis-solo="${b.id}" title="Misura solo questo passo">⏱</button></div>`;
+          + (chiuso ? '' : `<button class="btn small" data-mis-solo="${b.id}" title="Misura solo questo passo">⏱</button>`) + '</div>';
       }).join('') + '</div>';
     }
     // Le misure raccolte, una per una: si guardano e si scartano (il caso eccezionale lo riconosce
@@ -1798,6 +1849,10 @@
       if (!primo) return UI.toast('Tutti i passi di questa catena sono validati ✓: non c\'è niente da misurare.');
       const r = V.measureStart(map, primo.id, 'giro');
       if (r && r.ko === 'in-corso') UI.toast('C’è già una misura in corso: chiudila (⏩) o chiudi il giro prima di cominciarne un altro.');
+      // CR-03: il bottone non si emette piu' su un giro chiuso, ma il ramo resta — un gestore non
+      // risponde mai col silenzio, e la frase nomina la causa vera, non il lucchetto
+      else if (r && r.ko === 'giro-chiuso') UI.toast(V.DENIED_MSG['giro-chiuso']);
+      else if (!r) UI.toast('Qui il cronometro non parte: passo validato ✓ o lucchetto chiuso.');
       ridisegna();
     });
     btn('[data-mis-ok]', () => {
@@ -1823,6 +1878,8 @@
     $$('[data-mis-solo]', body).forEach(b => b.onclick = () => {
       const r = V.measureStart(map, b.dataset.misSolo, 'singolo');
       if (r && r.ko === 'in-corso') UI.toast('C’è una misura in corso: chiudila (⏩ o «passo finito») o chiudi il giro, poi misura questo passo da solo.');
+      else if (r && r.ko === 'giro-chiuso') UI.toast(V.DENIED_MSG['giro-chiuso']);
+      else if (!r) UI.toast('Qui il cronometro non parte: passo validato ✓ o lucchetto chiuso.');
       ridisegna();
     });
     $$('[data-mis-drop]', body).forEach(b => b.onclick = () => { V.dropTime(map, b.dataset.misDrop, +b.dataset.i); ridisegna(); });
@@ -2365,8 +2422,10 @@
     // attese, persone e corsie non hanno menu — il secondo tocco apre i dettagli come sempre.
     // Gli oggetti liberi (nuvole, note, icone, facce) tengono le loro azioni.
     if (['misura', 'analizza'].includes(map.phase) && !V.isConnector(el) && !V.MISURA_LIBERI.includes(el.type) && el.type !== 'legend') {
-      // \u00ABMisura da qui\u00BB non si capiva (esito 12, E12-e): il nome ora dice che cosa fa davvero
-      if (el.type === 'box') { btn('mis', '\u23F1 Comincia il giro da qui', 'Fa partire (o continuare) il giro del cronometro da questo passo'); btn('cloud', '+ Problema', 'Un problema visto misurando, gia\' legato al passo'); }
+      // \u00ABMisura da qui\u00BB non si capiva (esito 12, E12-e): il nome ora dice che cosa fa davvero.
+      // Su un giro chiuso non si offre (CR-03): la porta lo rifiuterebbe — la regola «niente
+      // bottoni morti» vale in tutti e quattro i punti in cui il giro si avvia, non solo in uno
+      if (el.type === 'box') { if (!V.giroChiuso(map)) btn('mis', '\u23F1 Comincia il giro da qui', 'Fa partire (o continuare) il giro del cronometro da questo passo'); btn('cloud', '+ Problema', 'Un problema visto misurando, gia\' legato al passo'); }
       return A;
     }
     if (['misura', 'analizza'].includes(map.phase) && V.isConnector(el)) return A;

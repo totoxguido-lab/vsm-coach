@@ -1020,6 +1020,28 @@ window.VSM = window.VSM || {};
    *  anche i lucchetti (un chiamante diretto deve avere la risposta intera, non doverli controllare a
    *  parte) e i livelli (soglia di fase per CHIAVE toccata, non per l'intera classe 'livelli': un
    *  livello acceso prima del suo phaseMin non passa, gli altri sì). */
+  /** D8: che cosa conta come «evidenza NUOVA» su un giro chiuso (CR-02, review 28/8). Non e' la
+   *  classe a dirlo: la classe 'osservazioni' e' un asse di FASE e porta con se' anche i gesti
+   *  retrospettivi (calcola i tempi, rileggi o scarta una misura, togli un allegato), che per
+   *  definizione si fanno DOPO — cioe' quando il giro successivo esiste gia' — ed e' giusto
+   *  restino aperti: si chiude la raccolta, non la cura di cio' che si e' raccolto.
+   *  Si guarda quindi CHE COSA STA NASCENDO in questa op:
+   *  - il cronometro che AVANZA (pausa, ▶, ⚠, nota, lap: op 'meta' con un measure vivo). La sua
+   *    chiusura non passa di qui: setMeasure(null) scrive diretto, «chiudere e' sempre lecito»;
+   *  - un artefatto della misura che NASCE (l'attesa di attesaDi: 'add' con classe forzata);
+   *  - una voce in PIU' in obs o allegati. Riscrivere o accorciare una lista che c'e' gia' non e'
+   *    raccolta: e' cura, e resta aperta. */
+  const evidenzaNuova = (op, map, classe) => {
+    if (op.t === 'meta' && op.after && op.after.measure) return true;
+    if (op.t === 'add' && classe === 'osservazioni') return true;
+    if (op.t !== 'props' || !op.after) return false;
+    const el = map && V.byId(op.id, map);
+    return ['obs', 'allegati'].some(k => {
+      if (op.after[k] === undefined) return false;          // chiave non toccata, o tolta del tutto
+      const prima = (el && el.props && Array.isArray(el.props[k])) ? el.props[k].length : 0;
+      return Array.isArray(op.after[k]) && op.after[k].length > prima;   // raccolta = la lista CRESCE
+    });
+  };
   V.allowed = (op, map, opts = {}) => {
     // Stessa seconda difesa di V.canSetPhase qui sopra (la cura vera e' in sanitizeMap): il
     // lucchetto e' dell'Ideale, non di 'validated' e basta (kind:'future' e' la condizione vera, A1).
@@ -1028,11 +1050,12 @@ window.VSM = window.VSM || {};
     const fase = (map && map.phase) || 'disegna';
     const classe = opts.classe || V.classOfOp(op, map);   // opts.classe: SOLO attesaDi e applyTimes (interp. 6)
     if (!classe) return { ok: false, reason: 'fase' };
-    // D8: in un giro chiuso le EVIDENZE non entrano piu'. Il controllo sta qui, nella porta unica,
-    // e non nei pannelli: una via di scrittura che non passasse di qua rimetterebbe in piedi
-    // esattamente il difetto: un'evidenza raccolta oggi che il documento attribuisce a un giro
-    // finito tre giri fa. Le altre classi passano: si chiude la raccolta, non il foglio.
-    if (classe === 'osservazioni' && V.giroChiuso(map)) return { ok: false, reason: 'giro-chiuso' };
+    // D8: in un giro chiuso le EVIDENZE NUOVE non entrano piu'. Il controllo sta qui, nella porta
+    // unica, e non nei pannelli: una via di scrittura che non passasse di qua rimetterebbe in piedi
+    // esattamente il difetto — un'evidenza raccolta oggi che il documento attribuisce a un giro
+    // finito tre giri fa. Le altre classi e la cura delle evidenze gia' raccolte passano: si
+    // chiude la raccolta, non il foglio.
+    if (V.giroChiuso(map) && evidenzaNuova(op, map, classe)) return { ok: false, reason: 'giro-chiuso' };
     if (classe === 'livelli') {
       const prima = (map && map.layers) || {};
       const dopo = (op.after && op.after.layers) || {};
@@ -1256,8 +1279,30 @@ window.VSM = window.VSM || {};
    *  l'id della mappa di partenza (interpretazione 7). Le altre tengono il giro vero in cui furono
    *  prese — e' la storia che si vuole vedere, non va riscritta. */
   const stampGiro = (elements, curId) => elements.forEach(el => { if (el.props && Array.isArray(el.props.obs)) el.props.obs.forEach(o => { if (o && o.giro == null) o.giro = curId; }); });
+  /** Gli allegati ereditati seguono la STESSA regola delle osservazioni (parita' mancante, secondo
+   *  punto del verbale Kimi del 28/8): V.allegatiDelGiro legge la chiave assente come «di questo
+   *  giro», quindi una foto senza marca clonata nel giro nuovo si spacciava per raccolta di oggi —
+   *  la bugia che R-1C-02 ha chiuso dal lato lettura, riaperta dal lato del clone. La condizione e'
+   *  quella di V.allegaMeta (marca assente O vuota), non il `== null` di stampGiro: un giro:'' da
+   *  un JSON confezionato a mano varrebbe comunque «di questo giro» a ogni clone. */
+  const stampGiroAllegati = (elements, curId) => elements.forEach(el => {
+    if (el.props && Array.isArray(el.props.allegati))
+      el.props.allegati.forEach(a => { if (a && (typeof a.giro !== 'string' || !a.giro.trim())) a.giro = curId; });
+  });
   /** nuovo giro dell'attuale: copia della mappa attiva, stesso Ideale, nome proposto dal numero del giro */
   V.createVersion = (cur) => {
+    // CR-01 (review 28/8): il giro non si chiude SOTTO un cronometro acceso. Quello che correva si
+    // chiude e si REGISTRA adesso, finche' il padre e' ancora aperto: un istante dopo la porta lo
+    // rifiuterebbe come «giro-chiuso» e i minuti camminati sparirebbero in silenzio — la perdita
+    // che il cancello 1B ha gia' pagato una volta. Fra «scrivere una misura che chi cammina non ha
+    // chiuso a mano» e «buttarla via», qui si scrive e lo si dice (decisione di Gt, 28/8).
+    // Il ritorno resta la MAPPA NUOVA e non { mappa, misuraChiusa }: il menu delle versioni
+    // (js/main.js) e la suite consumano il ritorno come mappa, e cambiare forma vorrebbe dire
+    // toccare file fuori da questa cura. Che cosa e' stato chiuso lo racconta il dialogo delle
+    // fasi, che e' il chiamante con la conferma e puo' leggere lo stato PRIMA di chiamare —
+    // la regola qui sotto invece vale per OGNI chiamante, che lo dica o no.
+    const correva = V.measureState(cur);
+    if (correva) V.measureStop(cur);
     const chain = V.versionsOf(cur); const n = chain.length + 1;
     const names = [null, null, 'secondo giro', 'terzo giro', 'quarto giro', 'quinto giro', 'sesto giro'];
     // pairId e updated NON si copiano: il legame con l'Ideale appartiene alla catena (lo rimette a posto
@@ -1269,6 +1314,7 @@ window.VSM = window.VSM || {};
     const f = V.newMap(Object.assign(clone(cur), { id: uid(), kind: 'current', verOf: cur.id, verName: names[n] || (n + 'º giro'), validated: false, pairId: null, phase: 'disegna', tint: Math.floor(Math.random() * 360), created: Date.now(), updated: Date.now(), rev: 0 }));
     f.elements = clone(cur.elements); f.strokes = clone(cur.strokes); f.plan = clone(cur.plan);
     stampGiro(f.elements, cur.id);
+    stampGiroAllegati(f.elements, cur.id);
     delete f.measure;   // il giro del cronometro appartiene al foglio su cui e' partito (M8.4)
     V.addMap(f); V.repairDoc(); V.save(); return f;
   };
@@ -1280,6 +1326,7 @@ window.VSM = window.VSM || {};
     const f = V.newMap(Object.assign(clone(cur), { id: uid(), kind: 'future', pairId: cur.id, verOf: null, verName: 'ideale', validated: false, phase: 'disegna', tint: Math.floor(Math.random() * 360), title: cur.title, validation: V.newMap().validation, created: Date.now(), rev: 0 }));
     f.elements = clone(cur.elements); f.strokes = []; f.plan = clone(cur.plan);
     stampGiro(f.elements, cur.id);
+    stampGiroAllegati(f.elements, cur.id);
     delete f.measure;   // il giro del cronometro appartiene al foglio su cui e' partito (M8.4)
     V.addMap(f); cur.pairId = f.id; V.save(); return f;
   };
@@ -2771,7 +2818,9 @@ window.VSM = window.VSM || {};
     // cronometro partisse e poi V.allowed rifiutasse la scrittura, il tempo scorrerebbe per niente
     // e la misura sparirebbe alla chiusura — la perdita silenziosa che il cancello 1B ha gia'
     // pagato una volta (V.measureStop che buttava via la misura senza scriverla e senza dirlo).
-    if (V.giroChiuso(map)) return null;
+    // Il rifiuto NOMINA la causa (CR-03): `null` qui vorrebbe dire «lucchetto o ✓» per i
+    // chiamanti, che e' falso — un no muto i pannelli non lo sanno raccontare.
+    if (V.giroChiuso(map)) return { ko: 'giro-chiuso' };
     const prec = V.measureState(map);
     // Una misura APERTA (passo o attesa, anche in pausa) non si straccia mai in silenzio (C5 del
     // triage debug 25/8, Grok #4): sul canvas misTap gia' rifiutava («chiudilo prima»), ma il
