@@ -872,7 +872,20 @@ window.VSM = window.VSM || {};
     if (!g.ok) return g;
     map.phase = fase; accendiLivelliDellaFase(map, fase); map.updated = Date.now(); bump(map); V.save();
     emit({ label: 'fase', mapId: map.id, ops: [] });
-    return { ok: true };
+    // ENTRANDO IN ANALIZZA i tempi si scrivono da soli (decisione di Gt, 28/8/2026). Fino a oggi
+    // «Analizza» era un'etichetta senza comportamento — AMMESSE.misura e AMMESSE.analizza erano la
+    // stessa riga, e ogni altro controllo diceva ['misura','analizza'].includes(…) — e Gt l'ha
+    // notato al primo giro. Adesso significa qualcosa, e significa la cosa giusta: analizzare vuol
+    // dire guardare i numeri, quindi entrando i numeri ci sono.
+    // Il difetto che chiude: si cronometrava, le misure c'erano (il contatore N× le mostrava), ma
+    // il foglio scriveva «Hi / Lo / Avg ?» e la timeline non compariva — R.riepilogoSVG disegna
+    // solo se M.hasData, e hasData vuole un avg SCRITTO. Il gesto che li scriveva era un bottone
+    // dentro un menu che nessuno diceva di premere.
+    // DOPO l'emit della fase, non prima: applyTimes commissiona con classe 'osservazioni', che in
+    // Misura passa ma vuole la fase gia' cambiata per essere valutata nella fase giusta; ed e' un
+    // commit suo, quindi ↶ lo disfa senza disfare il cambio di fase (che non e' annullabile).
+    const tempi = fase === 'analizza' ? V.applyTimes(map) : null;
+    return { ok: true, tempi };
   };
   /** SVALIDARE un foglio — la via d'emergenza (esito stazione 2, 25/8; dal 25/8 sera la UI e' il
    *  bottone nascosto in «avanzate» del selettore fasi). La porta di Misura resta a senso unico per il metodo,

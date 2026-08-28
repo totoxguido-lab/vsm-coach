@@ -544,7 +544,7 @@
         + `<span class="fase-icona" aria-hidden="true">${ICONA[f]}</span><b>${esc(V.PHASE_LABEL[f])}</b>${cur ? '<span class="fase-qui">\u2714 sei qui</span>' : ''}</button>`; };
     const gruppo = (t, fasi) => `<div class="fase-gruppo"><div class="fase-gruppo-t">${esc(t)}</div>${fasi.map(f => riga(f)).join('')}</div>`;
     // la nuvoletta del «?»: quattro frasi, non un pannello
-    const nuvola = !UI._faseAiuto ? '' : `<div class="fase-nuvola" role="note"><p><b>1 · Pianificazione</b>: disegni il flusso e lo controlli sul campo — avanti e indietro liberamente.</p><p><b>\u2705 Valida</b>: lo staff che fa il lavoro conferma il foglio.</p><p><b>2 · Misura e analisi</b>: si cronometra e si analizza. \u23F1\uFE0F Misura è una porta: si entra da Valida, da lì il disegno è fermo e per ridisegnare serve un <b>nuovo giro</b>.</p><p>L'Ideale col lucchetto \u{1F512} chiuso non cambia fase: prima apri il lucchetto.</p></div>`;
+    const nuvola = !UI._faseAiuto ? '' : `<div class="fase-nuvola" role="note"><p><b>1 · Pianificazione</b>: disegni il flusso e lo controlli sul campo — avanti e indietro liberamente.</p><p><b>\u2705 Valida</b>: lo staff che fa il lavoro conferma il foglio.</p><p><b>2 · Misura e analisi</b>: si cronometra e si analizza. \u23F1\uFE0F Misura è una porta: si entra da Valida, da lì il disegno è fermo e per ridisegnare serve un <b>nuovo giro</b>. Passando ad <b>Analizza</b> i tempi misurati si scrivono sul foglio: compaiono Hi / Lo / Avg sotto i passi e la timeline sotto il disegno.</p><p>L'Ideale col lucchetto \u{1F512} chiuso non cambia fase: prima apri il lucchetto.</p></div>`;
     // la porta chiede conferma: il solo passaggio che \u21A9 non disfa non parte da un tocco solo
     // niente più «libretto di istruzioni» sulla porta di Misura (esito stazione 2, 25/8): si
     // entra diretti; la meccanica del valida (il disegno non si tocca più, nuovo giro per
@@ -584,7 +584,17 @@
       if (!r.ok) { UI.toast(V.DENIED_MSG[r.reason] || 'Non si può.'); return; }
       UI._nuovoGiroConferma = false;
       UI.buildPalette(); UI.renderMisCtl();
-      UI.renderHeader(); UI.renderFase(); UI.toast('Fase: ' + V.PHASE_LABEL[map.phase] + '.' + (map.phase === 'misura' ? ' Tocca «▶ Inizia la misura» quando sei pronto.' : ''));
+      UI.renderHeader(); UI.renderFase();
+      // entrando in Analizza i tempi si sono scritti da soli: si DICE, e si dice anche quando non
+      // c'era niente da scrivere. Un calcolo silenzioso sarebbe la colpa di prima al contrario —
+      // prima l'app aveva i dati e non li mostrava, adesso scriverebbe senza dirlo. E la frase
+      // nomina il ↶, perche' scrivere i tempi sostituisce i numeri messi a mano.
+      const t = r.tempi;
+      const coda = map.phase === 'misura' ? ' Tocca «▶ Inizia la misura» quando sei pronto.'
+        : (t && t.written) ? ` Tempi scritti su ${t.written} ${t.written === 1 ? 'elemento' : 'elementi'}${t.validati ? ` (${t.validati} validati ✓, non toccati)` : ''}. Annulla con ↶.`
+        : (t && t.validati) ? ' Solo passi validati ✓: nessun tempo scritto.'
+        : t ? ' Nessuna misura di questo giro: non c\u2019era niente da calcolare.' : '';
+      UI.toast('Fase: ' + V.PHASE_LABEL[map.phase] + '.' + coda);
     });
     // il nuovo giro in due tempi (esito stazione 2, 25/8: tre giri creati per sbaglio da un
     // bottone primario a portata di pollice): il primo tocco ARMA la conferma, il secondo crea.
